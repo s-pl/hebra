@@ -82,9 +82,14 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         Command::Describe { revision, message } => ws
             .run(&actor, &prov, name, |tx| describe(tx, &revision, message))
             .map_err(Into::into),
-        Command::Commit { message } => ws
-            .run(&actor, &prov, name, |tx| commit(tx, message))
-            .map_err(Into::into),
+        Command::Commit { message, task } => {
+            let mut prov = prov;
+            if let Some(task) = task {
+                prov.task = Some(task);
+            }
+            ws.run(&actor, &prov, name, |tx| commit(tx, message))
+                .map_err(Into::into)
+        }
         Command::New { revisions, message } => ws
             .run(&actor, &prov, name, |tx| new(tx, &revisions, message))
             .map_err(Into::into),
@@ -185,6 +190,9 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             remote,
         }) => crate::work::review_approve(&ws, &remote, id, changes, note),
         Command::Task(cmd) => task(&ws, cmd),
+        Command::VerifyLog { remote, key } => {
+            crate::verify_log::verify(&ws, &remote, key.as_deref())
+        }
         Command::Checks(ChecksCommand::List { revision, remote }) => {
             crate::work::checks_list(&ws, &remote, revision.as_deref())
         }
@@ -265,6 +273,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Pull { .. } => "pull",
         Command::Presence { .. } => "presence",
         Command::Task(_) => "task",
+        Command::VerifyLog { .. } => "verify-log",
         Command::Checks(_) => "checks",
         Command::Login { .. } => "login",
         Command::Logout { .. } => "logout",

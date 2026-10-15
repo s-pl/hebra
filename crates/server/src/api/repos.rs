@@ -14,6 +14,39 @@ use crate::identity::{Action, Principal};
 use crate::names::{valid_bookmark, valid_handle, valid_repo_name};
 use crate::server::Server;
 
+fn who_actor(who: &Option<std::sync::Arc<Principal>>) -> String {
+    who.as_ref().map(|w| w.actor()).unwrap_or_default()
+}
+
+/// The transparency log of a repository, with the server's signature over
+/// its head (`hb verify-log` checks both).
+pub(crate) async fn transparency(
+    State(s): St,
+    headers: HeaderMap,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
+    Query(q): Query<TransparencyQuery>,
+) -> ApiResult<axum::Json<Value>> {
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
+    let entries =
+        s.db.log_entries(&repo.id, q.after.unwrap_or(0), 1000)
+            .await?;
+    let head = s.db.log_head(&repo.id).await?.map(|(seq, hash)| {
+        let statement = hebra_core::transparency::head_statement(&repo.full_name, seq, &hash);
+        json!({ "seq": seq, "hash": hash, "signature": s.authority.sign(statement.as_bytes()) })
+    });
+    Ok(axum::Json(json!({
+        "repo": repo.full_name,
+        "entries": entries,
+        "head": head,
+        "public_key": s.authority.public_hex(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TransparencyQuery {
+    after: Option<i64>,
+}
+
 /// What a caller can see: public repositories, those of owners they belong
 /// to, and those granted to them or their teams.
 struct Visibility {
@@ -209,7 +242,7 @@ pub(crate) async fn update(
     UrlPath((owner, name)): UrlPath<(String, String)>,
     axum::Json(body): axum::Json<UpdateRepo>,
 ) -> ApiResult<axum::Json<Value>> {
-    let (repo, _) = s.access(&headers, &owner, &name, Action::Admin).await?;
+    let (repo, who) = s.access(&headers, &owner, &name, Action::Admin).await?;
     let public = body.public.unwrap_or(repo.public);
     if repo.public && !public {
         let owner =
@@ -239,6 +272,12 @@ pub(crate) async fn update(
     }
     s.forget_repo(&repo);
     let fresh = s.db.repo_by_id(&repo.id).await?;
+    s.db.log_event(
+        &repo.id,
+        "settings",
+        &json!({ "repo": fresh, "by": who_actor(&who) }),
+    )
+    .await?;
     Ok(axum::Json(json!(fresh)))
 }
 
@@ -327,10 +366,16 @@ pub(crate) async fn grant(
     UrlPath((owner, name, principal)): UrlPath<(String, String, String)>,
     axum::Json(body): axum::Json<Grant>,
 ) -> ApiResult<axum::Json<Value>> {
-    let (repo, _) = s.access(&headers, &owner, &name, Action::Admin).await?;
+    let (repo, who) = s.access(&headers, &owner, &name, Action::Admin).await?;
     let role = RepoRole::parse(&body.role)?;
     let id = principal_id(&s, &repo, &principal).await?;
     s.db.set_access(&repo.id, &id, Some(role)).await?;
+    s.db.log_event(
+        &repo.id,
+        "access",
+        &json!({ "principal": principal, "role": role, "by": who_actor(&who) }),
+    )
+    .await?;
     s.forget_repo(&repo);
     Ok(axum::Json(json!({ "principal": principal, "role": role })))
 }
@@ -340,9 +385,15 @@ pub(crate) async fn revoke(
     headers: HeaderMap,
     UrlPath((owner, name, principal)): UrlPath<(String, String, String)>,
 ) -> ApiResult<axum::Json<Value>> {
-    let (repo, _) = s.access(&headers, &owner, &name, Action::Admin).await?;
+    let (repo, who) = s.access(&headers, &owner, &name, Action::Admin).await?;
     let id = principal_id(&s, &repo, &principal).await?;
     s.db.set_access(&repo.id, &id, None).await?;
+    s.db.log_event(
+        &repo.id,
+        "access",
+        &json!({ "principal": principal, "role": null, "by": who_actor(&who) }),
+    )
+    .await?;
     s.forget_repo(&repo);
     Ok(axum::Json(json!({ "principal": principal, "role": null })))
 }

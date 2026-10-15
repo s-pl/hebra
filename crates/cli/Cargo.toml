@@ -27,6 +27,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+rusqlite.workspace = true
 hebra-server.workspace = true
 jiff.workspace = true
 rustls.workspace = true

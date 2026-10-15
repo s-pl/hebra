@@ -67,6 +67,7 @@ pub fn router(server: Arc<Server>) -> Router {
         // Platform
         .route("/api/v1/capabilities", get(system::capabilities))
         .route("/api/v1/plans", get(billing::plans))
+        .route("/api/v1/transparency/key", get(system::transparency_key))
         // Sign-in
         .route("/api/v1/auth/github", post(auth::github))
         .route("/api/v1/auth/invite", post(auth::invite))
@@ -160,6 +161,8 @@ pub fn router(server: Arc<Server>) -> Router {
         )
         .route(&r("/fork"), post(repos::fork))
         .route(&r("/events"), get(repos::events))
+        .route(&r("/transparency"), get(repos::transparency))
+        .route(&r("/queue"), get(reviews::queue))
         .route(&r("/bookmarks"), post(bookmarks::update))
         .route(&r("/log"), get(history::log))
         .route(&r("/commits/{id}"), get(history::commit))

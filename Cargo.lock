@@ -1387,6 +1387,7 @@ dependencies = [
  "hex",
  "jiff",
  "rand 0.10.3",
+ "rusqlite",
  "rustls",
  "serde",
  "serde_json",
@@ -1434,6 +1435,7 @@ name = "hebra-mandate"
 version = "0.1.0"
 dependencies = [
  "biscuit-auth",
+ "ed25519-dalek",
  "hex",
  "jiff",
  "serde",

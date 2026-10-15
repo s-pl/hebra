@@ -11,6 +11,7 @@ mod mcp;
 mod remote;
 mod runner;
 mod verify;
+mod verify_log;
 mod work;
 
 use std::io::Write;

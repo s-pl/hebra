@@ -38,6 +38,13 @@ fn list(v: &Value, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn int(v: &Value, key: &str) -> String {
+    v.get(key)
+        .and_then(Value::as_i64)
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn opt(args: &mut Vec<String>, flag: &str, value: Option<String>) {
     if let Some(value) = value {
         args.push(flag.to_owned());
@@ -101,14 +108,20 @@ fn tools() -> Vec<Tool> {
         Tool {
             name: "hb_commit",
             description: "Describe the working-copy change and start a new empty one on top. Files are recorded automatically; there is no staging.",
-            properties: json!({ "cwd": cwd, "message": { "type": "string" } }),
+            properties: json!({
+                "cwd": cwd,
+                "message": { "type": "string" },
+                "task": { "type": "string", "description": "The task this work is for (e.g. `#12`); merging the review then closes it." },
+            }),
             required: &["message"],
             args: |v| {
-                vec![
+                let mut a = vec![
                     "commit".into(),
                     "--message".into(),
                     s(v, "message").unwrap_or_default(),
-                ]
+                ];
+                opt(&mut a, "--task", s(v, "task"));
+                a
             },
         },
         Tool {
@@ -323,6 +336,155 @@ fn tools() -> Vec<Tool> {
             args: |_| vec!["review".into(), "list".into()],
         },
         Tool {
+            name: "hb_tasks",
+            description: "Tasks on the server. state: `ready` (open, dependencies done: pick from these), `open`, `claimed`, `done`, `all`.",
+            properties: json!({ "cwd": cwd, "state": { "type": "string" } }),
+            required: &[],
+            args: |v| {
+                let mut a = vec!["task".into(), "list".into()];
+                opt(&mut a, "--state", s(v, "state"));
+                a
+            },
+        },
+        Tool {
+            name: "hb_task_show",
+            description: "A task with its acceptance criteria and dependencies.",
+            properties: json!({ "cwd": cwd, "id": { "type": "integer" } }),
+            required: &["id"],
+            args: |v| vec!["task".into(), "show".into(), int(v, "id")],
+        },
+        Tool {
+            name: "hb_task_claim",
+            description: "Claim a task so nobody else takes it while you work (a lease; claim again to renew). Then commit with `task` set to its number so merging your review closes it.",
+            properties: json!({ "cwd": cwd, "id": { "type": "integer" }, "minutes": { "type": "integer" } }),
+            required: &["id"],
+            args: |v| {
+                let mut a = vec!["task".into(), "claim".into(), int(v, "id")];
+                if v.get("minutes").is_some() {
+                    a.push("--for".into());
+                    a.push(int(v, "minutes"));
+                }
+                a
+            },
+        },
+        Tool {
+            name: "hb_task_release",
+            description: "Give a claimed task back (you cannot finish it).",
+            properties: json!({ "cwd": cwd, "id": { "type": "integer" } }),
+            required: &["id"],
+            args: |v| vec!["task".into(), "release".into(), int(v, "id")],
+        },
+        Tool {
+            name: "hb_task_create",
+            description: "Create a task (for example, to split your work into sub-tasks with `parent`, or to record follow-up work).",
+            properties: json!({
+                "cwd": cwd,
+                "title": { "type": "string" },
+                "body": { "type": "string" },
+                "acceptance": { "type": "array", "items": { "type": "string" } },
+                "parent": { "type": "integer" },
+                "after": { "type": "array", "items": { "type": "integer" } },
+            }),
+            required: &["title"],
+            args: |v| {
+                let mut a = vec![
+                    "task".into(),
+                    "create".into(),
+                    s(v, "title").unwrap_or_default(),
+                ];
+                opt(&mut a, "--body", s(v, "body"));
+                for criterion in list(v, "acceptance") {
+                    a.push("--accept".into());
+                    a.push(criterion);
+                }
+                if v.get("parent").is_some() {
+                    a.push("--parent".into());
+                    a.push(int(v, "parent"));
+                }
+                for dep in v
+                    .get("after")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+                {
+                    a.push("--after".into());
+                    a.push(dep.as_i64().unwrap_or_default().to_string());
+                }
+                a
+            },
+        },
+        Tool {
+            name: "hb_review_show",
+            description: "A review: what it changes, its approvals, its checks (with states), and every comment, including line comments to address.",
+            properties: json!({ "cwd": cwd, "id": { "type": "integer" } }),
+            required: &["id"],
+            args: |v| vec!["review".into(), "show".into(), int(v, "id")],
+        },
+        Tool {
+            name: "hb_review_comment",
+            description: "Comment on a review, optionally on a file line (answer reviewers, explain a change).",
+            properties: json!({
+                "cwd": cwd,
+                "id": { "type": "integer" },
+                "body": { "type": "string" },
+                "path": { "type": "string" },
+                "line": { "type": "integer" },
+            }),
+            required: &["id", "body"],
+            args: |v| {
+                let mut a = vec![
+                    "review".into(),
+                    "comment".into(),
+                    int(v, "id"),
+                    s(v, "body").unwrap_or_default(),
+                ];
+                opt(&mut a, "--path", s(v, "path"));
+                if v.get("line").is_some() {
+                    a.push("--line".into());
+                    a.push(int(v, "line"));
+                }
+                a
+            },
+        },
+        Tool {
+            name: "hb_checks",
+            description: "Checks of a commit or bookmark (or recent runs): state, summary, credits. Use hb_check_log to read a failure.",
+            properties: json!({ "cwd": cwd, "revision": { "type": "string" } }),
+            required: &[],
+            args: |v| {
+                let mut a = vec!["checks".into(), "list".into()];
+                a.extend(s(v, "revision"));
+                a
+            },
+        },
+        Tool {
+            name: "hb_check_log",
+            description: "The full log of a check run (to see why it failed).",
+            properties: json!({ "cwd": cwd, "id": { "type": "string" } }),
+            required: &["id"],
+            args: |v| {
+                vec![
+                    "checks".into(),
+                    "log".into(),
+                    s(v, "id").unwrap_or_default(),
+                ]
+            },
+        },
+        Tool {
+            name: "hb_verify_log",
+            description: "Verify the server's transparency log (hash chain, signed head, bookmarks).",
+            properties: json!({ "cwd": cwd }),
+            required: &[],
+            args: |_| vec!["verify-log".into()],
+        },
+        Tool {
+            name: "hb_whoami",
+            description: "Who you are on the server, and who you act for.",
+            properties: json!({ "cwd": cwd }),
+            required: &[],
+            args: |_| vec!["whoami".into()],
+        },
+        Tool {
             name: "hb_undo",
             description: "Undo the last operation. Everything is in the operation log, so nothing is lost.",
             properties: json!({ "cwd": cwd }),
@@ -351,7 +513,11 @@ fn call_tool(base: &Path, params: &Value) -> Value {
         Ok(cli) => cli,
         Err(e) => return tool_error(&e.to_string()),
     };
-    match execute(cli.command, &cwd) {
+    let result = match crate::global::execute(cli.command, &cwd, true) {
+        Ok(result) => result,
+        Err(command) => execute(*command, &cwd),
+    };
+    match result {
         Ok(out) => json!({
             "content": [{ "type": "text", "text": serde_json::to_string_pretty(&out.json).unwrap_or_default() }],
             "structuredContent": out.json,
@@ -376,7 +542,7 @@ fn handle(base: &Path, method: &str, params: &Value) -> Result<Value, (i64, Stri
                 "protocolVersion": version,
                 "capabilities": { "tools": { "listChanged": false } },
                 "serverInfo": { "name": "hebra", "title": "Hebra", "version": env!("CARGO_PKG_VERSION") },
-                "instructions": "Hebra is a version control system for many agents working at once. Start your own workspace with hb_start before editing, claim the paths you will touch with hb_claim, check hb_status for warnings, and finish with hb_commit. Files are recorded automatically; conflicts never block.",
+                "instructions": "Hebra is a version control system for many agents working at once. Pick work with hb_tasks (state `ready`) and claim it with hb_task_claim. Start your own workspace with hb_start before editing, claim the paths you will touch with hb_claim, check hb_status for warnings, and finish with hb_commit (pass `task`). Publish with hb_push to agents/<you>/<topic> and ask for review with hb_review_open; read feedback with hb_review_show and failing checks with hb_check_log. Files are recorded automatically; conflicts never block.",
             }))
         }
         "ping" => Ok(json!({})),

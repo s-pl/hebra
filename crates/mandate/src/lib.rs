@@ -121,6 +121,30 @@ impl Authority {
         self.keys.public()
     }
 
+    /// The public key as hex (to verify [`Authority::sign`]).
+    #[must_use]
+    pub fn public_hex(&self) -> String {
+        self.keys.public().to_bytes_hex()
+    }
+
+    fn signing_key(&self) -> ed25519_dalek::SigningKey {
+        let bytes: [u8; 32] = self
+            .keys
+            .private()
+            .to_bytes()
+            .as_slice()
+            .try_into()
+            .expect("Ed25519 private keys are 32 bytes");
+        ed25519_dalek::SigningKey::from_bytes(&bytes)
+    }
+
+    /// Signs `data` (transparency log heads); hex signature.
+    #[must_use]
+    pub fn sign(&self, data: &[u8]) -> String {
+        use ed25519_dalek::Signer as _;
+        hex::encode(self.signing_key().sign(data).to_bytes())
+    }
+
     /// Signs a root mandate for `account_id`, valid until `expires_at` (unix
     /// seconds) if given. Returns the token and its root id (for revocation).
     pub fn issue(&self, account_id: &str, expires_at: Option<i64>) -> Result<(String, String)> {
@@ -280,6 +304,26 @@ pub fn attenuate(text: &str, r: &Restrictions) -> Result<String> {
     Ok(format!("{PREFIX}{}", token.to_base64()?))
 }
 
+/// Checks a signature made with [`Authority::sign`].
+#[must_use]
+pub fn verify_signature(public_hex: &str, data: &[u8], signature_hex: &str) -> bool {
+    use ed25519_dalek::Verifier as _;
+    let (Ok(key), Ok(sig)) = (hex::decode(public_hex), hex::decode(signature_hex)) else {
+        return false;
+    };
+    let (Ok(key), Ok(sig)) = (
+        <[u8; 32]>::try_from(key.as_slice()),
+        <[u8; 64]>::try_from(sig.as_slice()),
+    ) else {
+        return false;
+    };
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&key) else {
+        return false;
+    };
+    key.verify(data, &ed25519_dalek::Signature::from_bytes(&sig))
+        .is_ok()
+}
+
 /// The root id of a mandate (to revoke it), read without verifying it.
 pub fn root_id(text: &str) -> Result<String> {
     let raw = text.strip_prefix(PREFIX).ok_or(Error::NotAMandate)?;
@@ -412,6 +456,19 @@ mod tests {
         let b = Authority::from_hex(&a.to_hex()).unwrap();
         let (token, _) = a.issue("acct_ana", None).unwrap();
         assert!(b.verify(&token).is_ok());
+    }
+
+    #[test]
+    fn signatures_verify() {
+        let a = Authority::generate();
+        let sig = a.sign(b"head");
+        assert!(verify_signature(&a.public_hex(), b"head", &sig));
+        assert!(!verify_signature(&a.public_hex(), b"other", &sig));
+        assert!(!verify_signature(
+            &Authority::generate().public_hex(),
+            b"head",
+            &sig
+        ));
     }
 
     #[test]

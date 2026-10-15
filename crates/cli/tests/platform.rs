@@ -646,3 +646,133 @@ fn agent_verification_by_contract() {
     );
     assert_eq!(billing["credits_left"], 80);
 }
+
+#[test]
+fn the_transparency_log_verifies_and_detects_tampering() {
+    let env = common::start_server();
+    let ana = env.clone_dir("ana", &env.human);
+    commit_and_push(&env, &ana, "a.txt", "a\n", "main", &[]);
+    commit_and_push(&env, &ana, "a.txt", "b\n", "main", &[]);
+    commit_and_push(&env, &ana, "b.txt", "b\n", "feature", &[]);
+    env.ok(&ana, &["push", "--delete", "feature"], &[]);
+    let report = env.ok(&ana, &["verify-log"], &[]);
+    assert_eq!(report["entries"], 4);
+    let key = report["public_key"].as_str().unwrap().to_owned();
+    env.ok(&ana, &["verify-log", "--key", &key], &[]);
+    let wrong = env.fail(&ana, &["verify-log", "--key", &"0".repeat(64)], &[]);
+    assert!(wrong.contains("not the key you pinned"), "{wrong}");
+
+    // Someone with database access rewrites an old move: detected.
+    if std::env::var("HEBRA_TEST_DATABASE_URL").is_err() {
+        let db =
+            rusqlite::Connection::open(env.root.join("server").join("hebra-server.db")).unwrap();
+        let changed = db
+            .execute(
+                "UPDATE log_entries SET payload = replace(payload, 'feature', 'evil') WHERE seq = 3",
+                [],
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
+        let altered = env.fail(&ana, &["verify-log"], &[]);
+        assert!(altered.contains("altered"), "{altered}");
+    }
+}
+
+#[test]
+fn the_merge_queue_tests_batches_before_moving_main() {
+    let env = common::start(hebra_server::Edition::Cloud);
+    let ana = env.clone_dir("ana", &env.human);
+    fs::create_dir_all(ana.join(".hb")).unwrap();
+    fs::write(
+        ana.join(".hb/checks.toml"),
+        "[[check]]\nname = \"build\"\nrun = \"echo ok\"\non = []\n",
+    )
+    .unwrap();
+    fs::write(
+        ana.join(".hb/policy.toml"),
+        "[bookmarks.main]\nmerge = \"queue\"\nrequired_approvals = 1\nrequired_checks = [\"build\"]\n",
+    )
+    .unwrap();
+    commit_and_push(&env, &ana, "app.rs", "one\ntwo\nthree\n", "main", &[]);
+    env.api(
+        "PUT",
+        &format!("/repos/{}/access/{}", env.repo, env.bob_handle),
+        &env.human,
+        Some(json!({ "role": "write" })),
+    );
+    let bob = env.clone_dir("bob", &env.bob);
+
+    // Two independent changes, both approved and queued.
+    let mut ids = Vec::new();
+    for (n, (file, text)) in [("a.rs", "a\n"), ("b.rs", "b\n")].iter().enumerate() {
+        env.ok(&ana, &["new", "main"], &[]);
+        fs::write(ana.join(file), text).unwrap();
+        env.ok(&ana, &["commit", "-m", file], &[]);
+        let bookmark = format!("change-{n}");
+        env.ok(&ana, &["push", "--bookmark", &bookmark, "-r", "@-"], &[]);
+        let review = env.ok(&ana, &["review", "open", &bookmark, "--title", file], &[]);
+        let id = review["id"].as_i64().unwrap().to_string();
+        env.ok(&bob, &["review", "approve", &id], &[]);
+        let queued = env.ok(&ana, &["review", "merge", &id], &[]);
+        assert_eq!(queued["state"], "queued");
+        ids.push(id);
+    }
+
+    // A runner tests the batch; the queue merges both at once.
+    let home = env.root.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let creds =
+        json!({ "servers": { env.server.clone(): { "mandate": env.human, "handle": env.ana() } } });
+    fs::create_dir_all(&env.config_dir).unwrap();
+    fs::write(env.config_dir.join("credentials.json"), creds.to_string()).unwrap();
+    env.ok(
+        &home,
+        &[
+            "runner",
+            "register",
+            "--owner",
+            env.ana(),
+            "--name",
+            "box",
+            "--server",
+            &env.server,
+        ],
+        &[],
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
+    loop {
+        env.ok(&home, &["runner", "start", "box", "--once"], &[]);
+        let (_, queue) = env.api(
+            "GET",
+            &format!("/repos/{}/queue", env.repo),
+            &env.human,
+            None,
+        );
+        if queue["batches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["state"] == "merged")
+        {
+            assert_eq!(
+                queue["batches"][0]["reviews"].as_array().unwrap().len(),
+                2,
+                "{queue}"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the queue did not merge: {queue}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    for id in &ids {
+        let shown = env.ok(&ana, &["review", "show", id], &[]);
+        assert_eq!(shown["state"], "merged");
+    }
+    env.ok(&ana, &["pull"], &[]);
+    env.ok(&ana, &["new", "main"], &[]);
+    assert!(ana.join("a.rs").exists() && ana.join("b.rs").exists());
+    env.ok(&ana, &["verify-log"], &[]);
+}

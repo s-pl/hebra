@@ -49,6 +49,11 @@ pub(crate) async fn capabilities(State(s): St) -> axum::Json<serde_json::Value> 
     }))
 }
 
+/// The key that signs transparency log heads (publish it; pin it).
+pub(crate) async fn transparency_key(State(s): St) -> axum::Json<serde_json::Value> {
+    axum::Json(json!({ "algorithm": "ed25519", "public_key": s.authority.public_hex() }))
+}
+
 pub(crate) async fn metrics(State(s): St) -> Response {
     (
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],

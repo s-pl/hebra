@@ -135,18 +135,25 @@ impl Policy {
     }
 }
 
+/// Why checks are queued.
+enum Trigger<'a> {
+    /// A bookmark moved (`on = ["push:<pattern>"]`).
+    Push(&'a str),
+    /// A review opened or its source moved (`on = ["review"]`).
+    Review(&'a Review),
+    /// These checks, whatever `on` says (merge queue).
+    Named { names: &'a [String], cause: &'a str },
+}
+
 /// `20m`, `90s`, `2h`, or plain seconds.
 fn parse_timeout(text: Option<&str>) -> ApiResult<u64> {
-    let Some(text) = text else {
+    let Some(text) = text.map(str::trim) else {
         return Ok(DEFAULT_TIMEOUT_SECS);
     };
-    let (n, unit) = text.trim().split_at(
-        text.trim().len()
-            - text
-                .trim()
-                .trim_start_matches(|c: char| c.is_ascii_digit())
-                .len(),
-    );
+    let digits = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
+    let (n, unit) = text.split_at(digits);
     let n: u64 = n
         .parse()
         .map_err(|_| ApiError::bad(format!("invalid timeout `{text}`")))?;
@@ -228,6 +235,41 @@ impl Server {
         review: Option<&Review>,
         needs_approval: bool,
     ) -> ApiResult<Vec<String>> {
+        let trigger = match review {
+            Some(r) => Trigger::Review(r),
+            None => Trigger::Push(bookmark),
+        };
+        self.queue_checks(repo, commit, &trigger, needs_approval)
+            .await
+    }
+
+    /// Queues the named checks on `commit` whatever their `on` says (the
+    /// merge queue runs a target's required checks on each batch).
+    pub(crate) async fn trigger_named_checks(
+        &self,
+        repo: &Repo,
+        commit: ObjectId,
+        names: &[String],
+        cause: &str,
+    ) -> ApiResult<Vec<String>> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.queue_checks(repo, commit, &Trigger::Named { names, cause }, false)
+            .await
+    }
+
+    async fn queue_checks(
+        &self,
+        repo: &Repo,
+        commit: ObjectId,
+        trigger: &Trigger<'_>,
+        needs_approval: bool,
+    ) -> ApiResult<Vec<String>> {
+        let review = match trigger {
+            Trigger::Review(r) => Some(*r),
+            _ => None,
+        };
         let specs = match self.check_specs(repo, commit).await {
             Ok(s) => s,
             Err(e) => {
@@ -258,14 +300,22 @@ impl Server {
             Some(r) => self.bookmark_fresh(repo, &r.target).await?.map(|b| b.hex()),
             None => None,
         };
+        let cause = match trigger {
+            Trigger::Push(b) => format!("push:{b}"),
+            Trigger::Review(r) => format!("review:{}", r.number),
+            Trigger::Named { cause, .. } => (*cause).to_owned(),
+        };
         let mut created = Vec::new();
         for spec in specs {
-            let applies = spec.on.iter().any(|on| match (on.as_str(), review) {
-                ("review", Some(_)) => true,
-                (trigger, _) => trigger
-                    .strip_prefix("push:")
-                    .is_some_and(|pattern| review.is_none() && glob_match(pattern, bookmark)),
-            });
+            let applies = match trigger {
+                Trigger::Named { names, .. } => names.contains(&spec.name),
+                Trigger::Review(_) => spec.on.iter().any(|on| on == "review"),
+                Trigger::Push(bookmark) => spec
+                    .on
+                    .iter()
+                    .filter_map(|on| on.strip_prefix("push:"))
+                    .any(|pattern| glob_match(pattern, bookmark)),
+            };
             if !applies
                 || existing
                     .iter()
@@ -317,12 +367,7 @@ impl Server {
                     kind,
                     spec: &detail,
                     labels: &spec.labels,
-                    cause: review
-                        .map_or_else(
-                            || format!("push:{bookmark}"),
-                            |r| format!("review:{}", r.number),
-                        )
-                        .as_str(),
+                    cause: &cause,
                     review_id: review.map(|r| r.id.as_str()),
                     required: spec.required,
                     state,

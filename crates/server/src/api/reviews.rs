@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::api::bookmarks::changed_paths;
 use crate::api::history::commit_json;
 use crate::api::{St, blocking};
+use crate::config::Edition;
 use crate::db::{NewComment, NewReview, Repo, RepoRole, Review};
 use crate::error::{ApiError, ApiResult};
 use crate::identity::{Action, Principal, contrib_prefix};
@@ -433,6 +434,31 @@ pub(crate) async fn merge(
         .await?
         .ok_or_else(|| ApiError::bad(format!("`{}` no longer exists", review.target)))?;
     let req = requirements(&s, &repo, &review, source, target).await?;
+    let changes_requested = req["changes_requested"]
+        .as_array()
+        .is_some_and(|a| !a.is_empty());
+    if req["merge"] == "queue" && s.edition == Edition::Cloud {
+        // The queue runs the required checks on the merged result; people
+        // still have to approve first.
+        if req["approvals"].as_u64() < req["approvals_needed"].as_u64() || changes_requested {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "not_ready",
+                format!(
+                    "review #{number} needs {} approvals (has {}){}",
+                    req["approvals_needed"],
+                    req["approvals"],
+                    if changes_requested {
+                        " and has changes requested"
+                    } else {
+                        ""
+                    }
+                ),
+            ));
+        }
+        s.enqueue(&repo, &review).await?;
+        return show_review(&s, &repo, Some(&who), number).await;
+    }
     if req["ready"] != true {
         let mut reasons = vec![format!(
             "{} of {} approvals",
@@ -514,6 +540,12 @@ pub(crate) async fn merge(
         ));
     }
     s.metrics.merges.fetch_add(1, Ordering::Relaxed);
+    s.db.log_event(
+        &repo.id,
+        "merge",
+        &json!({ "review": number, "commit": merged.hex(), "by": who.actor() }),
+    )
+    .await?;
     for task in task_numbers(&commits) {
         if s.db
             .close_task(&repo.id, task, "done", &format!("review #{number}"))
@@ -574,6 +606,19 @@ pub(crate) async fn close(
     .await?;
     s.notify(&repo, "review", json!({ "id": number, "state": "closed" }));
     show_review(&s, &repo, Some(&who), number).await
+}
+
+/// The merge queue of a repository: waiting reviews and recent batches.
+pub(crate) async fn queue(
+    State(s): St,
+    headers: HeaderMap,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
+) -> ApiResult<axum::Json<Value>> {
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
+    Ok(axum::Json(json!({
+        "queued": s.db.reviews(&repo.id, "queued").await?,
+        "batches": s.db.batches(&repo.id, 20).await?,
+    })))
 }
 
 impl Server {

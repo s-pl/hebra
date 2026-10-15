@@ -43,6 +43,10 @@ pub enum Command {
     Commit {
         #[arg(short, long)]
         message: String,
+        /// The task this work is for (`#12`); merging its review closes it.
+        /// Overrides HB_TASK.
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Start a new change on top of one or more revisions.
     New {
@@ -155,6 +159,15 @@ pub enum Command {
     Presence {
         #[arg(default_value = "origin")]
         remote: String,
+    },
+    /// Check the server's transparency log: hash chain, signed head, and that
+    /// the bookmarks it shows are the ones it recorded.
+    VerifyLog {
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Fail unless the log is signed by this public key (hex).
+        #[arg(long)]
+        key: Option<String>,
     },
     /// Tasks: work items with acceptance criteria that agents claim with a lease.
     #[command(subcommand)]

@@ -13,6 +13,7 @@ pub mod model;
 pub mod oplog;
 pub mod repo;
 pub mod store;
+pub mod transparency;
 pub mod transport;
 pub mod wc;
 

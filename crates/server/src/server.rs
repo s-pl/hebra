@@ -310,26 +310,79 @@ impl Server {
 
     /// Housekeeping every replica runs: forget idle rate-limit buckets,
     /// delete stale presence and expired sign-in secrets, re-queue checks
-    /// whose runner vanished.
+    /// whose runner vanished. Jobs that must run once (merge queue, usage
+    /// reporting, storage metering) go to whichever replica holds their
+    /// lease.
     pub fn spawn_maintenance(self: &Arc<Self>) {
         let server = Arc::clone(self);
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(Duration::from_secs(30));
+            let replica = db::new_id("replica");
+            let mut tick = tokio::time::interval(Duration::from_secs(5));
+            let mut round: u64 = 0;
             loop {
                 tick.tick().await;
-                server.limiter.prune();
-                let now = db::now_ms();
-                if let Err(e) = server.db.prune_presence(now - PRESENCE_TTL_MS).await {
-                    tracing::warn!(error = e.message, "pruning presence failed");
-                }
-                if let Err(e) = server.db.prune_auth().await {
-                    tracing::warn!(error = e.message, "pruning sign-in secrets failed");
-                }
-                if let Err(e) = server.requeue_expired_checks().await {
-                    tracing::warn!(error = e.message, "re-queueing checks failed");
+                round += 1;
+                if let Err(e) = server.housekeeping(&replica, round).await {
+                    tracing::warn!(error = e.message, "maintenance");
                 }
             }
         });
+    }
+
+    async fn housekeeping(&self, replica: &str, round: u64) -> ApiResult<()> {
+        // Every replica, every 30 s.
+        if round.is_multiple_of(6) {
+            self.limiter.prune();
+            self.db
+                .prune_presence(db::now_ms() - PRESENCE_TTL_MS)
+                .await?;
+            self.db.prune_auth().await?;
+            self.requeue_expired_checks().await?;
+        }
+        // One replica: the merge queue, every 5 s.
+        if self.edition == Edition::Cloud
+            && self
+                .db
+                .acquire_lease("merge-queue", replica, 30_000)
+                .await?
+        {
+            self.run_merge_queue().await?;
+        }
+        // One replica: usage to Stripe, every minute.
+        if round.is_multiple_of(12)
+            && let Some(stripe) = &self.stripe
+            && self
+                .db
+                .acquire_lease("usage-report", replica, 120_000)
+                .await?
+        {
+            crate::billing::stripe::report_usage(&self.http, stripe, &self.db).await?;
+        }
+        // One replica: storage, every hour (recorded once a day).
+        if round % 720 == 1
+            && self.plans.is_some()
+            && self
+                .db
+                .acquire_lease("storage-meter", replica, 3_600_000)
+                .await?
+        {
+            self.meter_storage().await?;
+        }
+        Ok(())
+    }
+
+    /// Records each owner's storage for today (GB, rounded up).
+    async fn meter_storage(&self) -> ApiResult<()> {
+        for owner in self.db.repo_owners().await? {
+            let mut bytes: u64 = 0;
+            for repo in self.db.repo_ids_of(&owner).await? {
+                let objects = &self.objects;
+                bytes += tokio::task::block_in_place(|| objects.size(&repo)).unwrap_or(0);
+            }
+            let gigabytes = i64::try_from(bytes.div_ceil(1 << 30)).unwrap_or(i64::MAX);
+            self.db.record_storage(&owner, gigabytes).await?;
+        }
+        Ok(())
     }
 }
 

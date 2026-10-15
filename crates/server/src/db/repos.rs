@@ -452,6 +452,9 @@ impl Db {
                     .await?;
             return Ok(Err(Stale(current)));
         }
+        let entry = json!({ "name": m.name, "old": m.old, "new": m.new, "by": m.actor });
+        self.append_entry(&mut tx, m.repo_id, "bookmark", &entry)
+            .await?;
         let detail = json!({ "name": m.name, "old": m.old, "new": m.new }).to_string();
         sqlx::query("INSERT INTO events (repo_id, at, actor, kind, detail) VALUES ($1, $2, $3, 'bookmark', $4)")
             .bind(m.repo_id)

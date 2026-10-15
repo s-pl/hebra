@@ -33,6 +33,7 @@ mod merging;
 pub mod metrics;
 pub mod names;
 pub mod objects;
+mod queue;
 pub mod ratelimit;
 pub mod serve;
 mod server;

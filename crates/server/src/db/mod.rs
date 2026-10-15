@@ -11,6 +11,8 @@
 mod accounts;
 mod billing;
 mod checks;
+mod jobs;
+mod log;
 mod repos;
 mod reviews;
 mod sessions;
@@ -26,6 +28,8 @@ use crate::error::{ApiError, ApiResult};
 pub use accounts::{Account, AccountKind, Member, OrgRole, Team};
 pub use billing::{Subscription, UsageLine};
 pub use checks::{CheckRun, LogChunk, NewCheckRun, Runner};
+pub use jobs::{MAX_BATCH, MergeBatch};
+pub use log::LogEntry;
 pub use repos::{Move, NewRepo, Repo, RepoRole, RepoSummary, Stale};
 pub use reviews::{Approval, Comment, NewComment, NewReview, Review};
 pub use sessions::{DeviceCode, MandateRecord};
@@ -44,12 +48,20 @@ struct Migration {
     sqlite: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "platform",
-    postgres: include_str!("../../migrations/postgres/0001_platform.sql"),
-    sqlite: include_str!("../../migrations/sqlite/0001_platform.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "platform",
+        postgres: include_str!("../../migrations/postgres/0001_platform.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0001_platform.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "queue_and_log",
+        postgres: include_str!("../../migrations/postgres/0002_queue_and_log.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0002_queue_and_log.sql"),
+    },
+];
 
 /// Serialises migrations when many replicas start at once.
 const MIGRATION_LOCK: i64 = 0x0068_6562_7261; // "hebra"
