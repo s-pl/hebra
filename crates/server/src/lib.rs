@@ -55,6 +55,15 @@ const MAX_PUSH_BYTES: usize = 1024 * 1024 * 1024;
 pub struct Server {
     data: PathBuf,
     db: Mutex<Connection>,
+    live: tokio::sync::broadcast::Sender<LiveEvent>,
+}
+
+/// Something that just happened in a repository, sent to live subscribers.
+#[derive(Debug, Clone)]
+pub struct LiveEvent {
+    pub repo: String,
+    pub kind: &'static str,
+    pub data: Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -200,9 +209,11 @@ impl Server {
         conn.busy_timeout(std::time::Duration::from_secs(30))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.execute_batch(SCHEMA)?;
+        let (live, _) = tokio::sync::broadcast::channel(1024);
         Ok(Self {
             data: data.to_path_buf(),
             db: Mutex::new(conn),
+            live,
         })
     }
 
@@ -334,6 +345,15 @@ impl Server {
             db.prepare("SELECT pattern FROM protected WHERE repo = ?1 ORDER BY pattern")?;
         let rows = stmt.query_map([repo], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Tells live subscribers of `repo`; nobody listening is fine.
+    fn notify(&self, repo: &str, kind: &'static str, data: Value) {
+        let _ = self.live.send(LiveEvent {
+            repo: repo.to_owned(),
+            kind,
+            data,
+        });
     }
 
     fn event(&self, repo: &str, actor: &str, kind: &str, detail: &Value) -> ApiResult<()> {
@@ -564,6 +584,11 @@ async fn update_bookmark(
         };
         drop(db);
         s.event(&repo, &token.display(), "bookmark", &json!({ "name": body.name, "old": body.old, "new": body.new }))?;
+        s.notify(
+            &repo,
+            "bookmark",
+            json!({ "name": body.name, "old": body.old, "new": body.new, "actor": token.display() }),
+        );
         Ok(axum::Json(json!({ "name": body.name, "target": body.new })))
     })
     .await
@@ -664,6 +689,9 @@ async fn commit(
 #[derive(Deserialize)]
 struct TreeQuery {
     path: Option<String>,
+    /// Return every file path in the tree (for file explorers).
+    #[serde(default)]
+    recursive: bool,
 }
 
 async fn tree(
@@ -678,6 +706,10 @@ async fn tree(
         let id = s.resolve(&repo, &id)?;
         let c: Commit = store.read_json(COMMIT, &id)?;
         let tree: Tree = store.read_json(TREE, &c.tree)?;
+        if q.recursive {
+            let files: Vec<&String> = tree.files.keys().collect();
+            return Ok(axum::Json(json!({ "kind": "list", "files": files })));
+        }
         let path = q.path.unwrap_or_default().trim_matches('/').to_owned();
         if let Some(entry) = tree.files.get(&path) {
             let bytes = store.read(hebra_core::store::BLOB, &entry.blob)?;
@@ -757,6 +789,7 @@ async fn post_presence(
              ON CONFLICT (repo, client) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
             params![repo, body.client, payload.to_string(), jiff::Timestamp::now().as_second()],
         )?;
+        s.notify(&repo, "presence", json!({ "client": body.client, "actor": token.display() }));
         Ok(axum::Json(json!({ "ok": true })))
     })
     .await
@@ -791,6 +824,33 @@ async fn events(
     .await
 }
 
+/// Server-Sent Events: bookmark moves and presence updates for one repository,
+/// as they happen. Lagging clients get a `resync` event.
+async fn stream(
+    State(s): St,
+    UrlPath(repo): UrlPath<String>,
+    headers: HeaderMap,
+) -> ApiResult<
+    axum::response::sse::Sse<
+        impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, axum::Error>>,
+    >,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use tokio_stream::StreamExt;
+    use tokio_stream::wrappers::BroadcastStream;
+
+    let check = Arc::clone(&s);
+    let check_repo = repo.clone();
+    blocking(move || check.require_repo(&check_repo, &headers)).await?;
+    let hello = tokio_stream::once(Ok(Event::default().event("ready").data("{}")));
+    let updates = BroadcastStream::new(s.live.subscribe()).filter_map(move |item| match item {
+        Ok(ev) if ev.repo == repo => Some(Event::default().event(ev.kind).json_data(ev.data)),
+        Ok(_) => None,
+        Err(_) => Some(Ok(Event::default().event("resync").data("{}"))),
+    });
+    Ok(Sse::new(hello.chain(updates)).keep_alive(KeepAlive::default()))
+}
+
 pub fn router(server: Arc<Server>) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
@@ -810,6 +870,7 @@ pub fn router(server: Arc<Server>) -> Router {
             get(get_presence).post(post_presence),
         )
         .route("/api/v1/repos/{repo}/events", get(events))
+        .route("/api/v1/repos/{repo}/stream", get(stream))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(server)
 }

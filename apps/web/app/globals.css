@@ -354,6 +354,70 @@ body {
     visibility 0s;
 }
 
+/* ------------------------------------------------------------------ code */
+
+/* Shiki emits both themes as CSS variables; pick one per theme. */
+.code-view .shiki,
+.code-view .shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
+}
+[data-theme="dark"] .code-view .shiki,
+[data-theme="dark"] .code-view .shiki span {
+  color: var(--shiki-dark);
+}
+.code-view pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 4;
+}
+.code-view code {
+  counter-reset: line;
+  display: block;
+  min-width: max-content;
+}
+.code-view .line {
+  display: inline-block;
+  width: 100%;
+  padding-right: 24px;
+}
+.code-view .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.5rem;
+  margin-right: 1.25rem;
+  padding-right: 0.75rem;
+  text-align: right;
+  color: color-mix(in oklch, var(--text-3) 70%, transparent);
+  border-right: 1px solid var(--border);
+  user-select: none;
+}
+.code-view .line:hover {
+  background: color-mix(in oklch, var(--text) 4%, transparent);
+}
+.code-view.code-plain .line::before {
+  display: none;
+}
+.code-view.code-plain .line {
+  padding-left: 16px;
+}
+
+/* Command palette. */
+.palette {
+  animation: palette-in 180ms var(--ease-out);
+}
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
 /* ------------------------------------------------------------ hero words */
 
 /* Each headline word rises out of its own mask on load. */
@@ -792,7 +856,8 @@ body {
     animation: none;
     transform: none;
   }
-  .setup-swap {
+  .setup-swap,
+  .palette {
     animation: none;
   }
   .nav-popover,

@@ -80,3 +80,17 @@ export function ago(timestamp: string | number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+export type RepoInfo = { name: string; bookmarks: Record<string, string>; protected: string[] };
+
+/** Everything the hub frame needs: repository list and, optionally, one repository. */
+export async function loadShell(repo?: string) {
+  const repos = await hub<{ repos: { name: string; bookmarks: number; last_activity: string | null }[] }>("/repos");
+  if (!repo) return { repos: repos.repos, info: null, presence: [] as PresenceEntry[] };
+  const enc = encodeURIComponent(repo);
+  const [info, presence] = await Promise.all([
+    hub<RepoInfo>(`/repos/${enc}`),
+    hub<{ presence: PresenceEntry[] }>(`/repos/${enc}/presence`).catch(() => ({ presence: [] as PresenceEntry[] })),
+  ]);
+  return { repos: repos.repos, info, presence: presence.presence };
+}

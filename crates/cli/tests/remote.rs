@@ -179,3 +179,38 @@ fn push_pull_permissions_and_presence() {
         "expected a cross-machine warning: {status}"
     );
 }
+
+#[test]
+fn live_stream_announces_pushes() {
+    use std::io::{BufRead, BufReader};
+
+    let env = start_server();
+    let stream_url = env.url.replace("/acme", "/api/v1/repos/acme/stream");
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder().build().into();
+        let mut resp = agent.get(&stream_url).call().unwrap();
+        let reader = BufReader::new(resp.body_mut().as_reader());
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            if let Some(kind) = line.strip_prefix("event: ") {
+                if tx.send(kind.to_owned()).is_err() {
+                    break;
+                }
+            }
+        }
+    });
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap(),
+        "ready"
+    );
+
+    let a = clone_dir(&env, "ana", &env.human);
+    fs::write(a.join("x.txt"), "x\n").unwrap();
+    ok(&a, &["commit", "-m", "x"], &[]);
+    ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap(),
+        "bookmark"
+    );
+}
