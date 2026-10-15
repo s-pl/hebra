@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CopyCommand } from "@/components/copy-command";
 import { GraphCell, graphWidth } from "@/components/hub/graph-cell";
 import { LiveRefresh } from "@/components/hub/live";
+import { LiveList } from "@/components/hub/motion";
 import { HubShell } from "@/components/hub/shell";
 import { ActorAvatar, Chip, ServerDown } from "@/components/hub/ui";
 import { layoutGraph } from "@/lib/graph";
@@ -71,7 +72,15 @@ export default async function RepoPage({ params, searchParams }: Params) {
   return (
     <HubShell
       repos={shell.repos.map((r) => r.name)}
-      repo={{ name: repo, bookmarks: info.bookmarks, protected: info.protected, presence: shell.presence, rev }}
+      me={shell.me}
+      repo={{
+        name: repo,
+        bookmarks: info.bookmarks,
+        protected: info.protected,
+        presence: shell.presence,
+        rev,
+        openReviews: shell.openReviews,
+      }}
       crumbs={[{ label: repo }, ...(rev ? [{ label: rev }] : [])]}
       palette={commits.map((c) => ({
         group: "Changes",
@@ -157,46 +166,48 @@ export default async function RepoPage({ params, searchParams }: Params) {
               .
             </p>
           ) : (
-            <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {working.map((w) => {
+            <LiveList
+              className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+              items={working.map((w) => {
                 const clash = w.changes.some((p) => overlaps.includes(p));
-                return (
-                  <li
-                    key={`${w.machine}-${w.name}-${w.actor}`}
-                    className={`rounded-xl border bg-surface p-4 transition-[border-color,box-shadow] duration-300 ${
-                      clash
-                        ? "border-[color-mix(in_oklch,var(--term-warn)_60%,var(--border))] shadow-[0_0_0_3px_color-mix(in_oklch,var(--term-warn)_14%,transparent)]"
-                        : "border-line"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <ActorAvatar actor={actorFromLabel(w.actor)} size={30} />
-                      <div className="min-w-0 leading-tight">
-                        <p className="truncate font-medium text-[14px]">{w.actor}</p>
-                        <p className="truncate text-[12px] text-ink-3">
-                          {w.name} · {w.machine} · {ago(w.at)}
-                        </p>
+                return {
+                  key: `${w.machine}-${w.name}-${w.actor}`,
+                  className: `rounded-xl border bg-surface p-4 transition-[border-color,box-shadow] duration-300 ${
+                    clash
+                      ? "border-[color-mix(in_oklch,var(--term-warn)_60%,var(--border))] shadow-[0_0_0_3px_color-mix(in_oklch,var(--term-warn)_14%,transparent)]"
+                      : "border-line"
+                  }`,
+                  node: (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <ActorAvatar actor={actorFromLabel(w.actor)} size={30} />
+                        <div className="min-w-0 leading-tight">
+                          <p className="truncate font-medium text-[14px]">{w.actor}</p>
+                          <p className="truncate text-[12px] text-ink-3">
+                            {w.name} · {w.machine} · {ago(w.at)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    {w.task ? <p className="mt-3 truncate text-[13px] text-ink-2">{w.task}</p> : null}
-                    <ul className="mt-3 grid gap-1">
-                      {w.changes.slice(0, 5).map((p) => (
-                        <li key={p} className="flex items-center gap-2 font-mono text-[12px]">
-                          <span className={overlaps.includes(p) ? "text-[oklch(0.7_0.15_70)]" : "text-ink-3"}>
-                            {overlaps.includes(p) ? "▲" : "●"}
-                          </span>
-                          <span className={`truncate ${overlaps.includes(p) ? "text-ink" : "text-ink-2"}`}>{p}</span>
-                        </li>
-                      ))}
-                      {w.changes.length === 0 ? <li className="text-[12px] text-ink-3">No changes yet</li> : null}
-                      {w.changes.length > 5 ? (
-                        <li className="text-[12px] text-ink-3">+{w.changes.length - 5} more</li>
-                      ) : null}
-                    </ul>
-                  </li>
-                );
+                      {w.task ? <p className="mt-3 truncate text-[13px] text-ink-2">{w.task}</p> : null}
+                      <ul className="mt-3 grid gap-1">
+                        {w.changes.slice(0, 5).map((p) => (
+                          <li key={p} className="flex items-center gap-2 font-mono text-[12px]">
+                            <span className={overlaps.includes(p) ? "text-[oklch(0.7_0.15_70)]" : "text-ink-3"}>
+                              {overlaps.includes(p) ? "▲" : "●"}
+                            </span>
+                            <span className={`truncate ${overlaps.includes(p) ? "text-ink" : "text-ink-2"}`}>{p}</span>
+                          </li>
+                        ))}
+                        {w.changes.length === 0 ? <li className="text-[12px] text-ink-3">No changes yet</li> : null}
+                        {w.changes.length > 5 ? (
+                          <li className="text-[12px] text-ink-3">+{w.changes.length - 5} more</li>
+                        ) : null}
+                      </ul>
+                    </>
+                  ),
+                };
               })}
-            </ul>
+            />
           )}
         </section>
 

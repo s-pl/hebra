@@ -9,15 +9,16 @@ export const metadata: Metadata = { title: "Hub · hebra" };
 
 export default async function HubIndex() {
   let repos: Awaited<ReturnType<typeof loadShell>>["repos"] = [];
+  let me: Awaited<ReturnType<typeof loadShell>>["me"] = null;
   let error: string | null = null;
   try {
-    repos = (await loadShell()).repos;
+    ({ repos, me } = await loadShell());
   } catch (e) {
     error = e instanceof HubError ? e.message : String(e);
   }
 
   return (
-    <HubShell repos={repos.map((r) => r.name)} crumbs={[{ label: "Repositories" }]}>
+    <HubShell repos={repos.map((r) => r.name)} me={me} crumbs={[{ label: "Repositories" }]}>
       <div className="mx-auto max-w-[1180px]">
         <h1 className="font-semibold text-[28px] tracking-[-0.025em]">Repositories</h1>
         <p className="mt-1 text-[13.5px] text-ink-3">Everything this Hebra server hosts.</p>

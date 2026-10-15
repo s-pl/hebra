@@ -27,7 +27,7 @@ export function LiveRefresh({ repo }: { repo: string }) {
       }, 250);
     };
     source.addEventListener("ready", () => setState("live"));
-    for (const kind of ["bookmark", "presence", "resync"]) source.addEventListener(kind, refresh);
+    for (const kind of ["bookmark", "presence", "review", "resync"]) source.addEventListener(kind, refresh);
     source.onerror = () => setState(source.readyState === EventSource.CLOSED ? "offline" : "connecting");
     source.onopen = () => setState("live");
     return () => {

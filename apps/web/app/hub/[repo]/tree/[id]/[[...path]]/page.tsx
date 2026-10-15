@@ -93,9 +93,16 @@ export default async function CodePage({ params }: Params) {
   return (
     <HubShell
       repos={shell.repos.map((r) => r.name)}
+      me={shell.me}
       repo={
         info
-          ? { name: repo, bookmarks: info.bookmarks, protected: info.protected, presence: shell.presence }
+          ? {
+              name: repo,
+              bookmarks: info.bookmarks,
+              protected: info.protected,
+              presence: shell.presence,
+              openReviews: shell.openReviews,
+            }
           : undefined
       }
       crumbs={crumbs}

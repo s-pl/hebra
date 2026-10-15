@@ -43,9 +43,16 @@ export default async function ChangePage({ params }: Params) {
   return (
     <HubShell
       repos={shell.repos.map((r) => r.name)}
+      me={shell.me}
       repo={
         info
-          ? { name: repo, bookmarks: info.bookmarks, protected: info.protected, presence: shell.presence }
+          ? {
+              name: repo,
+              bookmarks: info.bookmarks,
+              protected: info.protected,
+              presence: shell.presence,
+              openReviews: shell.openReviews,
+            }
           : undefined
       }
       crumbs={[{ href: `/hub/${repo}`, label: repo }, { label: `change ${c.change_id.slice(0, 8)}` }]}

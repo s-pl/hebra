@@ -1,5 +1,7 @@
 /** Server-side access to a hebra-server API for the /hub pages. */
 
+import { cookies } from "next/headers";
+
 export const SERVER_URL = (process.env.HEBRA_SERVER_URL ?? "http://127.0.0.1:4600").replace(/\/$/, "");
 
 export type Actor = { name: string; kind: "human" | "agent"; on_behalf_of?: string };
@@ -52,10 +54,34 @@ export class HubError extends Error {
   }
 }
 
-export async function hub<T>(path: string): Promise<T> {
+export const SESSION_COOKIE = "hb_session";
+
+/** The signed-in user's server token (httpOnly cookie), if any. */
+export async function sessionToken(): Promise<string | null> {
+  return (await cookies()).get(SESSION_COOKIE)?.value ?? null;
+}
+
+export type Me = { name: string; kind: "human" | "agent"; admin: boolean; allow: string[]; display: string };
+
+/** Who is signed in, or null. */
+export async function currentUser(): Promise<Me | null> {
+  if (!(await sessionToken())) return null;
+  return hub<Me>("/me").catch(() => null);
+}
+
+export async function hub<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const token = await sessionToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (init.body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
-    res = await fetch(`${SERVER_URL}/api/v1${path}`, { cache: "no-store" });
+    res = await fetch(`${SERVER_URL}/api/v1${path}`, {
+      cache: "no-store",
+      method: init.method ?? "GET",
+      headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
   } catch {
     throw new HubError(`Cannot reach the Hebra server at ${SERVER_URL}.`, 0);
   }
@@ -83,14 +109,35 @@ export function ago(timestamp: string | number): string {
 
 export type RepoInfo = { name: string; bookmarks: Record<string, string>; protected: string[] };
 
+export type Review = {
+  id: number;
+  source: string;
+  target: string;
+  title: string;
+  body: string;
+  author: string;
+  state: "open" | "merged" | "closed";
+  created_at: string;
+  updated_at: string;
+  closed_by: string | null;
+  merged_commit: string | null;
+  source_commit?: string;
+  target_commit?: string;
+  mergeability?: { kind: "up_to_date" | "fast_forward" | "clean" } | { kind: "conflicts"; paths: string[] };
+  files?: FileDiff[];
+  commits?: CommitSummary[];
+};
+
 /** Everything the hub frame needs: repository list and, optionally, one repository. */
 export async function loadShell(repo?: string) {
   const repos = await hub<{ repos: { name: string; bookmarks: number; last_activity: string | null }[] }>("/repos");
-  if (!repo) return { repos: repos.repos, info: null, presence: [] as PresenceEntry[] };
+  const me = await currentUser();
+  if (!repo) return { repos: repos.repos, info: null, presence: [] as PresenceEntry[], me, openReviews: 0 };
   const enc = encodeURIComponent(repo);
-  const [info, presence] = await Promise.all([
+  const [info, presence, reviews] = await Promise.all([
     hub<RepoInfo>(`/repos/${enc}`),
     hub<{ presence: PresenceEntry[] }>(`/repos/${enc}/presence`).catch(() => ({ presence: [] as PresenceEntry[] })),
+    hub<{ reviews: Review[] }>(`/repos/${enc}/reviews`).catch(() => ({ reviews: [] as Review[] })),
   ]);
-  return { repos: repos.repos, info, presence: presence.presence };
+  return { repos: repos.repos, info, presence: presence.presence, me, openReviews: reviews.reviews.length };
 }

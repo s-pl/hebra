@@ -153,3 +153,20 @@ hebra-server serve`}
     </div>
   );
 }
+
+/** Review state pill. */
+export function StateBadge({ state }: { state: "open" | "merged" | "closed" }) {
+  const tone = {
+    open: "border-[color-mix(in_oklch,oklch(0.6_0.14_150)_45%,var(--border))] bg-[color-mix(in_oklch,oklch(0.6_0.14_150)_12%,var(--surface))] text-[oklch(0.5_0.14_150)]",
+    merged:
+      "border-[color-mix(in_oklch,var(--thread-4)_45%,var(--border))] bg-[color-mix(in_oklch,var(--thread-4)_12%,var(--surface))] text-[var(--thread-4)]",
+    closed: "border-line bg-surface-2 text-ink-3",
+  }[state];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium text-[11.5px] capitalize ${tone}`}
+    >
+      {state}
+    </span>
+  );
+}

@@ -23,6 +23,7 @@ unset CLAUDECODE HB_TOKEN HB_ACTOR HB_ACTOR_KIND HB_ON_BEHALF_OF HB_TASK HB_SESS
 ANA=$("$SERVER" --data "$DATA" token create --name ana --admin 2>/dev/null)
 CLAUDE=$("$SERVER" --data "$DATA" token create --name claude-code --agent --for ana 2>/dev/null)
 CODEX=$("$SERVER" --data "$DATA" token create --name codex --agent --for ana 2>/dev/null)
+echo "$ANA" > "$WORK/ana.token"
 
 "$SERVER" --data "$DATA" serve --addr "$ADDR" &
 SERVER_PID=$!
@@ -60,6 +61,8 @@ HB_TASK="Add Google sign-in" HB_SESSION=sess_7Kq2 HB_PROMPT="Add Google sign-in 
 agent claude-code "$HB" push --bookmark agents/claude-code/google-sign-in -r @-
 echo "claude-code tries to move main (refused: main is protected)"
 agent claude-code "$HB" push --bookmark main -r @- 2>&1 | tail -1 || true
+echo "claude-code asks for a review"
+agent claude-code "$HB" review open agents/claude-code/google-sign-in --title "Add Google sign-in"   --body "Adds login_with_google next to the password login, and audits every login."
 
 echo "codex documents local development"
 clone codex codex "$CODEX"
@@ -69,12 +72,12 @@ printf '# acme\n\nThe acme app. Sign in with email or Google.\n\n## Development\
 HB_TASK="Document local setup" agent codex "$HB" commit -m "Document local development" >/dev/null
 agent codex "$HB" push --bookmark agents/codex/docs -r @-
 
-echo "ana reviews both and merges them into main"
+agent codex "$HB" review open agents/codex/docs --title "Document local development"
+
+echo "ana approves claude-code's review; the server merges it into main"
 cd "$WORK/ana"
-"$HB" pull >/dev/null
-"$HB" merge agents/claude-code/google-sign-in@origin agents/codex/docs@origin >/dev/null
-"$HB" commit -m "Merge Google sign-in and docs" >/dev/null
-"$HB" push --bookmark main -r @-
+"$HB" review merge 1
+"$HB" pull >/dev/null && "$HB" new main >/dev/null
 
 echo "codex and ana both start editing src/auth.rs"
 cd "$WORK/codex" && printf '\n// TODO: rate limit\n' >> src/auth.rs && agent codex "$HB" status >/dev/null
@@ -82,5 +85,6 @@ cd "$WORK/ana" && printf '\n// review\n' >> src/auth.rs && "$HB" status | tail -
 
 echo
 echo "Server: $URL   (web: HEBRA_SERVER_URL=http://$ADDR, then http://localhost:3000/hub/acme)"
+echo "Sign in to the hub as ana with the token in $WORK/ana.token"
 echo "Press Ctrl+C to stop."
 wait $SERVER_PID

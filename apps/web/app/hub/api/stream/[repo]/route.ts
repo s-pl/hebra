@@ -1,4 +1,4 @@
-import { SERVER_URL } from "@/lib/hub";
+import { SERVER_URL, sessionToken } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -9,10 +9,14 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request, { params }: { params: Promise<{ repo: string }> }) {
   const { repo } = await params;
+  const token = await sessionToken();
   let upstream: Response;
   try {
     upstream = await fetch(`${SERVER_URL}/api/v1/repos/${encodeURIComponent(repo)}/stream`, {
-      headers: { Accept: "text/event-stream" },
+      headers: {
+        Accept: "text/event-stream",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       cache: "no-store",
       signal: request.signal,
     });
