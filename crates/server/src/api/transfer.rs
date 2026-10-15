@@ -1,21 +1,19 @@
 //! Moving objects: packs for pulls, object uploads for pushes.
 
-use axum::extract::{Path as UrlPath, State};
-use axum::http::HeaderMap;
-use serde::Deserialize;
-use serde_json::{Value, json};
-
-use crate::api::St;
-use crate::error::{ApiError, ApiResult};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 use axum::body::Bytes;
-use axum::http::header;
+use axum::extract::{Path as UrlPath, State};
+use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use hebra_core::{ObjectId, transport};
+use serde::Deserialize;
+use serde_json::{Value, json};
 
-use crate::api::blocking;
+use crate::api::{St, blocking};
+use crate::error::{ApiError, ApiResult};
+use crate::identity::Action;
 
 #[derive(Deserialize)]
 pub(crate) struct PackRequest {
@@ -24,13 +22,17 @@ pub(crate) struct PackRequest {
     have: Vec<String>,
 }
 
+/// The objects reachable from `want` that the client lacks (`have`).
 pub(crate) async fn pack(
     State(s): St,
-    UrlPath(repo): UrlPath<String>,
     headers: HeaderMap,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
     axum::Json(body): axum::Json<PackRequest>,
 ) -> ApiResult<Response> {
-    s.require_repo(&repo, &headers).await?;
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
+    if body.want.len() > 10_000 || body.have.len() > 100_000 {
+        return Err(ApiError::bad("too many ids in one request"));
+    }
     let store = s.store(&repo);
     blocking(move || {
         let parse = |ids: &[String]| {
@@ -55,14 +57,15 @@ pub(crate) async fn pack(
     .await
 }
 
+/// Stores objects for a push. Objects are verified (their id is their hash)
+/// and only become reachable when a bookmark moves to them.
 pub(crate) async fn receive_objects(
     State(s): St,
-    UrlPath(repo): UrlPath<String>,
     headers: HeaderMap,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
     body: Bytes,
 ) -> ApiResult<axum::Json<Value>> {
-    s.require_repo(&repo, &headers).await?;
-    s.require_token(&headers).await?;
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Upload).await?;
     let store = s.store(&repo);
     let (received, new) = blocking(move || {
         let objects = transport::decode(&body)?;

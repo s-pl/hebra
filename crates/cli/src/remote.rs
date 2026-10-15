@@ -20,18 +20,22 @@ pub struct Remote {
     agent: ureq::Agent,
 }
 
-fn split_url(url: &str) -> Result<(String, String)> {
-    let trimmed = url.trim_end_matches('/');
-    let (base, repo) = trimmed
-        .rsplit_once('/')
-        .ok_or_else(|| anyhow!("remote URL must look like http://host:4600/<repo>"))?;
-    if !(base.starts_with("http://") || base.starts_with("https://"))
-        || repo.is_empty()
-        || base.ends_with(':')
-    {
-        bail!("remote URL must look like http://host:4600/<repo>");
+/// `https://host[:port]/owner/repo` -> (`https://host[:port]`, `owner/repo`).
+pub(crate) fn split_url(url: &str) -> Result<(String, String)> {
+    const SHAPE: &str = "remote URL must look like https://host/<owner>/<repo>";
+    let trimmed = url.trim().trim_end_matches('/');
+    let scheme_end = trimmed.find("://").ok_or_else(|| anyhow!(SHAPE))?;
+    let scheme = &trimmed[..scheme_end];
+    if scheme != "http" && scheme != "https" {
+        bail!(SHAPE);
     }
-    Ok((base.to_owned(), repo.to_owned()))
+    let rest = &trimmed[scheme_end + 3..];
+    let (host, path) = rest.split_once('/').ok_or_else(|| anyhow!(SHAPE))?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if host.is_empty() || parts.len() != 2 || parts.iter().any(|p| p.is_empty()) {
+        bail!(SHAPE);
+    }
+    Ok((format!("{scheme}://{host}"), path.to_owned()))
 }
 
 fn agent(timeout: Duration) -> ureq::Agent {
@@ -49,11 +53,12 @@ impl Remote {
             .ok_or_else(|| {
                 anyhow!("no remote named `{name}` (add one with `hb remote add {name} <url>`)")
             })?;
+        let (base, repo) = split_url(&url)?;
         let token = std::env::var("HB_TOKEN")
             .ok()
             .filter(|t| !t.is_empty())
-            .or(ws.config_get(&format!("remote.{name}.token"))?);
-        let (base, repo) = split_url(&url)?;
+            .or(ws.config_get(&format!("remote.{name}.token"))?)
+            .or_else(|| crate::account::stored_credential(&base));
         Ok(Self {
             name: name.to_owned(),
             base,

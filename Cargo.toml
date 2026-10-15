@@ -13,10 +13,12 @@ homepage = "https://hebra.dev"
 [workspace.dependencies]
 hebra-core = { path = "crates/core", version = "0.1.0" }
 hebra-server = { path = "crates/server", version = "0.1.0" }
+hebra-mandate = { path = "crates/mandate", version = "0.1.0" }
 anyhow = "1.0.104"
 async-nats = { version = "0.50.0", default-features = false, features = ["ring", "jetstream", "nkeys"] }
 axum = "0.8.9"
 axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
+biscuit-auth = { version = "6.0.0", default-features = false, features = ["datalog-macro"] }
 blake3 = "1.8.7"
 chacha20poly1305 = "0.11.0"
 clap = { version = "4.6.7", features = ["derive", "env"] }
@@ -27,11 +29,16 @@ ignore = "0.4.33"
 jiff = "0.2.38"
 object_store = { version = "0.14.2", default-features = false, features = ["aws"] }
 rand = "0.10.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "form", "rustls-no-provider", "http2"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+# 0.39: shares libsqlite3-sys with sqlx-sqlite (one SQLite in the binary).
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres"] }
+sha2 = "0.11.1"
+hmac = "0.13.0"
+toml = "1.1.8"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "sqlite", "any"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "net", "signal"] }

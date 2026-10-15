@@ -7,11 +7,9 @@ use std::collections::{HashSet, VecDeque};
 use hebra_core::ObjectId;
 use hebra_core::diff;
 use hebra_core::merge::merge_trees;
-use hebra_core::model::{Actor, ActorKind, Commit, Provenance, Tree};
+use hebra_core::model::{Actor, Commit, Provenance, Tree};
 use hebra_core::store::{COMMIT, Store, TREE};
 use serde::Serialize;
-
-use crate::TokenInfo;
 
 /// What merging `source` into `target` would do.
 #[derive(Debug, Clone, Serialize)]
@@ -160,7 +158,7 @@ pub fn write_merge(
     title: &str,
     source_name: &str,
     target_name: &str,
-    approver: &TokenInfo,
+    approver: &Actor,
 ) -> hebra_core::Result<ObjectId> {
     let tree_id = store.write_json(TREE, tree)?;
     let commit = Commit {
@@ -169,15 +167,7 @@ pub fn write_merge(
         predecessors: Vec::new(),
         tree: tree_id,
         description: format!("Merge {source_name} into {target_name}\n\n{title}"),
-        author: Actor {
-            name: approver.name.clone(),
-            kind: if approver.kind == "agent" {
-                ActorKind::Agent
-            } else {
-                ActorKind::Human
-            },
-            on_behalf_of: approver.on_behalf_of.clone(),
-        },
+        author: approver.clone(),
         timestamp: jiff::Timestamp::now().to_string(),
         provenance: Provenance {
             task: Some(title.to_owned()),

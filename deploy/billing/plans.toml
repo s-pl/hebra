@@ -1,0 +1,86 @@
+# Hebra Cloud plans. The server loads this file when HEBRA_EDITION=cloud
+# (HEBRA_BILLING_PLANS=path); the web pricing page reads the same data from
+# GET /api/v1/plans. Prices in US cents. Keep it in sync with
+# docs/billing-policy.md.
+
+currency = "usd"
+# Price of one agent credit above the allowance, and what one credit is worth
+# in model usage (provider list price plus margin).
+credit_price_cents = 1
+model_markup_percent = 30
+# Hard cap per agent verification run.
+credits_per_run_limit = 500
+storage_overage_cents_per_gb = 10
+
+[[plan]]
+id = "free"
+name = "Free"
+price_cents = 0
+per_person = false
+max_people = 3
+max_private_repos = 5
+storage_gb = 2
+storage_gb_per_person = 0
+agent_credits = 100
+agent_credits_per_person = 0
+merge_queue = false
+sso = false
+pitr_days = 7
+support = "community"
+
+[[plan]]
+id = "pro"
+name = "Pro"
+price_cents = 900
+per_person = false
+max_people = 1
+storage_gb = 20
+storage_gb_per_person = 0
+agent_credits = 1000
+agent_credits_per_person = 0
+merge_queue = true
+sso = false
+pitr_days = 7
+support = "email"
+stripe_price = "price_pro_monthly"
+
+[[plan]]
+id = "team"
+name = "Team"
+price_cents = 1900
+per_person = true
+storage_gb = 50
+storage_gb_per_person = 10
+agent_credits = 0
+agent_credits_per_person = 2500
+merge_queue = true
+sso = false
+pitr_days = 14
+uptime = "99.9%"
+support = "email, 2 business days"
+stripe_price = "price_team_monthly"
+
+[[plan]]
+id = "business"
+name = "Business"
+price_cents = 3900
+per_person = true
+storage_gb = 100
+storage_gb_per_person = 25
+agent_credits = 0
+agent_credits_per_person = 5000
+merge_queue = true
+sso = true
+pitr_days = 30
+uptime = "99.9%"
+support = "priority, 1 business day"
+stripe_price = "price_business_monthly"
+
+[[plan]]
+id = "enterprise"
+name = "Enterprise"
+contact = true
+per_person = true
+merge_queue = true
+sso = true
+support = "dedicated"

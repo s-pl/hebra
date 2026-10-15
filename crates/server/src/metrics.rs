@@ -57,7 +57,7 @@ impl Metrics {
             out,
             "hebra_info{{version=\"{}\",meta=\"{}\",bus=\"{}\",encrypted=\"{}\"}} 1",
             env!("CARGO_PKG_VERSION"),
-            server.meta.backend(),
+            server.db.backend(),
             server.bus.backend(),
             server.objects.encrypted()
         );

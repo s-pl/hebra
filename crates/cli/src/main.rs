@@ -1,11 +1,17 @@
 //! `hb`: the command line for Hebra.
 
+mod account;
 mod cli;
+mod client;
 mod collab;
 mod commands;
 mod fmt;
+mod global;
 mod mcp;
 mod remote;
+mod runner;
+mod verify;
+mod work;
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -28,7 +34,11 @@ fn main() -> ExitCode {
             Err(e) => fail(json, &e),
         };
     }
-    match commands::execute(cli.command, &cwd) {
+    let result = match global::execute(cli.command, &cwd, json) {
+        Ok(result) => result,
+        Err(command) => commands::execute(*command, &cwd),
+    };
+    match result {
         Ok(out) => {
             let mut stdout = std::io::stdout().lock();
             let written = if json {

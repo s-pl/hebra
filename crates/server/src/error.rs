@@ -26,6 +26,13 @@ impl ApiError {
     pub(crate) fn bad(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "bad_request", message)
     }
+    /// A plan limit was reached (HTTP 402).
+    pub(crate) fn payment(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::PAYMENT_REQUIRED, "plan_limit", message)
+    }
+    pub(crate) fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, "conflict", message)
+    }
     pub(crate) fn forbidden(code: &'static str, message: impl Into<String>) -> Self {
         Self::new(StatusCode::FORBIDDEN, code, message)
     }
@@ -40,6 +47,14 @@ impl ApiError {
             code,
             "internal server error",
         )
+    }
+}
+
+impl ApiError {
+    /// The human-readable message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 

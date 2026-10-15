@@ -16,15 +16,20 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 hebra-core.workspace = true
+hebra-mandate.workspace = true
 hex.workspace = true
 jiff.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 hebra-server.workspace = true
+jiff.workspace = true
+rustls.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

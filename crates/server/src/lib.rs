@@ -1,35 +1,37 @@
-//! Hebra server: hosts repositories and serves the HTTP API used by `hb push`,
-//! `hb pull`, presence, reviews and the web app.
+//! Hebra server: hosts repositories for people and agents, and serves the
+//! HTTP API used by `hb`, MCP clients, runners and the web app.
 //!
 //! Stateless by design, so it scales horizontally:
-//! - metadata (repositories, bookmarks, tokens, presence, events, reviews) in
-//!   SQLite for one node or PostgreSQL for many ([`meta`]);
+//! - metadata in SQLite (one node) or PostgreSQL (many), one implementation
+//!   with versioned migrations ([`db`]);
 //! - objects in a directory or S3-compatible storage, encrypted at rest with
 //!   XChaCha20-Poly1305 ([`objects`]);
 //! - live events fanned out between replicas over NATS ([`bus`]).
 //!
 //! Layout:
-//! - [`server`]: the shared state and the operations handlers build on
-//!   (authentication, permissions, bookmark moves, caches);
+//! - [`identity`]: who is calling (web sessions, mandates) and the single
+//!   place that decides what they may do (`Server::authorize`);
 //! - `api`: routes and handlers, one module per area;
+//! - [`checks`]: `.hb/checks.toml` and `.hb/policy.toml`, triggers,
+//!   leases; `gateway`: the model gateway for agent verification;
+//! - [`billing`]: plans, quotas, usage and Stripe (Cloud);
 //! - [`ratelimit`], [`headers`], [`metrics`]: middleware;
-//! - `merging`: what merging a review would do, and doing it;
 //! - [`serve`]: HTTP / HTTPS listeners with graceful shutdown.
-//!
-//! Permissions: every write needs a token. A token may move only the
-//! bookmarks matching its patterns, and agent tokens can never move a
-//! protected bookmark (by default `main`): a person has to do that.
 
 mod api;
-mod auth;
+pub mod billing;
 pub mod bus;
 mod cache;
-mod config;
+pub mod checks;
+pub mod config;
+pub mod db;
 mod error;
+mod gateway;
 pub mod headers;
+pub mod identity;
 mod merging;
-pub mod meta;
 pub mod metrics;
+pub mod names;
 pub mod objects;
 pub mod ratelimit;
 pub mod serve;
@@ -39,11 +41,10 @@ mod server;
 pub use axum::http;
 
 pub use api::{metrics_router, router};
-pub use auth::{TokenInfo, glob_match, valid_repo_name};
 pub use bus::{Bus, LiveEvent, NatsConfig};
-pub use config::Config;
+pub use config::{Config, Edition, GithubOauth, ModelGateway, Signup, Stripe};
 pub use error::ApiError;
-pub use meta::{Meta, TokenRow};
+pub use names::glob_match;
 pub use objects::{Objects, ObjectsConfig};
 pub use ratelimit::{Limits, RateLimiter};
 pub use serve::{serve, serve_tls_until, serve_until, shutdown_signal};

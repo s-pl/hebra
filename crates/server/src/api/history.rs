@@ -15,6 +15,7 @@ use hebra_core::store::{COMMIT, TREE};
 use hebra_core::{ChangeId, ObjectId};
 
 use crate::api::blocking;
+use crate::identity::Action;
 
 #[derive(Deserialize)]
 pub(crate) struct LogQuery {
@@ -37,11 +38,11 @@ pub(crate) fn commit_json(id: &ObjectId, c: &Commit) -> Value {
 
 pub(crate) async fn log(
     State(s): St,
-    UrlPath(repo): UrlPath<String>,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
     headers: HeaderMap,
     Query(q): Query<LogQuery>,
 ) -> ApiResult<axum::Json<Value>> {
-    s.require_repo(&repo, &headers).await?;
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
     let rev = q.rev.unwrap_or_else(|| "main".to_owned());
     let limit = q.limit.unwrap_or(50).min(500);
     let start = s.resolve(&repo, &rev).await?;
@@ -84,10 +85,10 @@ pub(crate) async fn log(
 
 pub(crate) async fn commit(
     State(s): St,
-    UrlPath((repo, id)): UrlPath<(String, String)>,
+    UrlPath((owner, name, id)): UrlPath<(String, String, String)>,
     headers: HeaderMap,
 ) -> ApiResult<axum::Json<Value>> {
-    s.require_repo(&repo, &headers).await?;
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
     let id = s.resolve(&repo, &id).await?;
     let store = s.store(&repo);
     blocking(move || {
@@ -118,11 +119,11 @@ pub(crate) struct TreeQuery {
 
 pub(crate) async fn tree(
     State(s): St,
-    UrlPath((repo, id)): UrlPath<(String, String)>,
+    UrlPath((owner, name, id)): UrlPath<(String, String, String)>,
     headers: HeaderMap,
     Query(q): Query<TreeQuery>,
 ) -> ApiResult<axum::Json<Value>> {
-    s.require_repo(&repo, &headers).await?;
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
     let id = s.resolve(&repo, &id).await?;
     let store = s.store(&repo);
     blocking(move || {

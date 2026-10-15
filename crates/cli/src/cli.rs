@@ -156,6 +156,247 @@ pub enum Command {
         #[arg(default_value = "origin")]
         remote: String,
     },
+    /// Tasks: work items with acceptance criteria that agents claim with a lease.
+    #[command(subcommand)]
+    Task(TaskCommand),
+    /// Checks run by runners for pushes and reviews (`.hb/checks.toml`).
+    #[command(subcommand)]
+    Checks(ChecksCommand),
+    /// Sign in to a server (shows a code to approve in the browser).
+    Login {
+        /// Server URL, e.g. https://hebra.dev (default: this repository's origin).
+        server: Option<String>,
+    },
+    /// Sign out of a server and revoke the stored mandate.
+    Logout { server: Option<String> },
+    /// Who you are on a server.
+    Whoami { server: Option<String> },
+    /// Mandates: hand narrowed credentials to agents.
+    #[command(subcommand)]
+    Mandate(MandateCommand),
+    /// Runners: run checks on your own machines.
+    #[command(subcommand)]
+    Runner(RunnerCommand),
+    /// Organizations on a server.
+    #[command(subcommand)]
+    Org(OrgCommand),
+    /// Agent accounts that belong to you or an organization.
+    #[command(subcommand)]
+    Agent(AgentCommand),
+    /// Repositories on a server.
+    #[command(subcommand)]
+    Repo(RepoCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TaskCommand {
+    /// List tasks (`open`, `ready`, `claimed`, `done`, `cancelled`, `all`).
+    List {
+        #[arg(long, default_value = "open")]
+        state: String,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Create a task.
+    Create {
+        title: String,
+        #[arg(long)]
+        body: Option<String>,
+        /// An acceptance criterion (repeat for several).
+        #[arg(long = "accept")]
+        acceptance: Vec<String>,
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// Make it a sub-task of this task.
+        #[arg(long)]
+        parent: Option<i64>,
+        /// Only ready once these tasks are done.
+        #[arg(long = "after")]
+        after: Vec<i64>,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Show a task.
+    Show {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Claim a task for a while (claiming again renews it).
+    Claim {
+        id: i64,
+        /// Minutes to hold it.
+        #[arg(long = "for", default_value_t = 30)]
+        minutes: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Give a claimed task back.
+    Release {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Mark a task done (merging a review that names it does this too).
+    Done {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Cancel a task.
+    Cancel {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Reopen a closed task.
+    Reopen {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ChecksCommand {
+    /// Checks of a commit or bookmark (recent runs when omitted).
+    List {
+        revision: Option<String>,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Print a run's log.
+    Log {
+        id: String,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Run checks again on a commit or bookmark.
+    Rerun {
+        revision: String,
+        /// Only this check.
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Let checks waiting on a contribution run (maintainers).
+    Approve {
+        revision: String,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MandateCommand {
+    /// Narrow your mandate for an agent and print it (offline).
+    Grant {
+        /// Agent name (recorded as the author of its work).
+        #[arg(long)]
+        agent: String,
+        /// Limit to these repositories `owner/name` (default: this one).
+        #[arg(long = "repo")]
+        repos: Vec<String>,
+        /// Operations: read, push, review, merge, task, admin, run
+        /// (default: read, push, review, task).
+        #[arg(long = "op")]
+        operations: Vec<String>,
+        /// Bookmarks it may move (default: agents/<agent>/*).
+        #[arg(long = "bookmark")]
+        bookmarks: Vec<String>,
+        /// Lifetime: `8h`, `30m`, `2d`.
+        #[arg(long, default_value = "8h")]
+        ttl: String,
+        /// What the agent is for (shown in provenance).
+        #[arg(long)]
+        purpose: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Your mandates on a server.
+    List {
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Revoke a mandate (and every mandate derived from it).
+    Revoke {
+        id: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RunnerCommand {
+    /// Register this machine as a runner for a person or organization.
+    Register {
+        #[arg(long)]
+        owner: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Take and run checks until stopped.
+    Start {
+        name: String,
+        /// Run at most one check, then exit.
+        #[arg(long)]
+        once: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OrgCommand {
+    /// Create an organization you own.
+    Create {
+        handle: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Add a person or change their role (owner, admin, member, billing).
+    Add {
+        org: String,
+        person: String,
+        #[arg(long, default_value = "member")]
+        role: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentCommand {
+    /// Create an agent account and print its first mandate.
+    Create {
+        handle: String,
+        /// Person or organization it belongs to (default: you).
+        #[arg(long)]
+        owner: Option<String>,
+        #[arg(long)]
+        server: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RepoCommand {
+    /// Create a repository `owner/name` on a server.
+    Create {
+        full_name: String,
+        #[arg(long)]
+        public: bool,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        server: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -188,6 +429,33 @@ pub enum ReviewCommand {
     /// Close a review without merging.
     Close {
         id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Show a review: changes, approvals, checks and comments.
+    Show {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Comment on a review (on a line with --path and --line).
+    Comment {
+        id: i64,
+        body: String,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        line: Option<i64>,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Approve a review (people only), or request changes.
+    Approve {
+        id: i64,
+        #[arg(long)]
+        changes: bool,
+        #[arg(long)]
+        note: Option<String>,
         #[arg(long, default_value = "origin")]
         remote: String,
     },

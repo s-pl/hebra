@@ -73,9 +73,7 @@ impl Objects {
         }
     }
 
-    /// The object store of one repository. Use from blocking threads only.
-    #[must_use]
-    pub fn store(&self, repo: &str) -> Store {
+    fn backend(&self, repo: &str) -> Arc<dyn Backend> {
         let inner: Arc<dyn Backend> = match &self.root {
             Root::Local(dir) => Arc::new(FsBackend::new(dir.join(repo).join("objects"))),
             #[cfg(feature = "s3")]
@@ -85,13 +83,132 @@ impl Objects {
                 prefix: format!("repos/{repo}/objects"),
             }),
         };
-        let backend = Arc::new(Cached {
+        Arc::new(Cached {
             inner,
             cache: Arc::clone(&self.cache),
             scope: repo.to_owned(),
-        });
-        Store::with_backend(backend, self.keys.clone())
+        })
     }
+
+    /// The object store of one repository. Use from blocking threads only.
+    #[must_use]
+    pub fn store(&self, repo: &str) -> Store {
+        Store::with_backend(self.backend(repo), self.keys.clone())
+    }
+
+    /// The store of a fork: it writes to `chain[0]` and reads from each
+    /// repository of the chain in turn (copy on write, nothing is copied).
+    #[must_use]
+    pub fn store_chain(&self, chain: &[String]) -> Store {
+        let layers: Vec<Arc<dyn Backend>> = chain.iter().map(|r| self.backend(r)).collect();
+        Store::with_backend(Arc::new(Layered { layers }), self.keys.clone())
+    }
+
+    /// Bytes used by a repository's own objects (for storage metering).
+    pub fn size(&self, repo: &str) -> std::io::Result<u64> {
+        match &self.root {
+            Root::Local(dir) => dir_size(&dir.join(repo).join("objects")),
+            #[cfg(feature = "s3")]
+            Root::S3(s3, handle) => {
+                use futures_util::TryStreamExt;
+                let prefix = object_store::path::Path::from(format!("repos/{repo}/objects"));
+                handle.block_on(async {
+                    s3.list(Some(&prefix))
+                        .try_fold(0u64, |total, meta| async move { Ok(total + meta.size) })
+                        .await
+                        .map_err(std::io::Error::other)
+                })
+            }
+        }
+    }
+
+    /// Deletes a repository's objects (after the repository was deleted).
+    pub fn delete(&self, repo: &str) -> std::io::Result<()> {
+        match &self.root {
+            Root::Local(dir) => match std::fs::remove_dir_all(dir.join(repo)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            },
+            #[cfg(feature = "s3")]
+            Root::S3(s3, handle) => {
+                use futures_util::{StreamExt, TryStreamExt};
+                let prefix = object_store::path::Path::from(format!("repos/{repo}/objects"));
+                handle.block_on(async {
+                    let locations = s3.list(Some(&prefix)).map_ok(|m| m.location).boxed();
+                    s3.delete_stream(locations)
+                        .try_collect::<Vec<_>>()
+                        .await
+                        .map(|_| ())
+                        .map_err(std::io::Error::other)
+                })
+            }
+        }
+    }
+}
+
+fn dir_size(dir: &std::path::Path) -> std::io::Result<u64> {
+    let mut total = 0;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        total += if meta.is_dir() {
+            dir_size(&entry.path())?
+        } else {
+            meta.len()
+        };
+    }
+    Ok(total)
+}
+
+/// Reads through several stores (a fork, then what it was forked from);
+/// writes go to the first.
+#[derive(Debug)]
+struct Layered {
+    layers: Vec<Arc<dyn Backend>>,
+}
+
+impl Backend for Layered {
+    fn get(&self, key: &str) -> std::io::Result<Option<Vec<u8>>> {
+        for layer in &self.layers {
+            if let Some(bytes) = layer.get(key)? {
+                return Ok(Some(bytes));
+            }
+        }
+        Ok(None)
+    }
+
+    fn put(&self, key: &str, bytes: &[u8]) -> std::io::Result<()> {
+        self.layers[0].put(key, bytes)
+    }
+
+    fn exists(&self, key: &str) -> std::io::Result<bool> {
+        for layer in &self.layers {
+            if layer.exists(key)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+/// Writes a secret file readable only by its owner (on Unix, mode 0600).
+pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 // ------------------------------------------------------------------ cache

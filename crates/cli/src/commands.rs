@@ -16,8 +16,8 @@ use hebra_core::{Error, ObjectId, Tx, Workspace};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    BookmarkCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand, RemoteCommand,
-    ReviewCommand, StartArgs, WorkspaceCommand,
+    BookmarkCommand, ChecksCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand,
+    RemoteCommand, ReviewCommand, StartArgs, TaskCommand, WorkspaceCommand,
 };
 use crate::fmt::{ago, parse_ttl, slug};
 
@@ -168,6 +168,47 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         }
         Command::Pull { remote } => crate::remote::pull(&mut ws, &actor, &prov, &remote),
         Command::Presence { remote } => crate::remote::presence(&mut ws, &actor, &prov, &remote),
+        Command::Review(ReviewCommand::Show { id, remote }) => {
+            crate::work::review_show(&ws, &remote, id)
+        }
+        Command::Review(ReviewCommand::Comment {
+            id,
+            body,
+            path,
+            line,
+            remote,
+        }) => crate::work::review_comment(&ws, &remote, id, &body, path, line),
+        Command::Review(ReviewCommand::Approve {
+            id,
+            changes,
+            note,
+            remote,
+        }) => crate::work::review_approve(&ws, &remote, id, changes, note),
+        Command::Task(cmd) => task(&ws, cmd),
+        Command::Checks(ChecksCommand::List { revision, remote }) => {
+            crate::work::checks_list(&ws, &remote, revision.as_deref())
+        }
+        Command::Checks(ChecksCommand::Log { id, remote }) => {
+            crate::work::checks_log(&ws, &remote, &id)
+        }
+        Command::Checks(ChecksCommand::Rerun {
+            revision,
+            name,
+            remote,
+        }) => crate::work::checks_act(&ws, &remote, "rerun", &revision, name),
+        Command::Checks(ChecksCommand::Approve { revision, remote }) => {
+            crate::work::checks_act(&ws, &remote, "approve", &revision, None)
+        }
+        Command::Login { .. }
+        | Command::Logout { .. }
+        | Command::Whoami { .. }
+        | Command::Mandate(_)
+        | Command::Runner(_)
+        | Command::Org(_)
+        | Command::Agent(_)
+        | Command::Repo(_) => {
+            unreachable!("server-wide commands are handled before opening a workspace")
+        }
         Command::Git(GitCommand::Export {
             dir,
             branch,
@@ -223,6 +264,16 @@ fn command_name(command: &Command) -> &'static str {
         Command::Watch { .. } => "watch",
         Command::Pull { .. } => "pull",
         Command::Presence { .. } => "presence",
+        Command::Task(_) => "task",
+        Command::Checks(_) => "checks",
+        Command::Login { .. } => "login",
+        Command::Logout { .. } => "logout",
+        Command::Whoami { .. } => "whoami",
+        Command::Mandate(_) => "mandate",
+        Command::Runner(_) => "runner",
+        Command::Org(_) => "org",
+        Command::Agent(_) => "agent",
+        Command::Repo(_) => "repo",
         Command::Git(GitCommand::Export { .. }) => "git export",
         Command::Git(GitCommand::Import { .. }) => "git import",
     }
@@ -1202,5 +1253,52 @@ fn add_remote_warnings(ws: &mut Workspace, actor: &Actor, prov: &Provenance, out
         Err(e) => {
             out.json["warnings"]["remote_error"] = json!(e.to_string());
         }
+    }
+}
+
+fn task(ws: &Workspace, cmd: TaskCommand) -> Result<Output> {
+    use crate::work::{NewTask, task_act, task_create, task_list, task_show};
+    match cmd {
+        TaskCommand::List { state, remote } => task_list(ws, &remote, &state),
+        TaskCommand::Create {
+            title,
+            body,
+            acceptance,
+            labels,
+            parent,
+            after,
+            remote,
+        } => task_create(
+            ws,
+            &remote,
+            NewTask {
+                title,
+                body,
+                acceptance,
+                labels,
+                parent,
+                after,
+            },
+        ),
+        TaskCommand::Show { id, remote } => task_show(ws, &remote, id),
+        TaskCommand::Claim {
+            id,
+            minutes,
+            remote,
+        } => task_act(
+            ws,
+            &remote,
+            id,
+            "claim",
+            json!({ "for_secs": minutes * 60 }),
+        ),
+        TaskCommand::Release { id, remote } => task_act(ws, &remote, id, "release", json!({})),
+        TaskCommand::Done { id, remote } => {
+            task_act(ws, &remote, id, "close", json!({ "state": "done" }))
+        }
+        TaskCommand::Cancel { id, remote } => {
+            task_act(ws, &remote, id, "close", json!({ "state": "cancelled" }))
+        }
+        TaskCommand::Reopen { id, remote } => task_act(ws, &remote, id, "reopen", json!({})),
     }
 }
