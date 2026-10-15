@@ -1,0 +1,101 @@
+{{- $server := printf "%s-server" (include "hebra.fullname" .) -}}
+{{- $web := printf "%s-web" (include "hebra.fullname" .) -}}
+{{- if .Values.gateway.enabled }}
+# /api goes to the servers (CLI, agents, MCP); everything else to the web.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "hebra.fullname" . }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- toYaml .Values.gateway.parentRefs | nindent 4 }}
+  hostnames: [{{ .Values.host | quote }}]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api/ }
+      backendRefs:
+        - { name: {{ $server }}, port: 4600 }
+      # Live streams stay open; pushes may take minutes.
+      timeouts: { request: "0s" }
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - { name: {{ $web }}, port: 3000 }
+      timeouts: { request: "0s" }
+{{- if .Values.server.tls.enabled }}
+---
+# The gateway verifies the servers' certificates (internal CA).
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ $server }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - { group: "", kind: Service, name: {{ $server }}, sectionName: api }
+  validation:
+    caCertificateRefs:
+      - { group: "", kind: ConfigMap, name: {{ .Values.server.tls.caConfigMap | default (printf "%s-ca" $server) }} }
+    hostname: {{ $server }}.{{ .Release.Namespace }}.svc
+{{- end }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hebra.fullname" . }}-api
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.server.tls.enabled }}
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    {{- end }}
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 1g
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service: { name: {{ $server }}, port: { name: api } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hebra.fullname" . }}-web
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ $web }}, port: { name: http } }
+{{- end }}

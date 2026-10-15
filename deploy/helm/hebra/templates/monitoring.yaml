@@ -1,0 +1,48 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "hebra.fullname" . }}-server
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hebra.labels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "hebra.fullname" . }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: hebra
+      rules:
+        - alert: HebraHighErrorRate
+          expr: |
+            sum(rate(hebra_http_requests_total{class="5xx"}[5m]))
+              / sum(rate(hebra_http_requests_total[5m])) > 0.01
+          for: 10m
+          labels: { severity: page }
+          annotations:
+            summary: More than 1% of Hebra API requests fail.
+        - alert: HebraSlowRequests
+          expr: |
+            histogram_quantile(0.99, sum(rate(hebra_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: p99 latency of the Hebra API is above one second.
+        - alert: HebraRateLimiting
+          expr: sum(rate(hebra_rate_limited_total[5m])) > 10
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: Clients are being rate limited (abuse, or limits too low).
+{{- end }}

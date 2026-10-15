@@ -1,0 +1,22 @@
+# HTTPS for localhost with Caddy's own CA (`caddy trust` to silence warnings).
+# /api goes to the server replicas, everything else to the web app.
+localhost {
+	tls internal
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy {
+			dynamic a server 4600
+			lb_policy least_conn
+			health_uri /api/v1/ready
+			header_up X-Real-IP {remote_host}
+			# Live streams: no buffering, long-lived.
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+}

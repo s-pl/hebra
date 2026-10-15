@@ -1,0 +1,14 @@
+apiVersion: v2
+name: hebra
+description: Hebra, version control for people and many agents. Stateless servers and web on Kubernetes, with PostgreSQL (CloudNativePG), NATS JetStream and S3.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/s-pl/hebra
+sources: [https://github.com/s-pl/hebra]
+keywords: [vcs, git, agents, version-control]
+dependencies:
+  - name: nats
+    version: 2.15.1
+    repository: https://nats-io.github.io/k8s/helm/charts/
+    condition: nats.enabled

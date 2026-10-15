@@ -1,0 +1,91 @@
+# What a real cluster provides, for a local kind cluster: namespaces, an
+# internal CA in cert-manager, and S3-compatible storage (RustFS).
+# Used by deploy/kind/up.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hebra
+  labels:
+    # Every pod must meet the "restricted" Pod Security Standard.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage
+---
+# Internal CA: a self-signed root that signs the servers' certificates.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hebra-internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: hebra-internal-ca
+  secretName: hebra-internal-ca
+  duration: 87600h
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef: { kind: ClusterIssuer, name: selfsigned }
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: hebra-internal-ca
+spec:
+  ca:
+    secretName: hebra-internal-ca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: rustfs }
+  template:
+    metadata:
+      labels: { app: rustfs }
+    spec:
+      containers:
+        - name: rustfs
+          image: rustfs/rustfs:1.0.1
+          ports: [{ containerPort: 9000 }]
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: s3, key: AWS_ACCESS_KEY_ID } }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: s3, key: AWS_SECRET_ACCESS_KEY } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: storage
+spec:
+  selector: { app: rustfs }
+  ports: [{ port: 9000 }]

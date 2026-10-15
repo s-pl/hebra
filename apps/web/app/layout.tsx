@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { SITE } from "@/lib/site";
 import "./globals.css";
@@ -37,12 +38,14 @@ export const viewport: Viewport = {
 // Applies the saved theme before first paint, so there is no flash.
 const themeScript = `try{if(localStorage.getItem("hebra-theme")==="dark"){document.documentElement.dataset.theme="dark"}}catch(e){}`;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Set by proxy.ts; the CSP only lets scripts with this nonce run.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline script, no user input */}
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-dvh">
         <a

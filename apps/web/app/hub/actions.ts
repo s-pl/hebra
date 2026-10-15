@@ -26,10 +26,12 @@ export async function login(_prev: ActionResult | null, form: FormData): Promise
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 7,
   });
   const next = String(form.get("next") ?? "/hub");
-  redirect(next.startsWith("/hub") ? next : `/hub?welcome=${encodeURIComponent(me.name)}`);
+  // Only same-site hub paths, never `//host` or `/\host` (open redirects).
+  const safe = /^\/hub(\/[\w\-./%]*)?$/.test(next) && !next.includes("//");
+  redirect(safe ? next : `/hub?welcome=${encodeURIComponent(me.name)}`);
 }
 
 export async function logout(): Promise<void> {

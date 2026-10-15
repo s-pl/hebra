@@ -54,7 +54,12 @@ export class HubError extends Error {
   }
 }
 
-export const SESSION_COOKIE = "hb_session";
+/**
+ * In production the cookie uses the `__Host-` prefix: browsers then only
+ * accept it over HTTPS, for this exact host and path `/`, so no subdomain or
+ * plain-HTTP page can set or overwrite it.
+ */
+export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-hb_session" : "hb_session";
 
 /** The signed-in user's server token (httpOnly cookie), if any. */
 export async function sessionToken(): Promise<string | null> {

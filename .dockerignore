@@ -1,0 +1,10 @@
+# Build context for deploy/docker/*.Dockerfile: sources only.
+.git
+target
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+.claude
+.env
+.env.*
+deploy/helm

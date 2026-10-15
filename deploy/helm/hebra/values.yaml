@@ -1,0 +1,189 @@
+# Hebra on Kubernetes. Everything that holds data (PostgreSQL, NATS, S3) is
+# outside the Hebra pods, so servers and web scale horizontally and can be
+# replaced at any time.
+
+# Public hostname (Gateway / Ingress, cookies, TLS certificate).
+host: hebra.example.com
+
+image:
+  server:
+    repository: ghcr.io/s-pl/hebra-server
+    # Defaults to the chart's appVersion. Prefer pinning a digest.
+    tag: ""
+    digest: ""
+  web:
+    repository: ghcr.io/s-pl/hebra-web
+    tag: ""
+    digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+server:
+  replicas: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 30
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # Memory for cached objects per pod (keep below the memory limit).
+  cacheMiB: 256
+  rateLimits: { token: 100, tokenBurst: 1000, ip: 200, ipBurst: 2000 }
+
+  # Object encryption keys (XChaCha20-Poly1305). REQUIRED: a Secret with
+  # comma-separated 64-hex keys, the first one encrypting. Create it with
+  #   kubectl create secret generic hebra-encryption --from-literal=keys=$(hebra-server keygen)
+  # or, better, sync it from your KMS / Vault with External Secrets.
+  encryption:
+    existingSecret: hebra-encryption
+    key: keys
+
+  database:
+    # Secret holding the PostgreSQL URL. Empty: the CloudNativePG cluster
+    # below (`<release>-db-app`, key `uri`).
+    existingSecret: ""
+    key: uri
+    maxConnections: 20
+
+  s3:
+    bucket: ""          # REQUIRED
+    region: us-east-1
+    endpoint: ""        # empty for AWS; e.g. https://<account>.r2.cloudflarestorage.com
+    # Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Leave empty to
+    # use the pod identity (IRSA / EKS Pod Identity / GKE Workload Identity)
+    # through serviceAccount.annotations.
+    existingSecret: ""
+
+  nats:
+    # Empty: the NATS cluster installed by this chart.
+    url: ""
+    # Secret with a `.creds` file (key `nats.creds`) for NATS auth.
+    credsSecret: ""
+
+  # HTTPS between the gateway / web and the servers (cert-manager).
+  tls:
+    enabled: true
+    issuerRef: { kind: ClusterIssuer, name: hebra-internal-ca }
+    # ConfigMap (key ca.crt) with that CA, for the Gateway's BackendTLSPolicy;
+    # e.g. distributed by trust-manager. Default: `<release>-hebra-server-ca`.
+    caConfigMap: ""
+
+  serviceAccount:
+    annotations: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+web:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Gateway API (recommended): an HTTPRoute attached to your Gateway, which
+# terminates public TLS (certificate from cert-manager on the Gateway).
+gateway:
+  enabled: true
+  parentRefs:
+    - name: public
+      namespace: gateway-system
+      sectionName: https
+
+# Classic Ingress instead of (or as well as) the Gateway API.
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tlsSecretName: hebra-tls
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the pods: the gateway / ingress controller
+  # and Prometheus.
+  gatewayNamespace: gateway-system
+  monitoringNamespace: monitoring
+  # Where S3 lives (egress on 443). The default allows the internet but not
+  # private ranges or the cloud metadata endpoint.
+  s3Egress:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+  s3Ports: [443]
+
+# PostgreSQL via the CloudNativePG operator (install the operator first).
+# TLS between pods and the database is on by default in CloudNativePG.
+postgres:
+  enabled: true
+  instances: 3
+  storage: 20Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+  # Continuous WAL archiving and base backups to S3 (point-in-time recovery).
+  backup:
+    enabled: false
+    destinationPath: s3://hebra-backups/postgres
+    endpointURL: ""
+    # Secret with ACCESS_KEY_ID and ACCESS_SECRET_KEY.
+    secret: hebra-backup-s3
+    retentionPolicy: 30d
+
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+# NATS JetStream subchart (https://github.com/nats-io/k8s).
+nats:
+  enabled: true
+  config:
+    cluster:
+      enabled: true
+      replicas: 3
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 10Gi
+  # The restricted Pod Security Standard for NATS too.
+  podTemplate:
+    merge:
+      spec:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          seccompProfile: { type: RuntimeDefault }
+    topologySpreadConstraints:
+      kubernetes.io/hostname:
+        maxSkew: 1
+        whenUnsatisfiable: DoNotSchedule
+  container:
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+  reloader:
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+  natsBox:
+    enabled: false

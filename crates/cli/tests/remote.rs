@@ -5,59 +5,105 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Arc;
 
-use hebra_server::{Server, TokenInfo};
+use hebra_core::store::Key;
+use hebra_server::{Config, NatsConfig, ObjectsConfig, Server, TokenInfo};
 use serde_json::Value;
 
 struct Env {
     _dir: tempfile::TempDir,
     root: PathBuf,
     url: String,
+    repo: String,
     human: String,
     agent: String,
+}
+
+/// A server like production: objects encrypted, and, when these variables
+/// are set (CI does), metadata in PostgreSQL, objects in S3 and live events
+/// over NATS: HEBRA_TEST_DATABASE_URL, HEBRA_TEST_S3_BUCKET, HEBRA_TEST_NATS_URL.
+fn config(data: &Path) -> Config {
+    let mut config = Config::local(data);
+    config.encryption_keys = vec![Key::from_hex(&Key::generate_hex()).unwrap()];
+    config.database_url = std::env::var("HEBRA_TEST_DATABASE_URL").ok();
+    if let Ok(bucket) = std::env::var("HEBRA_TEST_S3_BUCKET") {
+        config.objects = ObjectsConfig::S3 { bucket };
+    }
+    config.nats = std::env::var("HEBRA_TEST_NATS_URL")
+        .ok()
+        .map(|url| NatsConfig {
+            url,
+            ..NatsConfig::default()
+        });
+    config
 }
 
 fn start_server() -> Env {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("server");
-    let server = Server::open(&data).unwrap();
-    server.create_repo("acme", &["main".to_owned()]).unwrap();
-    let human = server
-        .create_token(&TokenInfo {
-            name: "ana".into(),
-            kind: "human".into(),
-            on_behalf_of: None,
-            allow: vec!["*".into()],
-            admin: true,
-        })
-        .unwrap();
-    let agent = server
-        .create_token(&TokenInfo {
-            name: "claude-code".into(),
-            kind: "agent".into(),
-            on_behalf_of: Some("ana".into()),
-            allow: vec!["agents/claude-code/*".into(), "main".into()],
-            admin: false,
-        })
-        .unwrap();
-    let server = Arc::new(server);
+    // Unique names (from the random temp dir), so tests can share a database.
+    let unique: String = dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    let repo = format!("acme-{}", unique.to_lowercase());
     let (tx, rx) = std::sync::mpsc::channel();
+    let name = repo.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
         rt.block_on(async move {
+            let server = Server::open(config(&data)).await.unwrap();
+            server
+                .create_repo(&name, &["main".to_owned()])
+                .await
+                .unwrap();
+            let human = server
+                .create_token(
+                    &TokenInfo {
+                        name: "ana".into(),
+                        kind: "human".into(),
+                        on_behalf_of: None,
+                        allow: vec!["*".into()],
+                        admin: true,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+            let agent = server
+                .create_token(
+                    &TokenInfo {
+                        name: "claude-code".into(),
+                        kind: "agent".into(),
+                        on_behalf_of: Some("ana".into()),
+                        allow: vec!["agents/claude-code/*".into(), "main".into()],
+                        admin: false,
+                    },
+                    Some(std::time::Duration::from_secs(3600)),
+                )
+                .await
+                .unwrap();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            tx.send(listener.local_addr().unwrap()).unwrap();
-            hebra_server::serve(server, listener).await.unwrap();
+            tx.send((listener.local_addr().unwrap(), human, agent))
+                .unwrap();
+            hebra_server::serve(Arc::new(server), listener)
+                .await
+                .unwrap();
         });
     });
-    let addr = rx.recv().unwrap();
+    let (addr, human, agent) = rx.recv().unwrap();
     let root = dir.path().to_path_buf();
     Env {
         _dir: dir,
         root,
-        url: format!("http://{addr}/acme"),
+        url: format!("http://{addr}/{repo}"),
+        repo,
         human,
         agent,
     }
@@ -185,7 +231,10 @@ fn live_stream_announces_pushes() {
     use std::io::{BufRead, BufReader};
 
     let env = start_server();
-    let stream_url = env.url.replace("/acme", "/api/v1/repos/acme/stream");
+    let stream_url = env.url.replace(
+        &format!("/{}", env.repo),
+        &format!("/api/v1/repos/{}/stream", env.repo),
+    );
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     std::thread::spawn(move || {
         let agent: ureq::Agent = ureq::Agent::config_builder().build().into();

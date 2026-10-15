@@ -1,0 +1,124 @@
+# The whole platform on one machine, shaped like production:
+#   Caddy (HTTPS) -> web (Next.js) and 2 x hebra-server (stateless)
+#   hebra-server -> PostgreSQL (metadata), NATS JetStream (live events),
+#                   S3 / RustFS (encrypted objects)
+#
+#   cp deploy/compose/.env.example deploy/compose/.env    # then fill it in
+#   docker compose -f deploy/compose/compose.yaml up -d --build
+#   docker compose -f deploy/compose/compose.yaml run --rm server repo create acme
+#   docker compose -f deploy/compose/compose.yaml run --rm server token create --name you --admin
+#   open https://localhost   (Caddy's local CA; `hb remote add origin https://localhost/acme`)
+
+name: hebra
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+x-server-env: &server-env
+  HEBRA_DATABASE_URL: postgres://hebra:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/hebra
+  HEBRA_NATS_URL: nats://nats:4222
+  HEBRA_S3_BUCKET: hebra
+  AWS_ENDPOINT: http://s3:9000
+  AWS_ALLOW_HTTP: "true"
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+  AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+  HEBRA_ENCRYPTION_KEYS: ${HEBRA_ENCRYPTION_KEYS:?run `hebra-server keygen` and set HEBRA_ENCRYPTION_KEYS in .env}
+  HEBRA_TRUST_PROXY: "true"
+  HEBRA_HSTS: "true"
+  HEBRA_METRICS_ADDR: 0.0.0.0:9090
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: hebra
+      POSTGRES_DB: hebra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [postgres:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hebra"]
+      interval: 3s
+      retries: 20
+    restart: unless-stopped
+
+  nats:
+    <<: *hardened
+    image: nats:2.15.1-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes: [nats:/data]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 3s
+      retries: 20
+
+  s3:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes: [s3:/data]
+    restart: unless-stopped
+
+  s3-bucket:
+    image: amazon/aws-cli:2.38.1
+    depends_on: [s3]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        for i in $$(seq 1 30); do
+          aws --endpoint-url http://s3:9000 s3api head-bucket --bucket hebra 2>/dev/null && exit 0;
+          aws --endpoint-url http://s3:9000 s3 mb s3://hebra && exit 0;
+          sleep 1;
+        done; exit 1
+    restart: "no"
+
+  server:
+    <<: *hardened
+    build:
+      context: ../..
+      dockerfile: deploy/docker/server.Dockerfile
+    image: hebra-server:dev
+    environment: *server-env
+    tmpfs: ["/data:size=64m,uid=65532,gid=65532"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      s3-bucket: { condition: service_completed_successfully }
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "2", memory: 1g }
+
+  web:
+    <<: *hardened
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web.Dockerfile
+    image: hebra-web:dev
+    environment:
+      HEBRA_SERVER_URL: http://server:4600
+    tmpfs: ["/app/apps/web/.next/cache:size=128m,uid=65532,gid=65532"]
+    depends_on: [server]
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on: [web, server]
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  nats:
+  s3:
+  caddy:

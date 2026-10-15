@@ -1,0 +1,223 @@
+{{- $name := printf "%s-server" (include "hebra.fullname" .) -}}
+{{- $ctx := dict "root" . "component" "server" -}}
+{{- $scheme := include "hebra.serverScheme" . | upper -}}
+{{- if not .Values.server.s3.bucket }}{{ fail "server.s3.bucket is required" }}{{ end -}}
+{{- if not .Values.server.encryption.existingSecret }}{{ fail "server.encryption.existingSecret is required: objects are always encrypted" }}{{ end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  {{- if not .Values.server.autoscaling.enabled }}
+  replicas: {{ .Values.server.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      {{- include "hebra.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hebra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      {{- with .Values.server.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- include "hebra.podSecurity" . | nindent 6 }}
+      {{- include "hebra.spread" $ctx | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: server
+          image: {{ include "hebra.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [serve]
+          {{- include "hebra.containerSecurity" . | nindent 10 }}
+          ports:
+            - { name: api, containerPort: 4600 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - { name: HEBRA_ADDR, value: "0.0.0.0:4600" }
+            - { name: HEBRA_METRICS_ADDR, value: "0.0.0.0:9090" }
+            - { name: HEBRA_DATA, value: /data }
+            - { name: HEBRA_LOG_JSON, value: "true" }
+            - { name: HEBRA_TRUST_PROXY, value: "true" }
+            - { name: HEBRA_HSTS, value: "true" }
+            - { name: HEBRA_CACHE_MIB, value: {{ .Values.server.cacheMiB | quote }} }
+            - { name: HEBRA_RATE_TOKEN, value: {{ .Values.server.rateLimits.token | quote }} }
+            - { name: HEBRA_BURST_TOKEN, value: {{ .Values.server.rateLimits.tokenBurst | quote }} }
+            - { name: HEBRA_RATE_IP, value: {{ .Values.server.rateLimits.ip | quote }} }
+            - { name: HEBRA_BURST_IP, value: {{ .Values.server.rateLimits.ipBurst | quote }} }
+            - name: HEBRA_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.server.encryption.existingSecret }}
+                  key: {{ .Values.server.encryption.key }}
+            - name: HEBRA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hebra.databaseSecret" . }}
+                  key: {{ .Values.server.database.key }}
+            {{- if and .Values.postgres.enabled (not .Values.server.database.existingSecret) }}
+            # Verify the database certificate against the cluster's CA.
+            - { name: PGSSLMODE, value: verify-full }
+            - { name: PGSSLROOTCERT, value: /secrets/pg/ca.crt }
+            {{- end }}
+            - { name: HEBRA_DATABASE_MAX_CONNECTIONS, value: {{ .Values.server.database.maxConnections | quote }} }
+            - { name: HEBRA_S3_BUCKET, value: {{ .Values.server.s3.bucket | quote }} }
+            - { name: AWS_REGION, value: {{ .Values.server.s3.region | quote }} }
+            {{- with .Values.server.s3.endpoint }}
+            - { name: AWS_ENDPOINT, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.server.s3.existingSecret }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: {{ . }}, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: {{ . }}, key: AWS_SECRET_ACCESS_KEY } }
+            {{- end }}
+            - { name: HEBRA_NATS_URL, value: {{ include "hebra.natsUrl" . | quote }} }
+            {{- if .Values.server.nats.credsSecret }}
+            - { name: HEBRA_NATS_CREDS, value: /secrets/nats/nats.creds }
+            {{- end }}
+            {{- if .Values.server.tls.enabled }}
+            - { name: HEBRA_TLS_CERT, value: /secrets/tls/tls.crt }
+            - { name: HEBRA_TLS_KEY, value: /secrets/tls/tls.key }
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /api/v1/ready, port: api, scheme: {{ $scheme }} }
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /api/v1/ready, port: api, scheme: {{ $scheme }} }
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: api, scheme: {{ $scheme }} }
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            # Let endpoints drop the pod before it stops accepting requests.
+            preStop:
+              sleep: { seconds: 5 }
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            {{- if and .Values.postgres.enabled (not .Values.server.database.existingSecret) }}
+            - { name: pg-ca, mountPath: /secrets/pg, readOnly: true }
+            {{- end }}
+            {{- if .Values.server.tls.enabled }}
+            - { name: tls, mountPath: /secrets/tls, readOnly: true }
+            {{- end }}
+            {{- if .Values.server.nats.credsSecret }}
+            - { name: nats-creds, mountPath: /secrets/nats, readOnly: true }
+            {{- end }}
+      volumes:
+        - name: data
+          emptyDir: { sizeLimit: 256Mi }
+        {{- if and .Values.postgres.enabled (not .Values.server.database.existingSecret) }}
+        - name: pg-ca
+          secret:
+            secretName: {{ include "hebra.fullname" . }}-db-ca
+            items:
+              - { key: ca.crt, path: ca.crt }
+        {{- end }}
+        {{- if .Values.server.tls.enabled }}
+        - name: tls
+          secret: { secretName: {{ $name }}-tls }
+        {{- end }}
+        {{- with .Values.server.nats.credsSecret }}
+        - name: nats-creds
+          secret: { secretName: {{ . }} }
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    {{- include "hebra.selector" $ctx | nindent 4 }}
+  ports:
+    - { name: api, port: 4600, targetPort: api, appProtocol: {{ include "hebra.serverScheme" . }} }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "hebra.selector" $ctx | nindent 6 }}
+{{- if .Values.server.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ $name }} }
+  minReplicas: {{ .Values.server.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.server.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.server.autoscaling.targetCPUUtilizationPercentage }} }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- if .Values.server.tls.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-tls
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $name }}-tls
+  duration: 720h
+  renewBefore: 240h
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+  dnsNames:
+    - {{ $name }}
+    - {{ $name }}.{{ .Release.Namespace }}.svc
+    - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    {{- toYaml .Values.server.tls.issuerRef | nindent 4 }}
+{{- end }}

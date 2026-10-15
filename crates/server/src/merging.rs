@@ -13,13 +13,6 @@ use serde::Serialize;
 
 use crate::TokenInfo;
 
-pub const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS reviews (
-    id INTEGER PRIMARY KEY, repo TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL,
-    title TEXT NOT NULL, body TEXT NOT NULL, author TEXT NOT NULL, state TEXT NOT NULL,
-    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, closed_by TEXT, merged_commit TEXT);
-";
-
 /// What merging `source` into `target` would do.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]

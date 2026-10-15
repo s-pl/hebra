@@ -25,3 +25,6 @@ Thumbs.db
 # Next.js
 apps/web/next-env.d.ts
 *.tsbuildinfo
+
+# Helm dependencies (helm dependency build)
+deploy/helm/*/charts/

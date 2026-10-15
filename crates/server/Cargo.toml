@@ -12,21 +12,34 @@ homepage.workspace = true
 name = "hebra-server"
 path = "src/main.rs"
 
+[features]
+default = ["s3"]
+# Objects in S3-compatible storage (AWS S3, MinIO, R2, GCS interop).
+s3 = ["dep:object_store"]
+
 [dependencies]
 anyhow.workspace = true
+async-nats.workspace = true
 axum.workspace = true
+axum-server.workspace = true
 blake3.workspace = true
 clap.workspace = true
+futures-util.workspace = true
 hebra-core.workspace = true
 hex.workspace = true
 jiff.workspace = true
+object_store = { workspace = true, optional = true }
 rand.workspace = true
 rusqlite.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

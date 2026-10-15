@@ -1,0 +1,100 @@
+{{- if .Values.postgres.enabled }}
+{{- $pg := .Values.postgres -}}
+# PostgreSQL managed by CloudNativePG: a primary and synchronous replicas
+# spread over nodes, automatic failover, TLS for every client connection.
+# The operator creates `<name>-app` with the connection URL (key `uri`).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "hebra.fullname" . }}-db
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  instances: {{ $pg.instances }}
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: "400"
+      shared_buffers: 256MB
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+    pg_hba:
+      # Only TLS connections with SCRAM passwords.
+      - hostssl all all all scram-sha-256
+    synchronous:
+      method: any
+      number: 1
+  bootstrap:
+    initdb:
+      database: hebra
+      owner: hebra
+      dataChecksums: true
+  storage:
+    size: {{ $pg.storage }}
+    {{- with $pg.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+  resources:
+    {{- toYaml $pg.resources | nindent 4 }}
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+  monitoring:
+    enablePodMonitor: {{ .Values.metrics.serviceMonitor.enabled }}
+  {{- if $pg.backup.enabled }}
+  backup:
+    retentionPolicy: {{ $pg.backup.retentionPolicy | quote }}
+    barmanObjectStore:
+      destinationPath: {{ $pg.backup.destinationPath }}
+      {{- with $pg.backup.endpointURL }}
+      endpointURL: {{ . }}
+      {{- end }}
+      s3Credentials:
+        accessKeyId: { name: {{ $pg.backup.secret }}, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: {{ $pg.backup.secret }}, key: ACCESS_SECRET_KEY }
+      wal:
+        compression: zstd
+        encryption: AES256
+      data:
+        compression: snappy
+        encryption: AES256
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ include "hebra.fullname" . }}-db-daily
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: {{ include "hebra.fullname" . }}-db
+  {{- end }}
+---
+# Hebra servers may reach the database; nothing else in the namespace may.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hebra.fullname" . }}-db
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: { cnpg.io/cluster: {{ include "hebra.fullname" . }}-db }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "hebra.selector" (dict "root" . "component" "server") | nindent 14 }}
+      ports: [{ port: 5432, protocol: TCP }]
+    # Replication between instances and the operator.
+    - from:
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: {{ include "hebra.fullname" . }}-db }
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: cloudnative-pg }
+{{- end }}

@@ -1,0 +1,42 @@
+# Values for the local kind cluster (deploy/kind/up.sh): local images, S3 in
+# the `storage` namespace, smaller footprint. Everything else as in production.
+host: hebra.localtest.me
+
+image:
+  server: { repository: hebra-server, tag: dev }
+  web: { repository: hebra-web, tag: dev }
+  pullPolicy: Never
+
+server:
+  autoscaling: { enabled: true, minReplicas: 3, maxReplicas: 6 }
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  s3:
+    bucket: hebra
+    endpoint: http://rustfs.storage:9000
+    existingSecret: hebra-s3
+
+web:
+  autoscaling: { enabled: false }
+  replicas: 2
+
+networkPolicy:
+  s3Egress:
+    - namespaceSelector:
+        matchLabels: { kubernetes.io/metadata.name: storage }
+  s3Ports: [9000]
+
+postgres:
+  instances: 2
+  storage: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+nats:
+  config:
+    cluster: { enabled: true, replicas: 3 }
+    jetstream:
+      fileStore:
+        pvc: { size: 1Gi }

@@ -1,0 +1,83 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $server := dict "root" . "component" "server" -}}
+{{- $web := dict "root" . "component" "web" -}}
+{{- $np := .Values.networkPolicy -}}
+# Zero trust inside the namespace: Hebra pods accept and open only the
+# connections listed here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hebra.fullname" . }}-server
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hebra.selector" $server | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # API: the gateway and the web pods.
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.gatewayNamespace }} }
+        - podSelector:
+            matchLabels:
+              {{- include "hebra.selector" $web | nindent 14 }}
+      ports: [{ port: 4600, protocol: TCP }]
+    # Metrics: Prometheus only.
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.monitoringNamespace }} }
+      ports: [{ port: 9090, protocol: TCP }]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    # PostgreSQL (CloudNativePG pods of this release).
+    - to:
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: {{ include "hebra.fullname" . }}-db }
+      ports: [{ port: 5432, protocol: TCP }]
+    # NATS.
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: nats, app.kubernetes.io/instance: {{ .Release.Name }} }
+      ports: [{ port: 4222, protocol: TCP }]
+    # Object storage (S3).
+    - to:
+        {{- toYaml $np.s3Egress | nindent 8 }}
+      ports:
+        {{- range $np.s3Ports }}
+        - { port: {{ . }}, protocol: TCP }
+        {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hebra.fullname" . }}-web
+  labels:
+    {{- include "hebra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hebra.selector" $web | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.gatewayNamespace }} }
+      ports: [{ port: 3000, protocol: TCP }]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "hebra.selector" $server | nindent 14 }}
+      ports: [{ port: 4600, protocol: TCP }]
+{{- end }}

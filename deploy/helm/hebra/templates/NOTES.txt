@@ -1,0 +1,12 @@
+Hebra {{ .Chart.AppVersion }} is deployed as {{ include "hebra.fullname" . }}.
+
+  Web and hub:  https://{{ .Values.host }}
+  CLI remote:   hb remote add origin https://{{ .Values.host }}/<repository> --token <token>
+
+Create a repository and an admin token (run once, from a server pod):
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "hebra.fullname" . }}-server -- hebra-server repo create acme
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "hebra.fullname" . }}-server -- hebra-server token create --name you --admin
+
+Rotate the object encryption key: put a new key first in the
+`{{ .Values.server.encryption.existingSecret }}` secret (keep the old ones after it) and restart the servers.
