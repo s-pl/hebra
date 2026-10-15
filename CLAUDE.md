@@ -15,15 +15,16 @@ Open source. Proyecto en solitario. Comando de la CLI: `hb`. Nombre: cada agente
 ```
 crates/core     hebra-core: almacén BLAKE3, modelo, copia de trabajo, merge, registro de operaciones (SQLite)
 crates/cli      hb: CLI (`--json` en todo) + servidor MCP (`hb mcp`)
-crates/server   (pendiente) servidor axum + tokio
-apps/web        landing (Next.js 16, Tailwind 4, Biome)
+crates/server   hebra-server: API HTTP (axum), push/pull, presencia, tokens por agente
+apps/web        landing + hub /hub (Next.js 16, Tailwind 4, Biome)
 ```
 
 ## Estado (2026-10-15)
 - MVP local funcional: init/import, status, diff, describe, commit, new, log, show, merge (conflictos como datos), resolve, start/workspaces (un workspace por agente), claims, undo/op log/op restore, bookmarks, config, MCP.
 - 32 tests (unitarios + integración de la CLI). `hb git export` exporta a Git con trailers de procedencia. Prueba de estrés: 8 agentes en paralelo, 48 comandos, 0 errores de bloqueo.
 - Repo público: https://github.com/s-pl/hebra
-- Limitaciones conocidas del MVP: árbol plano (no Merkle por directorios), sin enlaces simbólicos, merge por líneas (el estructural va después), sin servidor ni push/pull, el undo no rebasa contenido sobre cambios posteriores.
+- Hecho también: hebra-server, hb push/pull/presence/remote, hb git import, web /hub, release.yml (binarios al crear un tag v*). scripts/demo.sh siembra un servidor de ejemplo.
+- Limitaciones conocidas: árbol plano (no Merkle), sin enlaces simbólicos, merge por líneas, presencia por sondeo (no WebSocket), el undo no rebasa contenido sobre cambios posteriores.
 
 ## Comandos útiles
 - Rust: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`

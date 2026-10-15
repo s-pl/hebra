@@ -418,7 +418,15 @@ fn describe(tx: &mut Tx<'_>, revision: &str, message: String) -> hebra_core::Res
             "the root commit cannot be modified".to_owned(),
         ));
     }
-    let new = tx.rewrite(id, |c| c.description = message)?;
+    // Describing an empty change makes you its author.
+    let adopt = tx.is_empty_change(&id)?;
+    let actor = tx.actor.clone();
+    let new = tx.rewrite(id, |c| {
+        if adopt {
+            c.author = actor;
+        }
+        c.description = message;
+    })?;
     let commit = tx.commit(&new)?;
     let text = format!("Described {}\n", short_line(&new, &commit));
     Ok(Output::new(commit_json(&new, &commit), text))

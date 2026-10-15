@@ -110,43 +110,37 @@ const COMPARISON: [string, string, string][] = [
 const ROADMAP = [
   {
     stage: "Works today",
-    title: "v0.1 on one machine",
+    title: "v0.1",
     items: [
-      "Content-addressed store (BLAKE3)",
-      "Operation log with undo",
-      "One workspace per agent",
-      "Claims and overlap warnings",
-      "Three-way merge, conflicts as data",
+      "One workspace per agent, claims, overlap warnings",
+      "Merges that never block, undo for everything",
       "Provenance on every change",
       "MCP server and --json output",
-      "Export to Git, provenance included",
+      "Hebra server: push, pull, presence across machines",
+      "Per-agent tokens; agents can't move main",
+      "Import from and export to Git",
+      "Web hub: history, diffs, files, who is working",
     ],
   },
   {
     stage: "Next",
-    title: "The Hebra server",
+    title: "Sharper coordination",
     items: [
-      "Push and pull to a Hebra server",
       "Real-time presence over WebSocket",
-      "Scoped tokens and permissions per agent",
-      "Required human approval rules",
-      "Import existing Git history",
+      "Review requests and approvals in the hub",
+      "Structural merge by syntax tree",
+      "Symlink support and Merkle trees",
     ],
   },
   {
     stage: "Later",
-    title: "The platform",
-    items: [
-      "Web app for review and agent activity",
-      "Structural merge by syntax tree",
-      "Semantic search over history and intent",
-      "Lazy fetch for huge monorepos",
-    ],
+    title: "Scale",
+    items: ["Semantic search over history and intent", "Lazy fetch for huge monorepos", "Hosted Hebra"],
   },
 ] as const;
 
 const GAPS = [
-  "No server yet, so nothing syncs between machines",
+  "Presence refreshes when someone runs a command, not live yet",
   "Symlinks are not tracked",
   "Trees are flat, so very large repos will be slow",
   "Merges are line-based for now",
@@ -563,8 +557,8 @@ export default function Home() {
           <div className="reveal max-w-3xl md:ml-[220px]">
             <Terminal title="install" lines={INSTALL} />
             <p className="mt-4 text-ink-3 text-sm">
-              Needs a Rust toolchain for now. Prebuilt binaries for macOS, Linux and Windows will come with the first
-              release.
+              Or download <code className="font-mono">hb</code> and <code className="font-mono">hebra-server</code> for
+              macOS, Linux and Windows from the GitHub releases page.
             </p>
           </div>
         </Section>
@@ -574,7 +568,7 @@ export default function Home() {
           number="09"
           label="Roadmap"
           title="What works, and what doesn't yet"
-          intro="Everything runs on one machine today. There is no server yet, so nothing syncs between computers."
+          intro="The local core, the server and the hub work today. This is what comes next, and what still has rough edges."
         >
           <div className="md:ml-[220px]">
             <ol className="stagger grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">

@@ -527,3 +527,26 @@ fn git_round_trip_keeps_change_ids_and_provenance() {
     json(&other.root, &["new", "main"]);
     assert_eq!(other.read("b.txt"), "2\n");
 }
+
+#[test]
+fn whoever_fills_an_empty_change_becomes_its_author() {
+    let repo = Repo::init(&[("a.txt", "1\n")]);
+    json(&repo.root, &["commit", "-m", "base"]);
+    // The empty working-copy change was created by the human...
+    repo.write("a.txt", "2\n");
+    // ...but an agent writes into it and commits.
+    let out = hb_command(&repo.root)
+        .args(["--json", "commit", "-m", "agent work"])
+        .env("HB_ACTOR", "codex")
+        .env("HB_ACTOR_KIND", "agent")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let shown = json(&repo.root, &["show", "@-"]);
+    assert_eq!(shown["author"]["name"], "codex");
+    assert_eq!(shown["author"]["kind"], "agent");
+}

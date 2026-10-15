@@ -279,9 +279,18 @@ impl Workspace {
                 if tree_id == current.tree && conflicts == current.conflicts {
                     return Ok(false);
                 }
+                // Whoever puts the first content into an empty change is its author.
+                let adopt = tx.is_empty_change(&wc_id)?;
+                let (actor, provenance) = (tx.actor.clone(), tx.provenance.clone());
                 tx.rewrite(wc_id, |c| {
                     c.tree = tree_id;
                     c.conflicts = conflicts;
+                    if adopt {
+                        c.author = actor;
+                        if !provenance.is_empty() {
+                            c.provenance = provenance;
+                        }
+                    }
                 })?;
                 Ok(true)
             },

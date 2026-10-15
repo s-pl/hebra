@@ -99,7 +99,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
               <div className="px-5 py-8">
                 <p className="font-medium">Nothing pushed yet.</p>
                 <p className="mt-1 text-ink-2 text-sm">Connect a local repository and push a bookmark:</p>
-                <div className="mt-4 grid gap-2">
+                <div className="mt-4 grid gap-2 [&>*]:min-w-0">
                   <CopyCommand command={`hb remote add origin ${remoteUrl} --token <your token>`} />
                   <CopyCommand command="hb push --bookmark main -r @-" />
                 </div>
@@ -213,7 +213,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
             </Panel>
 
             <Panel title="Push to this repo">
-              <div className="grid gap-2 px-4 py-4">
+              <div className="grid gap-2 px-4 py-4 [&>*]:min-w-0">
                 <CopyCommand command={`hb remote add origin ${remoteUrl} --token <token>`} />
                 <CopyCommand command="hb push --bookmark main -r @-" />
                 <p className="mt-1 text-[12.5px] text-ink-3">

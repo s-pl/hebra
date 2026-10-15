@@ -2,7 +2,7 @@
 
 **Version control built for the agent era.** Hundreds of agents and people work in the same repository at once — isolated, coordinated, and never blocked by a merge.
 
-> Status: early preview (v0.1). The local core and the `hb` CLI work today; the server and web platform are next.
+> Status: early preview (v0.1). The local core, the `hb` CLI, the `hebra-server` and the web hub work today.
 
 ## Why
 
@@ -21,11 +21,12 @@ Git was designed for people taking turns. Agents don't take turns. With Git, tea
 
 ## Install
 
-```sh
-cargo install --locked --git https://github.com/s-pl/hebra hebra-cli
-```
+Download `hb` and `hebra-server` for macOS, Linux or Windows from the [releases page](https://github.com/s-pl/hebra/releases) (each archive has a SHA-256 checksum and signed build provenance), or build from source:
 
-Requires Rust (see `rust-toolchain.toml`). Prebuilt binaries will come with the first release.
+```sh
+cargo install --locked --git https://github.com/s-pl/hebra hebra-cli      # hb
+cargo install --locked --git https://github.com/s-pl/hebra hebra-server   # hebra-server
+```
 
 ## Quick tour
 
@@ -74,6 +75,50 @@ Hebra-On-Behalf-Of: ana
 Hebra-Task: add OAuth login
 ```
 
+### Importing from Git
+
+```sh
+hb git import ../existing-repo --branch main   # becomes the bookmark `main`
+hb new main
+```
+
+Imports are deterministic, and commits that were exported by Hebra get their change ids and provenance back.
+
+## Sharing work: the Hebra server
+
+```sh
+hebra-server repo create acme                         # `main` is protected by default
+hebra-server token create --name ana --admin          # a person: may move any bookmark
+hebra-server token create --name claude-code --agent --for ana   # an agent: agents/claude-code/*
+hebra-server serve --addr 0.0.0.0:4600
+```
+
+On each machine:
+
+```sh
+hb remote add origin http://server:4600/acme --token <token>    # or set HB_TOKEN
+hb push --bookmark main -r @-          # people publish main
+hb push --bookmark agents/claude-code/oauth -r @-   # agents publish their own bookmarks
+hb pull                                 # fast-forwards bookmarks; reports divergence
+hb merge agents/claude-code/oauth@origin  # remote bookmarks are `<name>@<remote>`
+hb presence                             # who is working on what, on every machine
+```
+
+- Bookmarks move with compare-and-swap: pushing on top of an outdated `main` is rejected, never silently overwritten.
+- Agent tokens can never move protected bookmarks. Agents push to `agents/<name>/…` and a person merges into `main`.
+- `hb status` also warns when someone on another machine is changing or has claimed the files you are changing.
+
+### The web hub
+
+`apps/web` serves the landing page and, under `/hub`, a view of the server: repositories, history with the agent behind each change, diffs with provenance (task, session, prompt), a file browser, and who is working right now. Point it at a server with `HEBRA_SERVER_URL` (default `http://127.0.0.1:4600`).
+
+To see everything with sample data:
+
+```sh
+cargo build && scripts/demo.sh                     # server with a person and two agents
+cd apps/web && pnpm build && pnpm start            # then open http://localhost:3000/hub/acme
+```
+
 ### Revisions
 
 `@` (working copy), `@-` (its parent), `<workspace>@`, `root()`, bookmarks, change-id prefixes (letters `k`–`z`) and commit-id prefixes (hex).
@@ -83,7 +128,9 @@ Hebra-Task: add OAuth login
 ```
 crates/core    hebra-core: object store, model, working copy, merge, op log
 crates/cli     hb: command line and MCP server
-apps/web       landing page (Next.js)
+crates/server  hebra-server: HTTP API, permissions, presence
+apps/web       landing page and web hub (Next.js)
+scripts        stress.sh (concurrency check), demo.sh (sample server)
 ```
 
 ## Development
@@ -99,9 +146,9 @@ pnpm lint && pnpm typecheck && pnpm build
 
 ## Roadmap
 
-- **Now (v0.1):** BLAKE3 content-addressed store, operation log with undo, one workspace per agent, claims and overlap warnings, three-way merge with conflicts as data, provenance on every change, MCP server, `--json`, export to Git.
-- **Next:** Hebra server (push/pull), real-time presence, scoped tokens and permissions per agent, approval rules, importing existing Git history.
-- **Later:** web platform, structural (syntax-tree) merge, semantic history search, lazy fetch for huge monorepos.
+- **Now (v0.1):** BLAKE3 content-addressed store, operation log with undo, one workspace per agent, claims and overlap warnings, three-way merge with conflicts as data, provenance on every change, MCP server, `--json`, Git import/export, `hebra-server` with push/pull, presence and per-agent permissions, web hub.
+- **Next:** real-time presence over WebSocket, review requests in the hub, structural (syntax-tree) merge, symlinks and Merkle trees.
+- **Later:** semantic history search, lazy fetch for huge monorepos, hosted Hebra.
 
 ## License
 
