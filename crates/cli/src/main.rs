@@ -1,6 +1,7 @@
 //! `hb`: the command line for Hebra.
 
 mod cli;
+mod collab;
 mod commands;
 mod fmt;
 mod mcp;

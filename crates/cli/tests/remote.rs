@@ -214,3 +214,90 @@ fn live_stream_announces_pushes() {
         "bookmark"
     );
 }
+
+#[test]
+fn reviews_need_a_person_and_merge_on_the_server() {
+    let env = start_server();
+    let a = clone_dir(&env, "ana", &env.human);
+    fs::write(a.join("app.rs"), "one\ntwo\nthree\n").unwrap();
+    ok(&a, &["commit", "-m", "base"], &[]);
+    ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+
+    // The agent publishes a change and asks for review.
+    let c = clone_dir(&env, "agent", &env.agent);
+    ok(&c, &["pull"], &[]);
+    ok(&c, &["new", "main"], &[]);
+    fs::write(c.join("app.rs"), "ONE\ntwo\nthree\n").unwrap();
+    ok(&c, &["commit", "-m", "uppercase one"], &[]);
+    ok(
+        &c,
+        &["push", "--bookmark", "agents/claude-code/upper", "-r", "@-"],
+        &[],
+    );
+    let review = ok(
+        &c,
+        &[
+            "review",
+            "open",
+            "agents/claude-code/upper",
+            "--title",
+            "Uppercase the first line",
+        ],
+        &[],
+    );
+    let id = review["id"].as_i64().unwrap().to_string();
+
+    // Meanwhile Ana changes another line, so a real merge commit is needed.
+    fs::write(a.join("app.rs"), "one\ntwo\nTHREE\n").unwrap();
+    ok(&a, &["commit", "-m", "uppercase three"], &[]);
+    ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+
+    // The agent cannot approve its own work into main.
+    let denied = fail(&c, &["review", "merge", &id], &[]);
+    assert!(
+        denied.contains("protected") || denied.contains("may not"),
+        "{denied}"
+    );
+
+    // Ana approves: the server merges both edits.
+    let merged = ok(&a, &["review", "merge", &id], &[]);
+    assert_eq!(merged["state"], "merged");
+    ok(&a, &["pull"], &[]);
+    ok(&a, &["new", "main"], &[]);
+    assert_eq!(
+        fs::read_to_string(a.join("app.rs")).unwrap(),
+        "ONE\ntwo\nTHREE\n"
+    );
+    let shown = ok(&a, &["show", "main"], &[]);
+    assert_eq!(shown["parents"].as_array().unwrap().len(), 2);
+    assert_eq!(shown["author"]["name"], "ana");
+
+    // A conflicting review is refused with an explanation.
+    fs::write(c.join("app.rs"), "ONE\ntwo\ntres\n").unwrap();
+    ok(&c, &["commit", "-m", "spanish"], &[]);
+    ok(
+        &c,
+        &["push", "--bookmark", "agents/claude-code/upper", "-r", "@-"],
+        &[],
+    );
+    let second = ok(
+        &c,
+        &[
+            "review",
+            "open",
+            "agents/claude-code/upper",
+            "--title",
+            "Spanish",
+        ],
+        &[],
+    );
+    let id2 = second["id"].as_i64().unwrap().to_string();
+    let conflict = fail(&a, &["review", "merge", &id2], &[]);
+    assert!(conflict.contains("conflict"), "{conflict}");
+    ok(&a, &["review", "close", &id2], &[]);
+
+    // Cleaning up the agent's bookmark.
+    ok(&a, &["push", "--delete", "agents/claude-code/upper"], &[]);
+    let listed = ok(&a, &["review", "list", "--all"], &[]);
+    assert_eq!(listed["reviews"].as_array().unwrap().len(), 2);
+}

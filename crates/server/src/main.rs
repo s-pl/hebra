@@ -67,6 +67,13 @@ enum TokenCommand {
         #[arg(long)]
         admin: bool,
     },
+    /// List tokens (names and permissions; secrets are never stored).
+    List,
+    /// Revoke every token with this name.
+    Revoke {
+        #[arg(long)]
+        name: String,
+    },
 }
 
 #[tokio::main]
@@ -119,6 +126,20 @@ async fn main() -> anyhow::Result<()> {
                 info.kind,
                 allow.join(", ")
             );
+        }
+        Command::Token(TokenCommand::List) => {
+            for (name, kind, allow, admin, created) in server.list_tokens()? {
+                let allow: Vec<String> = serde_json::from_str(&allow).unwrap_or_default();
+                println!(
+                    "{name}	{kind}{}	{}	{created}",
+                    if admin { " (admin)" } else { "" },
+                    allow.join(", ")
+                );
+            }
+        }
+        Command::Token(TokenCommand::Revoke { name }) => {
+            let n = server.revoke_tokens(&name)?;
+            println!("Revoked {n} token(s) named {name}");
         }
     }
     Ok(())

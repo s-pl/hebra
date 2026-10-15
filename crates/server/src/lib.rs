@@ -9,6 +9,8 @@
 //! bookmarks matching its patterns, and agent tokens can never move a
 //! protected bookmark (by default `main`): a person has to do that.
 
+mod reviews;
+
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,6 +53,9 @@ CREATE TABLE IF NOT EXISTS events (
 const PRESENCE_TTL_SECS: i64 = 15 * 60;
 /// Largest push accepted in one request.
 const MAX_PUSH_BYTES: usize = 1024 * 1024 * 1024;
+
+/// `(name, kind, allow as JSON, admin, created_at)` as stored.
+pub type TokenRow = (String, String, String, bool, String);
 
 pub struct Server {
     data: PathBuf,
@@ -209,6 +214,7 @@ impl Server {
         conn.busy_timeout(std::time::Duration::from_secs(30))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.execute_batch(SCHEMA)?;
+        conn.execute_batch(reviews::SCHEMA)?;
         let (live, _) = tokio::sync::broadcast::channel(1024);
         Ok(Self {
             data: data.to_path_buf(),
@@ -824,6 +830,338 @@ async fn events(
     .await
 }
 
+// ---------------------------------------------------------------- reviews
+
+impl Server {
+    fn bookmark(&self, repo: &str, name: &str) -> ApiResult<Option<ObjectId>> {
+        let target: Option<String> = self
+            .db()
+            .query_row(
+                "SELECT target FROM bookmarks WHERE repo = ?1 AND name = ?2",
+                params![repo, name],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(match target {
+            Some(t) => Some(ObjectId::parse(&t)?),
+            None => None,
+        })
+    }
+
+    /// Permission to move `name`: allowed by the token's patterns, and never
+    /// a protected bookmark for agents.
+    fn check_move(&self, repo: &str, token: &TokenInfo, name: &str) -> ApiResult<()> {
+        if !token.allow.iter().any(|p| glob_match(p, name)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                format!("token `{}` may not move `{name}`", token.name),
+            ));
+        }
+        let protected = self.protected(repo)?.iter().any(|p| glob_match(p, name));
+        if protected && token.kind == "agent" {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "needs_human",
+                format!("`{name}` is protected: a person has to approve this"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Compare-and-swap a bookmark, record the event and tell live clients.
+    fn move_bookmark(
+        &self,
+        repo: &str,
+        token: &TokenInfo,
+        name: &str,
+        old: Option<ObjectId>,
+        new: ObjectId,
+    ) -> ApiResult<()> {
+        let db = self.db();
+        let current: Option<String> = db
+            .query_row(
+                "SELECT target FROM bookmarks WHERE repo = ?1 AND name = ?2",
+                params![repo, name],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if current != old.map(|o| o.hex()) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "stale",
+                format!("`{name}` moved meanwhile; try again"),
+            ));
+        }
+        db.execute(
+            "INSERT INTO bookmarks (repo, name, target, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (repo, name) DO UPDATE SET target = excluded.target,
+               updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+            params![repo, name, new.hex(), now(), token.display()],
+        )?;
+        drop(db);
+        let detail = json!({ "name": name, "old": old.map(|o| o.hex()), "new": new.hex() });
+        self.event(repo, &token.display(), "bookmark", &detail)?;
+        let mut live = detail;
+        live["actor"] = json!(token.display());
+        self.notify(repo, "bookmark", live);
+        Ok(())
+    }
+
+    fn review_row(&self, repo: &str, id: i64) -> ApiResult<Value> {
+        self.db()
+            .query_row(
+                "SELECT id, source, target, title, body, author, state, created_at, updated_at, closed_by, merged_commit
+                 FROM reviews WHERE repo = ?1 AND id = ?2",
+                params![repo, id],
+                review_json,
+            )
+            .optional()?
+            .ok_or_else(|| ApiError::not_found(format!("review #{id} not found")))
+    }
+
+    fn set_review_state(
+        &self,
+        repo: &str,
+        id: i64,
+        state: &str,
+        by: &str,
+        merged: Option<ObjectId>,
+    ) -> ApiResult<()> {
+        self.db().execute(
+            "UPDATE reviews SET state = ?1, closed_by = ?2, merged_commit = ?3, updated_at = ?4 WHERE repo = ?5 AND id = ?6",
+            params![state, by, merged.map(|m| m.hex()), now(), repo, id],
+        )?;
+        self.notify(repo, "review", json!({ "id": id, "state": state }));
+        Ok(())
+    }
+
+    pub fn list_tokens(&self) -> anyhow::Result<Vec<TokenRow>> {
+        let db = self.db();
+        let mut stmt = db.prepare(
+            "SELECT name, kind, allow, admin, created_at FROM tokens ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn revoke_tokens(&self, name: &str) -> anyhow::Result<usize> {
+        Ok(self
+            .db()
+            .execute("DELETE FROM tokens WHERE name = ?1", [name])?)
+    }
+}
+
+fn review_json(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    Ok(json!({
+        "id": r.get::<_, i64>(0)?,
+        "source": r.get::<_, String>(1)?,
+        "target": r.get::<_, String>(2)?,
+        "title": r.get::<_, String>(3)?,
+        "body": r.get::<_, String>(4)?,
+        "author": r.get::<_, String>(5)?,
+        "state": r.get::<_, String>(6)?,
+        "created_at": r.get::<_, String>(7)?,
+        "updated_at": r.get::<_, String>(8)?,
+        "closed_by": r.get::<_, Option<String>>(9)?,
+        "merged_commit": r.get::<_, Option<String>>(10)?,
+    }))
+}
+
+async fn me(State(s): St, headers: HeaderMap) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        let token = s.require_token(&headers)?;
+        Ok(axum::Json(json!({ "name": token.name, "kind": token.kind, "on_behalf_of": token.on_behalf_of, "allow": token.allow, "admin": token.admin, "display": token.display() })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct ReviewsQuery {
+    state: Option<String>,
+}
+
+async fn list_reviews(
+    State(s): St,
+    UrlPath(repo): UrlPath<String>,
+    headers: HeaderMap,
+    Query(q): Query<ReviewsQuery>,
+) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        s.require_repo(&repo, &headers)?;
+        let state = q.state.unwrap_or_else(|| "open".to_owned());
+        let db = s.db();
+        let mut stmt = db.prepare(
+            "SELECT id, source, target, title, body, author, state, created_at, updated_at, closed_by, merged_commit
+             FROM reviews WHERE repo = ?1 AND (?2 = 'all' OR state = ?2) ORDER BY id DESC LIMIT 200",
+        )?;
+        let rows = stmt.query_map(params![repo, state], review_json)?;
+        let reviews: Vec<Value> = rows.collect::<rusqlite::Result<_>>()?;
+        Ok(axum::Json(json!({ "reviews": reviews })))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct OpenReview {
+    source: String,
+    target: Option<String>,
+    title: String,
+    #[serde(default)]
+    body: String,
+}
+
+async fn open_review(
+    State(s): St,
+    UrlPath(repo): UrlPath<String>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<OpenReview>,
+) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        s.require_repo(&repo, &headers)?;
+        let token = s.require_token(&headers)?;
+        let target = body.target.unwrap_or_else(|| "main".to_owned());
+        if body.title.trim().is_empty() {
+            return Err(ApiError::bad("a review needs a title"));
+        }
+        if s.bookmark(&repo, &body.source)?.is_none() {
+            return Err(ApiError::bad(format!("bookmark `{}` does not exist on the server; push it first", body.source)));
+        }
+        if s.bookmark(&repo, &target)?.is_none() {
+            return Err(ApiError::bad(format!("target bookmark `{target}` does not exist")));
+        }
+        let existing: Option<i64> = s
+            .db()
+            .query_row(
+                "SELECT id FROM reviews WHERE repo = ?1 AND source = ?2 AND target = ?3 AND state = 'open'",
+                params![repo, body.source, target],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            return Ok(axum::Json(s.review_row(&repo, id)?));
+        }
+        let at = now();
+        let id = {
+            let db = s.db();
+            db.execute(
+                "INSERT INTO reviews (repo, source, target, title, body, author, state, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?7)",
+                params![repo, body.source, target, body.title.trim(), body.body, token.display(), at],
+            )?;
+            db.last_insert_rowid()
+        };
+        s.event(&repo, &token.display(), "review", &json!({ "name": body.source, "old": null, "new": null, "review": id }))?;
+        s.notify(&repo, "review", json!({ "id": id, "state": "open" }));
+        Ok(axum::Json(s.review_row(&repo, id)?))
+    })
+    .await
+}
+
+async fn get_review(
+    State(s): St,
+    UrlPath((repo, id)): UrlPath<(String, i64)>,
+    headers: HeaderMap,
+) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        s.require_repo(&repo, &headers)?;
+        let mut review = s.review_row(&repo, id)?;
+        let store = s.store(&repo);
+        let source = s.bookmark(&repo, review["source"].as_str().unwrap_or_default())?;
+        let target = s.bookmark(&repo, review["target"].as_str().unwrap_or_default())?;
+        if let (Some(source), Some(target)) = (source, target) {
+            let plan = reviews::plan(&store, target, source)?;
+            review["source_commit"] = json!(source.hex());
+            review["target_commit"] = json!(target.hex());
+            review["mergeability"] = json!(plan.mergeability);
+            review["files"] = json!(reviews::changes(&store, plan.base, source)?);
+            let commits: Vec<Value> = reviews::commits(&store, target, source, 50)?
+                .iter()
+                .map(|(id, c)| commit_json(id, c))
+                .collect();
+            review["commits"] = json!(commits);
+        }
+        Ok(axum::Json(review))
+    })
+    .await
+}
+
+async fn merge_review(
+    State(s): St,
+    UrlPath((repo, id)): UrlPath<(String, i64)>,
+    headers: HeaderMap,
+) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        s.require_repo(&repo, &headers)?;
+        let token = s.require_token(&headers)?;
+        let review = s.review_row(&repo, id)?;
+        if review["state"] != "open" {
+            return Err(ApiError::bad(format!("review #{id} is {}", review["state"].as_str().unwrap_or("closed"))));
+        }
+        let source_name = review["source"].as_str().unwrap_or_default().to_owned();
+        let target_name = review["target"].as_str().unwrap_or_default().to_owned();
+        s.check_move(&repo, &token, &target_name)?;
+        let store = s.store(&repo);
+        let source = s
+            .bookmark(&repo, &source_name)?
+            .ok_or_else(|| ApiError::bad(format!("`{source_name}` no longer exists")))?;
+        let target = s
+            .bookmark(&repo, &target_name)?
+            .ok_or_else(|| ApiError::bad(format!("`{target_name}` no longer exists")))?;
+        let plan = reviews::plan(&store, target, source)?;
+        let merged = match (&plan.mergeability, &plan.tree) {
+            (reviews::Mergeability::UpToDate, _) => target,
+            (reviews::Mergeability::FastForward, _) => {
+                s.move_bookmark(&repo, &token, &target_name, Some(target), source)?;
+                source
+            }
+            (reviews::Mergeability::Clean, Some(tree)) => {
+                let title = review["title"].as_str().unwrap_or_default();
+                let commit = reviews::write_merge(&store, target, source, tree, title, &source_name, &target_name, &token)?;
+                s.move_bookmark(&repo, &token, &target_name, Some(target), commit)?;
+                commit
+            }
+            (reviews::Mergeability::Conflicts { paths }, _) => {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "conflicts",
+                    format!(
+                        "merging would conflict in {}; run `hb merge {source_name}@origin`, resolve, and push",
+                        paths.join(", ")
+                    ),
+                ));
+            }
+            (reviews::Mergeability::Clean, None) => return Err(ApiError::bad("nothing to merge")),
+        };
+        s.set_review_state(&repo, id, "merged", &token.display(), Some(merged))?;
+        Ok(axum::Json(s.review_row(&repo, id)?))
+    })
+    .await
+}
+
+async fn close_review(
+    State(s): St,
+    UrlPath((repo, id)): UrlPath<(String, i64)>,
+    headers: HeaderMap,
+) -> ApiResult<axum::Json<Value>> {
+    blocking(move || {
+        s.require_repo(&repo, &headers)?;
+        let token = s.require_token(&headers)?;
+        let review = s.review_row(&repo, id)?;
+        if review["state"] != "open" {
+            return Err(ApiError::bad(format!(
+                "review #{id} is already {}",
+                review["state"].as_str().unwrap_or("closed")
+            )));
+        }
+        s.set_review_state(&repo, id, "closed", &token.display(), None)?;
+        Ok(axum::Json(s.review_row(&repo, id)?))
+    })
+    .await
+}
+
 /// Server-Sent Events: bookmark moves and presence updates for one repository,
 /// as they happen. Lagging clients get a `resync` event.
 async fn stream(
@@ -854,6 +1192,7 @@ async fn stream(
 pub fn router(server: Arc<Server>) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
+        .route("/api/v1/me", get(me))
         .route("/api/v1/repos", get(list_repos).post(create_repo))
         .route("/api/v1/repos/{repo}", get(repo_info))
         .route("/api/v1/repos/{repo}/pack", post(pack))
@@ -871,6 +1210,19 @@ pub fn router(server: Arc<Server>) -> Router {
         )
         .route("/api/v1/repos/{repo}/events", get(events))
         .route("/api/v1/repos/{repo}/stream", get(stream))
+        .route(
+            "/api/v1/repos/{repo}/reviews",
+            get(list_reviews).post(open_review),
+        )
+        .route("/api/v1/repos/{repo}/reviews/{id}", get(get_review))
+        .route(
+            "/api/v1/repos/{repo}/reviews/{id}/merge",
+            post(merge_review),
+        )
+        .route(
+            "/api/v1/repos/{repo}/reviews/{id}/close",
+            post(close_review),
+        )
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(server)
 }

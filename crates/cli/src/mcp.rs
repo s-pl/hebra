@@ -254,6 +254,75 @@ fn tools() -> Vec<Tool> {
             },
         },
         Tool {
+            name: "hb_push",
+            description: "Publish work to the server. Agents push their own bookmark, e.g. bookmark agents/<name>/<task> with revision @-.",
+            properties: json!({ "cwd": cwd, "bookmark": { "type": "string" }, "revision": rev, "remote": { "type": "string" } }),
+            required: &["bookmark"],
+            args: |v| {
+                let mut a = vec![
+                    "push".into(),
+                    s(v, "remote").unwrap_or_else(|| "origin".into()),
+                ];
+                opt(&mut a, "--bookmark", s(v, "bookmark"));
+                opt(&mut a, "--revision", s(v, "revision"));
+                a
+            },
+        },
+        Tool {
+            name: "hb_pull",
+            description: "Fetch bookmarks and changes from the server; local bookmarks fast-forward, divergence is reported.",
+            properties: json!({ "cwd": cwd, "remote": { "type": "string" } }),
+            required: &[],
+            args: |v| {
+                vec![
+                    "pull".into(),
+                    s(v, "remote").unwrap_or_else(|| "origin".into()),
+                ]
+            },
+        },
+        Tool {
+            name: "hb_presence",
+            description: "Who is working on the shared repository right now, on every machine, and which files they touch.",
+            properties: json!({ "cwd": cwd, "remote": { "type": "string" } }),
+            required: &[],
+            args: |v| {
+                vec![
+                    "presence".into(),
+                    s(v, "remote").unwrap_or_else(|| "origin".into()),
+                ]
+            },
+        },
+        Tool {
+            name: "hb_review_open",
+            description: "Ask a person to review and merge your pushed bookmark into main (or another target).",
+            properties: json!({
+                "cwd": cwd,
+                "bookmark": { "type": "string" },
+                "title": { "type": "string" },
+                "body": { "type": "string" },
+                "target": { "type": "string" },
+            }),
+            required: &["bookmark", "title"],
+            args: |v| {
+                let mut a = vec![
+                    "review".into(),
+                    "open".into(),
+                    s(v, "bookmark").unwrap_or_default(),
+                ];
+                opt(&mut a, "--title", s(v, "title"));
+                opt(&mut a, "--body", s(v, "body"));
+                opt(&mut a, "--target", s(v, "target"));
+                a
+            },
+        },
+        Tool {
+            name: "hb_reviews",
+            description: "List open reviews on the server.",
+            properties: json!({ "cwd": cwd }),
+            required: &[],
+            args: |_| vec!["review".into(), "list".into()],
+        },
+        Tool {
             name: "hb_undo",
             description: "Undo the last operation. Everything is in the operation log, so nothing is lost.",
             properties: json!({ "cwd": cwd }),

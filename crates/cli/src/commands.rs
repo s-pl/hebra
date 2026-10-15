@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::cli::{
     BookmarkCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand, RemoteCommand,
-    StartArgs, WorkspaceCommand,
+    ReviewCommand, StartArgs, WorkspaceCommand,
 };
 use crate::fmt::{ago, parse_ttl, slug};
 
@@ -137,9 +137,35 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         Command::Remote(RemoteCommand::Remove { name }) => crate::remote::remove(&ws, &name),
         Command::Push {
             remote,
+            delete: Some(name),
+            ..
+        } => crate::collab::delete_bookmark(&mut ws, &actor, &prov, &remote, &name),
+        Command::Push {
+            remote,
             bookmark,
             revision,
+            delete: None,
         } => crate::remote::push(&mut ws, &actor, &prov, &remote, bookmark, revision),
+        Command::Review(ReviewCommand::Open {
+            bookmark,
+            title,
+            body,
+            target,
+            remote,
+        }) => crate::collab::review_open(&ws, &remote, &bookmark, &target, &title, body),
+        Command::Review(ReviewCommand::List { all, remote }) => {
+            crate::collab::review_list(&ws, &remote, all)
+        }
+        Command::Review(ReviewCommand::Merge { id, remote }) => {
+            crate::collab::review_act(&ws, &remote, id, "merge")
+        }
+        Command::Review(ReviewCommand::Close { id, remote }) => {
+            crate::collab::review_act(&ws, &remote, id, "close")
+        }
+        Command::Watch { remote, interval } => {
+            let json_out = std::env::var("HB_JSON").is_ok_and(|v| v == "1" || v == "true");
+            crate::collab::watch(&mut ws, &actor, &prov, &remote, interval, json_out)
+        }
         Command::Pull { remote } => crate::remote::pull(&mut ws, &actor, &prov, &remote),
         Command::Presence { remote } => crate::remote::presence(&mut ws, &actor, &prov, &remote),
         Command::Git(GitCommand::Export {
@@ -193,6 +219,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::Mcp => "mcp",
         Command::Remote(_) => "remote",
         Command::Push { .. } => "push",
+        Command::Review(_) => "review",
+        Command::Watch { .. } => "watch",
         Command::Pull { .. } => "pull",
         Command::Presence { .. } => "presence",
         Command::Git(GitCommand::Export { .. }) => "git export",

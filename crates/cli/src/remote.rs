@@ -89,6 +89,15 @@ impl Remote {
         bail!("{} ({}): {message}", self.name, status.as_u16())
     }
 
+    /// URL of the repository's live event stream.
+    pub fn stream_url(&self) -> String {
+        self.url("/stream")
+    }
+
+    pub fn auth_header(&self) -> Option<String> {
+        self.auth()
+    }
+
     pub fn get_json(&self, path: &str) -> Result<Value> {
         let mut req = self.agent.get(self.url(path));
         if let Some(a) = self.auth() {

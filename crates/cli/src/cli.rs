@@ -131,6 +131,20 @@ pub enum Command {
         /// Point the bookmark at this revision first.
         #[arg(short, long, requires = "bookmark")]
         revision: Option<String>,
+        /// Delete this bookmark on the server instead.
+        #[arg(long, value_name = "BOOKMARK", conflicts_with_all = ["bookmark", "revision"])]
+        delete: Option<String>,
+    },
+    /// Ask for a bookmark to be merged, and act on reviews.
+    #[command(subcommand)]
+    Review(ReviewCommand),
+    /// Stay connected: share your presence as you work and see others live.
+    Watch {
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Seconds between presence updates.
+        #[arg(long, default_value_t = 5)]
+        interval: u64,
     },
     /// Fetch bookmarks and changes from a server; fast-forward local bookmarks.
     Pull {
@@ -140,6 +154,41 @@ pub enum Command {
     /// Who is working on the server's repository right now, from any machine.
     Presence {
         #[arg(default_value = "origin")]
+        remote: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ReviewCommand {
+    /// Ask for BOOKMARK to be merged into TARGET (default main).
+    Open {
+        bookmark: String,
+        #[arg(short, long)]
+        title: String,
+        #[arg(long)]
+        body: Option<String>,
+        #[arg(long, default_value = "main")]
+        target: String,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// List open reviews (or all with --all).
+    List {
+        #[arg(long)]
+        all: bool,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Approve and merge a review (people only for protected bookmarks).
+    Merge {
+        id: i64,
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
+    /// Close a review without merging.
+    Close {
+        id: i64,
+        #[arg(long, default_value = "origin")]
         remote: String,
     },
 }

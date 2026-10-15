@@ -157,45 +157,6 @@ body {
   }
 }
 
-/* ------------------------------------------------------------------ grain */
-
-/* Film grain over the whole page: SVG turbulence, nudged a few pixels per
-   frame so it shimmers like paper under light. */
-.grain {
-  position: fixed;
-  inset: -100px;
-  z-index: 70;
-  pointer-events: none;
-  opacity: 0.09;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: grain 900ms steps(6) infinite;
-}
-[data-theme="dark"] .grain {
-  opacity: 0.11;
-  mix-blend-mode: screen;
-}
-@keyframes grain {
-  0% {
-    transform: translate(0, 0);
-  }
-  20% {
-    transform: translate(-30px, 18px);
-  }
-  40% {
-    transform: translate(22px, -26px);
-  }
-  60% {
-    transform: translate(-14px, -34px);
-  }
-  80% {
-    transform: translate(34px, 12px);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
-}
-
 /* Warp threads behind the hero: the fixed vertical threads of a loom that the
    coloured weft (one per agent) crosses. */
 .hero-backdrop {
@@ -827,7 +788,6 @@ body {
     animation: fade-in 200ms ease forwards;
     transform: none;
   }
-  .grain,
   .thread-pulse,
   .knot-ring,
   .live-dot::after,

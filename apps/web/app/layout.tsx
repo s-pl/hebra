@@ -52,7 +52,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         {children}
-        <div aria-hidden="true" className="grain" />
       </body>
     </html>
   );
