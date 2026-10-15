@@ -193,10 +193,10 @@ fn live_stream_announces_pushes() {
         let reader = BufReader::new(resp.body_mut().as_reader());
         for line in reader.lines() {
             let Ok(line) = line else { break };
-            if let Some(kind) = line.strip_prefix("event: ") {
-                if tx.send(kind.to_owned()).is_err() {
-                    break;
-                }
+            if let Some(kind) = line.strip_prefix("event: ")
+                && tx.send(kind.to_owned()).is_err()
+            {
+                break;
             }
         }
     });
