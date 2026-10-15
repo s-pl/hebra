@@ -1,0 +1,27 @@
+# Rust
+/target/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Next.js
+apps/web/next-env.d.ts
+*.tsbuildinfo

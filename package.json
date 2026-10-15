@@ -1,0 +1,12 @@
+{
+  "name": "hebra-monorepo",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "web:dev": "pnpm --filter @hebra/web dev",
+    "web:build": "pnpm --filter @hebra/web build"
+  }
+}

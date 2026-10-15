@@ -1,0 +1,43 @@
+# Hebra (`hb`)
+
+Hebra es un sistema de control de versiones sucesor de Git, diseñado para trabajo humano y muy agéntico.
+Open source. Proyecto en solitario. Comando de la CLI: `hb`. Nombre: cada agente o persona es una hebra (hilo) en la tela común.
+
+## Visión (resumen)
+- Agentes como usuarios de primera clase: nada interactivo, todo con `--json`, API estable y MCP.
+- Nunca se bloquea: los conflictos son datos que se guardan y se resuelven después.
+- Coordinación antes de fusionar: presencia y reservas temporales en tiempo real.
+- Procedencia: cada cambio guarda quién (persona o agente), en nombre de quién y para qué.
+- Híbrido: el servidor es la fuente de verdad y el cliente guarda una copia local con trabajo offline.
+- Puente con Git: importar y exportar.
+
+## Estructura del monorepo
+```
+crates/core     hebra-core: almacén BLAKE3, modelo, copia de trabajo, merge, registro de operaciones (SQLite)
+crates/cli      hb: CLI (`--json` en todo) + servidor MCP (`hb mcp`)
+crates/server   (pendiente) servidor axum + tokio
+apps/web        landing (Next.js 16, Tailwind 4, Biome)
+```
+
+## Estado (2026-10-15)
+- MVP local funcional: init/import, status, diff, describe, commit, new, log, show, merge (conflictos como datos), resolve, start/workspaces (un workspace por agente), claims, undo/op log/op restore, bookmarks, config, MCP.
+- 32 tests (unitarios + integración de la CLI). `hb git export` exporta a Git con trailers de procedencia. Prueba de estrés: 8 agentes en paralelo, 48 comandos, 0 errores de bloqueo.
+- Repo público: https://github.com/s-pl/hebra
+- Limitaciones conocidas del MVP: árbol plano (no Merkle por directorios), sin enlaces simbólicos, merge por líneas (el estructural va después), sin servidor ni push/pull, el undo no rebasa contenido sobre cambios posteriores.
+
+## Comandos útiles
+- Rust: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+- Web (en `apps/web`): `npx -y pnpm@12.11.2 <install|dev|lint|typecheck|build>` — el pnpm 10 local no puede autoactualizarse a pnpm 12 en Windows, por eso se usa `npx`.
+
+## Skills del proyecto (.claude/skills)
+- `stack`: decisiones de stack y arquitectura. Léela antes de añadir tecnología.
+- `ultimas-versiones`: verificar siempre la última versión estable antes de añadir dependencias.
+- `rust`: convenciones de Rust.
+- `web`: convenciones de Next.js y TypeScript.
+- `ci-github`: GitHub Actions y flujo de repo.
+- `diseno`: sistema de diseño de la landing y la web.
+
+## Reglas
+- Código, comentarios, mensajes de commit y documentación pública en **inglés**. Conversación con el autor en español.
+- Avanzar poco a poco: preguntar al autor las decisiones de producto (nombre, funcionalidades, diseño) en lugar de suponerlas.
+- No hacer commit ni push sin que el autor lo pida.
