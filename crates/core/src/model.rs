@@ -141,4 +141,7 @@ pub struct View {
     pub bookmarks: BTreeMap<String, ObjectId>,
     /// Commits kept visible even if no workspace or bookmark points at them.
     pub heads: BTreeSet<ObjectId>,
+    /// Last known bookmarks of each remote (`main@origin`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub remotes: BTreeMap<String, BTreeMap<String, ObjectId>>,
 }

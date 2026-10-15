@@ -4,6 +4,7 @@ mod cli;
 mod commands;
 mod fmt;
 mod mcp;
+mod remote;
 
 use std::io::Write;
 use std::process::ExitCode;

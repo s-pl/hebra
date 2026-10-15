@@ -491,3 +491,39 @@ fn git_export_rejects_bad_branch_names() {
     let err: Value = serde_json::from_slice(&out.stderr).unwrap();
     assert_eq!(err["error"]["code"], "invalid_argument");
 }
+
+#[test]
+fn git_round_trip_keeps_change_ids_and_provenance() {
+    let repo = Repo::init(&[("a.txt", "1\n")]);
+    json(&repo.root, &["commit", "-m", "first"]);
+    let ws = PathBuf::from(
+        json(&repo.root, &["start", "oauth", "--agent", "claude-code"])["path"]
+            .as_str()
+            .unwrap(),
+    );
+    write_in(&ws, "b.txt", "2\n");
+    let done = json(&ws, &["commit", "-m", "add b"]);
+    let change = done["committed"]["change_id"].as_str().unwrap().to_owned();
+
+    let git_dir = repo.root.parent().unwrap().join("round.git");
+    json(&ws, &["git", "export", git_dir.to_str().unwrap()]);
+
+    let other = Repo::new();
+    json(&other.root, &["init"]);
+    let imported = json(&other.root, &["git", "import", git_dir.to_str().unwrap()]);
+    assert_eq!(imported["stats"]["commits"], 2);
+    let tip = &imported["tip"];
+    assert_eq!(tip["change_id"], change.as_str());
+    assert_eq!(tip["description"], "add b");
+    assert_eq!(tip["author"]["name"], "claude-code");
+    assert_eq!(tip["author"]["kind"], "agent");
+    assert_eq!(tip["provenance"]["task"], "oauth");
+
+    // Importing again is a no-op: same commits, same ids.
+    let again = json(&other.root, &["git", "import", git_dir.to_str().unwrap()]);
+    assert_eq!(again["tip"]["commit_id"], tip["commit_id"]);
+
+    // And the history can be worked on directly.
+    json(&other.root, &["new", "main"]);
+    assert_eq!(other.read("b.txt"), "2\n");
+}

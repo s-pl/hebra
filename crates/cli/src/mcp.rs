@@ -233,6 +233,27 @@ fn tools() -> Vec<Tool> {
             },
         },
         Tool {
+            name: "hb_git_import",
+            description: "Import the history of a Git branch as a bookmark. Deterministic; commits exported by Hebra keep their change ids and provenance.",
+            properties: json!({
+                "cwd": cwd,
+                "dir": { "type": "string", "description": "Path of the Git repository to read from." },
+                "branch": { "type": "string" },
+                "bookmark": { "type": "string" },
+            }),
+            required: &["dir"],
+            args: |v| {
+                let mut a = vec![
+                    "git".into(),
+                    "import".into(),
+                    s(v, "dir").unwrap_or_default(),
+                ];
+                opt(&mut a, "--branch", s(v, "branch"));
+                opt(&mut a, "--bookmark", s(v, "bookmark"));
+                a
+            },
+        },
+        Tool {
             name: "hb_undo",
             description: "Undo the last operation. Everything is in the operation log, so nothing is lost.",
             properties: json!({ "cwd": cwd }),

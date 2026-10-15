@@ -16,8 +16,8 @@ use hebra_core::{Error, ObjectId, Tx, Workspace};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    BookmarkCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand, StartArgs,
-    WorkspaceCommand,
+    BookmarkCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand, RemoteCommand,
+    StartArgs, WorkspaceCommand,
 };
 use crate::fmt::{ago, parse_ttl, slug};
 
@@ -27,7 +27,7 @@ pub struct Output {
 }
 
 impl Output {
-    fn new(json: Value, text: impl Into<String>) -> Self {
+    pub(crate) fn new(json: Value, text: impl Into<String>) -> Self {
         Self {
             json,
             text: text.into(),
@@ -54,7 +54,7 @@ fn configured_user(ws: Option<&Workspace>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn identity_for(ws: &Workspace) -> Result<(Actor, Provenance)> {
+pub(crate) fn identity_for(ws: &Workspace) -> Result<(Actor, Provenance)> {
     let info = ws.info()?;
     let actor = identity::resolve_actor(env, info.as_ref(), configured_user(Some(ws)));
     let provenance = identity::provenance(env, info.as_ref());
@@ -72,7 +72,9 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         Command::Init { .. } | Command::Mcp => unreachable!("handled by the caller"),
         Command::Status => {
             ws.snapshot_others(&prov)?;
-            ws.run(&actor, &prov, name, status).map_err(Into::into)
+            let mut out = ws.run(&actor, &prov, name, status)?;
+            add_remote_warnings(&mut ws, &actor, &prov, &mut out);
+            Ok(out)
         }
         Command::Diff(args) => ws
             .run(&actor, &prov, name, |tx| diff_cmd(tx, &args))
@@ -128,6 +130,18 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             .map_err(Into::into),
         Command::Claims => ws.run(&actor, &prov, name, list_claims).map_err(Into::into),
         Command::Config(cmd) => config(&ws, cmd),
+        Command::Remote(RemoteCommand::Add { name, url, token }) => {
+            crate::remote::add(&ws, &name, &url, token)
+        }
+        Command::Remote(RemoteCommand::List) => crate::remote::list(&ws),
+        Command::Remote(RemoteCommand::Remove { name }) => crate::remote::remove(&ws, &name),
+        Command::Push {
+            remote,
+            bookmark,
+            revision,
+        } => crate::remote::push(&mut ws, &actor, &prov, &remote, bookmark, revision),
+        Command::Pull { remote } => crate::remote::pull(&mut ws, &actor, &prov, &remote),
+        Command::Presence { remote } => crate::remote::presence(&mut ws, &actor, &prov, &remote),
         Command::Git(GitCommand::Export {
             dir,
             branch,
@@ -136,6 +150,18 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             let dir = cwd.join(dir);
             ws.run(&actor, &prov, name, |tx| {
                 git_export(tx, &dir, &branch, &revision)
+            })
+            .map_err(Into::into)
+        }
+        Command::Git(GitCommand::Import {
+            dir,
+            branch,
+            bookmark,
+        }) => {
+            let dir = cwd.join(dir);
+            let bookmark = bookmark.unwrap_or_else(|| branch.clone());
+            ws.run(&actor, &prov, name, |tx| {
+                git_import(tx, &dir, &branch, &bookmark)
             })
             .map_err(Into::into)
         }
@@ -165,7 +191,12 @@ fn command_name(command: &Command) -> &'static str {
         Command::Claims => "claims",
         Command::Config(_) => "config",
         Command::Mcp => "mcp",
-        Command::Git(_) => "git export",
+        Command::Remote(_) => "remote",
+        Command::Push { .. } => "push",
+        Command::Pull { .. } => "pull",
+        Command::Presence { .. } => "presence",
+        Command::Git(GitCommand::Export { .. }) => "git export",
+        Command::Git(GitCommand::Import { .. }) => "git import",
     }
 }
 
@@ -183,7 +214,7 @@ fn describe_or_placeholder(description: &str) -> String {
     }
 }
 
-fn commit_json(id: &ObjectId, c: &Commit) -> Value {
+pub(crate) fn commit_json(id: &ObjectId, c: &Commit) -> Value {
     json!({
         "commit_id": id.hex(),
         "change_id": c.change_id.encode(),
@@ -196,7 +227,7 @@ fn commit_json(id: &ObjectId, c: &Commit) -> Value {
     })
 }
 
-fn short_line(id: &ObjectId, c: &Commit) -> String {
+pub(crate) fn short_line(id: &ObjectId, c: &Commit) -> String {
     format!(
         "{} {}  {}",
         c.change_id.short(),
@@ -206,7 +237,10 @@ fn short_line(id: &ObjectId, c: &Commit) -> String {
 }
 
 /// Files changed by a commit relative to its parents.
-fn own_changes(tx: &mut Tx<'_>, id: &ObjectId) -> hebra_core::Result<Vec<(String, FileStatus)>> {
+pub(crate) fn own_changes(
+    tx: &mut Tx<'_>,
+    id: &ObjectId,
+) -> hebra_core::Result<Vec<(String, FileStatus)>> {
     let commit = tx.commit(id)?;
     let (base, _) = tx.parents_tree(&commit.parents)?;
     let tree = tx.tree(&commit.tree)?;
@@ -1023,4 +1057,114 @@ fn git_export(
         }),
         text,
     ))
+}
+
+fn git_import(
+    tx: &mut Tx<'_>,
+    dir: &Path,
+    branch: &str,
+    bookmark: &str,
+) -> hebra_core::Result<Output> {
+    use std::process::{Command as Process, Stdio};
+
+    let io = |source: std::io::Error| Error::Io {
+        path: "git fast-export".into(),
+        source,
+    };
+    let reference = format!("refs/heads/{branch}");
+    if !git(dir, &["rev-parse", "--verify", "--quiet", &reference])?
+        .status
+        .success()
+    {
+        return Err(Error::InvalidArgument(format!(
+            "{} has no branch `{branch}`",
+            dir.display()
+        )));
+    }
+    let mut child = Process::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "fast-export",
+            "--show-original-ids",
+            "--signed-tags=strip",
+            "--reencode=yes",
+            &reference,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(io)?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::InvalidArgument("git fast-export has no stdout".to_owned()))?;
+    let (stats, tip) = hebra_core::gitimport::import(tx, std::io::BufReader::new(stdout))?;
+    let out = child.wait_with_output().map_err(io)?;
+    if !out.status.success() {
+        return Err(git_error("git fast-export", &out));
+    }
+    let tip = tip.ok_or_else(|| Error::InvalidArgument(format!("branch `{branch}` is empty")))?;
+    tx.view.bookmarks.insert(bookmark.to_owned(), tip);
+    let commit = tx.commit(&tip)?;
+    let mut text = format!(
+        "Imported {} commit(s) and {} file version(s) from {} into bookmark {bookmark}\n  {}\n",
+        stats.commits,
+        stats.blobs,
+        dir.display(),
+        short_line(&tip, &commit)
+    );
+    if stats.skipped_entries > 0 {
+        let _ = writeln!(
+            text,
+            "  note: {} symlink or submodule entries were skipped",
+            stats.skipped_entries
+        );
+    }
+    let _ = writeln!(text, "Start working on it with `hb new {bookmark}`.");
+    Ok(Output::new(
+        json!({ "bookmark": bookmark, "stats": stats, "tip": commit_json(&tip, &commit) }),
+        text,
+    ))
+}
+
+/// If an `origin` remote is configured, shares our presence and adds warnings
+/// for files other machines are touching. Best effort: never fails `status`.
+fn add_remote_warnings(ws: &mut Workspace, actor: &Actor, prov: &Provenance, out: &mut Output) {
+    if ws.config_get("remote.origin.url").ok().flatten().is_none() {
+        return;
+    }
+    let changed: Vec<String> = out.json["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["path"].as_str().map(str::to_owned))
+        .collect();
+    match crate::remote::exchange(ws, actor, prov, "origin", std::time::Duration::from_secs(3)) {
+        Ok(others) => {
+            let warnings = crate::remote::remote_warnings(&others, &changed);
+            if !warnings.is_empty() {
+                let _ = writeln!(out.text, "Other machines:");
+                for w in &warnings {
+                    let verb = if w["claimed"].as_bool().unwrap_or(false) {
+                        "is claimed"
+                    } else {
+                        "is also being changed"
+                    };
+                    let _ = writeln!(
+                        out.text,
+                        "  {} {verb} by {} on {} (workspace {})",
+                        w["path"].as_str().unwrap_or("?"),
+                        w["actor"].as_str().unwrap_or("?"),
+                        w["machine"].as_str().unwrap_or("?"),
+                        w["workspace"].as_str().unwrap_or("?"),
+                    );
+                }
+            }
+            out.json["warnings"]["remote"] = json!(warnings);
+        }
+        Err(e) => {
+            out.json["warnings"]["remote_error"] = json!(e.to_string());
+        }
+    }
 }

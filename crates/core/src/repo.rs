@@ -194,6 +194,13 @@ impl Workspace {
         Ok(())
     }
 
+    pub fn config_unset(&self, key: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM config WHERE key = ?1", [key])?
+            > 0)
+    }
+
     pub fn config_list(&self) -> Result<BTreeMap<String, String>> {
         let mut stmt = self.conn.prepare("SELECT key, value FROM config")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -535,6 +542,7 @@ impl Tx<'_> {
         let mut tips: Vec<ObjectId> = self.view.workspaces.values().map(|w| w.wc).collect();
         tips.extend(self.view.bookmarks.values().copied());
         tips.extend(self.view.heads.iter().copied());
+        tips.extend(self.view.remotes.values().flat_map(|b| b.values().copied()));
 
         let mut seen = HashSet::new();
         let mut queue: VecDeque<ObjectId> = tips.into_iter().collect();
@@ -606,6 +614,11 @@ impl Tx<'_> {
             }
         }
         Ok(keep)
+    }
+
+    /// Whether `ancestor` is `descendant` or one of its ancestors.
+    pub fn is_ancestor(&mut self, ancestor: ObjectId, descendant: ObjectId) -> Result<bool> {
+        Ok(self.ancestors(descendant)?.contains(&ancestor))
     }
 
     /// Nearest common ancestor of two commits (breadth-first from `b`).
@@ -755,6 +768,15 @@ impl Tx<'_> {
                 .wc_of(ws)
                 .map_err(|_| Error::RevisionNotFound(spec.to_owned()));
         }
+        if let Some((bookmark, remote)) = spec.rsplit_once('@') {
+            return self
+                .view
+                .remotes
+                .get(remote)
+                .and_then(|b| b.get(bookmark))
+                .copied()
+                .ok_or_else(|| Error::RevisionNotFound(spec.to_owned()));
+        }
         if let Some(id) = self.view.bookmarks.get(spec) {
             return Ok(*id);
         }
@@ -861,6 +883,9 @@ impl Tx<'_> {
                     None => restored.bookmarks.remove(name),
                 };
             }
+        }
+        if before.remotes != after.remotes {
+            restored.remotes.clone_from(&before.remotes);
         }
         for added in after.heads.difference(&before.heads) {
             restored.heads.remove(added);

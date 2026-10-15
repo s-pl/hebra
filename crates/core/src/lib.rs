@@ -5,6 +5,7 @@ pub mod claims;
 pub mod diff;
 pub mod error;
 pub mod gitexport;
+pub mod gitimport;
 pub mod identity;
 pub mod ids;
 pub mod merge;
@@ -12,6 +13,7 @@ pub mod model;
 pub mod oplog;
 pub mod repo;
 pub mod store;
+pub mod transport;
 pub mod wc;
 
 pub use error::{Error, Result};

@@ -91,6 +91,15 @@ impl ChangeId {
         Self(bytes)
     }
 
+    /// A change id derived from arbitrary bytes (used to keep imports deterministic).
+    #[must_use]
+    pub fn derived_from(seed: &[u8]) -> Self {
+        let digest = blake3::hash(seed);
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&digest.as_bytes()[..16]);
+        Self(bytes)
+    }
+
     /// The change id of the root commit.
     #[must_use]
     pub const fn root() -> Self {

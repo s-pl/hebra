@@ -14,6 +14,13 @@ updates:
     groups:
       web-minor:
         update-types: [minor, patch]
+    ignore:
+      # Next.js does not support TypeScript 7 (the native port) yet.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Types must track the Node.js line we run (24 LTS).
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:

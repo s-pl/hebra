@@ -113,6 +113,51 @@ pub enum Command {
     /// Interoperate with Git.
     #[command(subcommand)]
     Git(GitCommand),
+    /// Manage Hebra servers this repository syncs with.
+    #[command(subcommand)]
+    Remote(RemoteCommand),
+    /// Send bookmarks (and the changes they point to) to a server.
+    ///
+    /// Without --bookmark, every bookmark that differs from the server is
+    /// pushed. Agents usually publish with
+    /// `hb push --bookmark agents/<name>/<task> -r @-`.
+    Push {
+        /// Remote to push to.
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Bookmark to push.
+        #[arg(short, long)]
+        bookmark: Option<String>,
+        /// Point the bookmark at this revision first.
+        #[arg(short, long, requires = "bookmark")]
+        revision: Option<String>,
+    },
+    /// Fetch bookmarks and changes from a server; fast-forward local bookmarks.
+    Pull {
+        #[arg(default_value = "origin")]
+        remote: String,
+    },
+    /// Who is working on the server's repository right now, from any machine.
+    Presence {
+        #[arg(default_value = "origin")]
+        remote: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RemoteCommand {
+    /// Add a server, e.g. `hb remote add origin http://localhost:4600/acme`.
+    Add {
+        name: String,
+        url: String,
+        /// Access token (or set HB_TOKEN).
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// List remotes.
+    List,
+    /// Remove a remote.
+    Remove { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -130,6 +175,20 @@ pub enum GitCommand {
         /// Revision to export, with all its ancestors.
         #[arg(short, long, default_value = "@-")]
         revision: String,
+    },
+    /// Import the history of a Git branch as a bookmark.
+    ///
+    /// Deterministic, and commits exported by Hebra get their change ids and
+    /// provenance back from their trailers.
+    Import {
+        /// Path of the Git repository to read from.
+        dir: PathBuf,
+        /// Git branch to import.
+        #[arg(long, default_value = "main")]
+        branch: String,
+        /// Bookmark to create (defaults to the branch name).
+        #[arg(long)]
+        bookmark: Option<String>,
     },
 }
 
