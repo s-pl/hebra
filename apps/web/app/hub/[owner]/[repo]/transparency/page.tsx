@@ -115,15 +115,13 @@ export default async function TransparencyPage({ params }: Params) {
           <p className="mt-3 flex items-center gap-2 text-[13px]">
             {t.entries.length === 0 ? null : broken === -1 ? (
               <>
-                <span className="grid size-4 place-items-center rounded-full bg-[oklch(0.55_0.14_150)] text-[10px] text-white">
-                  ✓
-                </span>
+                <span className="grid size-4 place-items-center rounded-full bg-ok text-[10px] text-white">✓</span>
                 <span className="text-ink-2">All {t.entries.length} links in this page connect.</span>
               </>
             ) : (
               <>
-                <span className="grid size-4 place-items-center rounded-full bg-accent text-[10px] text-white">!</span>
-                <span className="text-accent">The chain breaks at entry {t.entries[broken]?.seq}.</span>
+                <span className="grid size-4 place-items-center rounded-full bg-err text-[10px] text-white">!</span>
+                <span className="text-err">The chain breaks at entry {t.entries[broken]?.seq}.</span>
               </>
             )}
           </p>
@@ -137,7 +135,7 @@ export default async function TransparencyPage({ params }: Params) {
             <Empty title="No entries yet">The first push to a bookmark starts the log.</Empty>
           </div>
         ) : (
-          <ol className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+          <ol className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
             {entries.map((e) => {
               const d = describe(e);
               return (

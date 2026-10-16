@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 function Meter({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
   const share = total > 0 ? Math.min(1, used / total) : used > 0 ? 1 : 0;
-  const tone = share >= 1 ? "bg-accent" : share >= 0.75 ? "bg-[var(--term-warn)]" : "bg-ink";
+  const tone = share >= 1 ? "bg-err" : share >= 0.75 ? "bg-warn" : "bg-ink";
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-[13.5px]">
@@ -123,7 +123,7 @@ export default async function BillingPage({ params, searchParams }: Params) {
       current="billing"
     >
       {checkout === "done" ? (
-        <p role="status" className="rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px]">
+        <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13.5px]">
           Thanks. Your plan changes as soon as the payment is confirmed, usually within seconds.
         </p>
       ) : null}
@@ -157,7 +157,7 @@ export default async function BillingPage({ params, searchParams }: Params) {
           <div className="grid gap-5">
             <Meter label="Agent credits this month" used={used} total={a.agent_credits} unit="credits" />
             <div className="grid gap-3 text-[13.5px] sm:grid-cols-3">
-              <div className="rounded-xl bg-surface-2 px-4 py-3">
+              <div className="rounded-lg bg-surface-2 px-4 py-3">
                 <p className="text-ink-3">People</p>
                 <p className="mt-0.5 font-semibold text-[18px] tabular-nums">
                   {a.people}
@@ -166,11 +166,11 @@ export default async function BillingPage({ params, searchParams }: Params) {
                   ) : null}
                 </p>
               </div>
-              <div className="rounded-xl bg-surface-2 px-4 py-3">
+              <div className="rounded-lg bg-surface-2 px-4 py-3">
                 <p className="text-ink-3">Storage included</p>
                 <p className="mt-0.5 font-semibold text-[18px] tabular-nums">{a.storage_gb} GB</p>
               </div>
-              <div className="rounded-xl bg-surface-2 px-4 py-3">
+              <div className="rounded-lg bg-surface-2 px-4 py-3">
                 <p className="text-ink-3">Credits left</p>
                 <p className="mt-0.5 font-semibold text-[18px] tabular-nums">
                   {(o.credits_left ?? 0).toLocaleString("en-US")}
@@ -220,7 +220,7 @@ export default async function BillingPage({ params, searchParams }: Params) {
             return (
               <div
                 key={p.id}
-                className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-ink" : "border-line"}`}
+                className={`flex flex-col rounded-lg border p-4 ${isCurrent ? "border-ink" : "border-line"}`}
               >
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="font-semibold text-[15px]">{p.name}</p>

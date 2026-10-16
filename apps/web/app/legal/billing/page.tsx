@@ -31,8 +31,8 @@ export default async function BillingPolicyPage() {
     <>
       <SiteHeader />
       <main id="main" className="border-line">
-        <div className="mx-auto max-w-6xl border-line px-4 pt-32 pb-20 sm:px-8 md:border-x md:pt-40">
-          <p className="font-mono text-[12px] text-accent uppercase tracking-[0.14em]">Legal</p>
+        <div className="mx-auto max-w-[1200px] border-line px-4 pt-32 pb-20 sm:px-8 md:pt-40">
+          <p className="font-mono text-[12px] text-accent">Legal</p>
           <h1 className="mt-3 font-semibold text-[40px] leading-tight tracking-[-0.035em] sm:text-[52px]">
             Billing policy
           </h1>

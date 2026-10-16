@@ -1,15 +1,14 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { type ActionResult, closeReview, mergeReview } from "@/app/hub/actions";
-import { quick } from "@/components/hub/motion";
+import { button } from "@/lib/ui";
 
 /**
- * Merge / close buttons for a review. Shows progress in place, then the
- * result, and refreshes the page so the new state (and main) appear.
+ * Merge (or queue) and close a review. Shows progress in place, then the
+ * result, and refreshes the page so the new state appears.
  */
 export function ReviewActions({
   repo,
@@ -47,81 +46,46 @@ export function ReviewActions({
     return (
       <Link
         href={`/login?next=${encodeURIComponent(`/hub/${repo}/reviews/${id}`)}`}
-        className="pressable inline-flex h-10 items-center rounded-lg bg-ink px-4 font-medium text-[14px] text-bg"
+        className={button({ variant: "primary", size: "sm" })}
       >
         Sign in to review
       </Link>
     );
   }
 
+  const spinner = (
+    <span className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+  );
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <motion.button
+        <button
           type="button"
           onClick={() => run("merge")}
           disabled={pending || !canMerge}
-          whileTap={{ scale: 0.97 }}
-          className="relative inline-flex h-10 items-center gap-2 overflow-hidden rounded-lg bg-[oklch(0.55_0.14_150)] px-4 font-medium text-[14px] text-white shadow-[inset_0_1px_0_oklch(1_0_0/0.18)] disabled:cursor-not-allowed disabled:opacity-45"
+          className={button({ variant: "success", size: "sm" })}
         >
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.span
-              key={pending && which === "merge" ? "busy" : "idle"}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8, transition: quick }}
-              className="flex items-center gap-2"
-            >
-              {pending && which === "merge" ? (
-                <>
-                  <span className="size-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  {queue ? "Queueing" : "Merging"}
-                </>
-              ) : (
-                <>
-                  <svg
-                    viewBox="0 0 16 16"
-                    className="size-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    aria-hidden="true"
-                  >
-                    <path d="m3.5 8.5 3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {queue ? "Add to merge queue" : "Merge"}
-                </>
-              )}
-            </motion.span>
-          </AnimatePresence>
-        </motion.button>
+          {pending && which === "merge" ? spinner : null}
+          {pending && which === "merge" ? (queue ? "Queueing" : "Merging") : queue ? "Add to merge queue" : "Merge"}
+        </button>
         {canClose ? (
-          <motion.button
+          <button
             type="button"
             onClick={() => run("close")}
             disabled={pending}
-            whileTap={{ scale: 0.97 }}
-            className="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-[14px] text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-50"
+            className={button({ variant: "secondary", size: "sm" })}
           >
-            {pending && which === "close" ? "Closing…" : "Close"}
-          </motion.button>
+            {pending && which === "close" ? spinner : null}
+            Close
+          </button>
         ) : null}
       </div>
-      {blocked ? <p className="text-[13px] text-ink-3">{blocked}</p> : null}
-      <AnimatePresence initial={false}>
-        {result ? (
-          <motion.p
-            key={result.message}
-            role="status"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className={`text-[13.5px] ${result.ok ? "text-[oklch(0.55_0.14_150)]" : "text-accent"}`}
-          >
-            {result.message}
-          </motion.p>
-        ) : null}
-      </AnimatePresence>
+      {blocked ? <p className="text-[12.5px] text-ink-3">{blocked}</p> : null}
+      {result ? (
+        <p role="status" className={`rise text-[12.5px] ${result.ok ? "text-ok" : "text-err"}`}>
+          {result.message}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -27,9 +27,9 @@ function parse(patch: string): Line[] {
 }
 
 const STATUS = {
-  added: { letter: "A", tone: "text-[oklch(0.6_0.14_150)]" },
+  added: { letter: "A", tone: "text-ok" },
   modified: { letter: "M", tone: "text-[var(--thread-3)]" },
-  deleted: { letter: "D", tone: "text-accent" },
+  deleted: { letter: "D", tone: "text-err" },
 };
 
 export function fileAnchor(path: string): string {
@@ -42,16 +42,14 @@ export function DiffStat({ additions, deletions }: { additions: number; deletion
   const greens = total === 0 ? 0 : Math.round((additions / total) * 5);
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
-      <span className="text-[oklch(0.6_0.14_150)]">+{additions}</span>
-      <span className="text-accent">−{deletions}</span>
+      <span className="text-ok">+{additions}</span>
+      <span className="text-err">−{deletions}</span>
       <span className="flex gap-px" aria-hidden="true">
         {Array.from({ length: 5 }, (_, i) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: fixed five squares
             key={i}
-            className={`size-[7px] rounded-[1.5px] ${
-              total === 0 ? "bg-line" : i < greens ? "bg-[oklch(0.62_0.14_150)]" : "bg-accent"
-            }`}
+            className={`size-[7px] rounded-[1.5px] ${total === 0 ? "bg-line" : i < greens ? "bg-ok" : "bg-err"}`}
           />
         ))}
       </span>
@@ -66,9 +64,9 @@ export function DiffFile({ file }: { file: FileDiff }) {
     <details
       open
       id={fileAnchor(file.path)}
-      className="diff-file group scroll-mt-16 overflow-hidden rounded-xl border border-line bg-surface"
+      className="diff-file group scroll-mt-16 overflow-hidden rounded-lg border border-line bg-surface"
     >
-      <summary className="sticky top-12 z-10 flex cursor-pointer list-none items-center gap-3 border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5 group-[:not([open])]:border-b-0">
+      <summary className="sticky top-12 z-10 flex cursor-pointer list-none items-center gap-3 border-line border-b bg-surface-2 px-4 py-2 group-[:not([open])]:border-b-0">
         <svg
           viewBox="0 0 12 12"
           className="size-3 shrink-0 text-ink-3 transition-transform duration-150 group-[:not([open])]:-rotate-90"
@@ -90,7 +88,7 @@ export function DiffFile({ file }: { file: FileDiff }) {
               {lines.map((l, i) =>
                 l.kind === "hunk" ? (
                   // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static
-                  <tr key={i} className="bg-[color-mix(in_oklch,var(--thread-5)_8%,transparent)]">
+                  <tr key={i} className="bg-[color-mix(in_oklch,var(--info)_7%,transparent)]">
                     <td colSpan={3} className="px-4 py-1 text-[11.5px] text-ink-3">
                       {l.text}
                     </td>
@@ -101,9 +99,9 @@ export function DiffFile({ file }: { file: FileDiff }) {
                     key={i}
                     className={
                       l.kind === "add"
-                        ? "bg-[color-mix(in_oklch,oklch(0.62_0.14_150)_11%,transparent)]"
+                        ? "bg-[color-mix(in_oklch,var(--ok)_11%,transparent)]"
                         : l.kind === "del"
-                          ? "bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]"
+                          ? "bg-[color-mix(in_oklch,var(--err)_10%,transparent)]"
                           : ""
                     }
                   >
@@ -116,11 +114,7 @@ export function DiffFile({ file }: { file: FileDiff }) {
                     <td className="whitespace-pre px-4">
                       <span
                         className={`mr-3 inline-block w-2 select-none ${
-                          l.kind === "add"
-                            ? "text-[oklch(0.6_0.14_150)]"
-                            : l.kind === "del"
-                              ? "text-accent"
-                              : "text-transparent"
+                          l.kind === "add" ? "text-ok" : l.kind === "del" ? "text-err" : "text-transparent"
                         }`}
                       >
                         {l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}

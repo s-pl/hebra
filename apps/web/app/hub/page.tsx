@@ -18,7 +18,7 @@ export default async function HubIndex({ searchParams }: { searchParams: Promise
   } catch (e) {
     return (
       <HubShell repos={[]} crumbs={[{ label: "Repositories" }]}>
-        <div className="mx-auto max-w-[1180px]">
+        <div className="mx-auto max-w-[1080px]">
           <ServerDown message={e instanceof HubError ? e.message : String(e)} />
         </div>
       </HubShell>
@@ -35,7 +35,7 @@ export default async function HubIndex({ searchParams }: { searchParams: Promise
 
   return (
     <HubShell repos={repos.map((r) => r.full_name)} me={me} caps={caps} crumbs={[{ label: "Repositories" }]}>
-      <div className="mx-auto max-w-[1180px]">
+      <div className="mx-auto max-w-[1080px]">
         <PageTitle
           title={me ? `Welcome back, ${me.account.name.split(" ")[0]}` : "Repositories"}
           sub={

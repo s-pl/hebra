@@ -77,7 +77,7 @@ export default async function ReviewsPage({ params, searchParams }: Params) {
           <Empty title={`No ${state} reviews`}>When someone asks for their work to be merged, it shows up here.</Empty>
         </div>
       ) : (
-        <Stagger as="ol" className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+        <Stagger as="ol" className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
           {shown.map((r) => (
             <StaggerItem key={r.id} className="border-line border-b last:border-b-0">
               <Link

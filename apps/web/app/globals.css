@@ -1,71 +1,107 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
-/* Design tokens. Light is the default theme; dark is opt-in via the toggle. */
+/*
+ * Hebra design tokens. A precision tool: dark graphite by default, light on
+ * request, one signal colour (cyan) for focus and primary actions, and
+ * semantic colours for states. Agents are violet wherever they appear.
+ */
 :root {
-  --bg: oklch(0.985 0.005 85);
-  --surface: oklch(1 0 0);
-  --surface-2: oklch(0.965 0.007 85);
-  --border: oklch(0.9 0.008 85);
-  --border-strong: oklch(0.82 0.01 85);
-  --text: oklch(0.2 0.012 60);
-  --text-2: oklch(0.44 0.012 60);
-  --text-3: oklch(0.58 0.01 60);
-  --accent: oklch(0.6 0.2 30);
-  --accent-soft: oklch(0.94 0.04 30);
-  --on-accent: oklch(0.99 0 0);
+  --bg: oklch(0.145 0.004 260);
+  --surface: oklch(0.175 0.004 260);
+  --surface-2: oklch(0.205 0.005 260);
+  --surface-3: oklch(0.24 0.006 260);
+  --border: oklch(0.27 0.006 260);
+  --border-strong: oklch(0.34 0.008 260);
+  --text: oklch(0.965 0.002 260);
+  --text-2: oklch(0.76 0.006 260);
+  --text-3: oklch(0.58 0.008 260);
 
-  /* One colour per thread (agent). */
-  --thread-1: oklch(0.6 0.2 30);
-  --thread-2: oklch(0.6 0.11 195);
-  --thread-3: oklch(0.74 0.15 75);
-  --thread-4: oklch(0.55 0.17 295);
-  --thread-5: oklch(0.58 0.14 250);
+  --accent: oklch(0.82 0.12 210);
+  --accent-strong: oklch(0.88 0.11 210);
+  --accent-soft: oklch(0.82 0.12 210 / 0.12);
+  --on-accent: oklch(0.16 0.02 230);
 
-  /* The terminal stays dark in both themes. */
-  --term-bg: oklch(0.2 0.01 60);
-  --term-border: oklch(0.3 0.01 60);
-  --term-text: oklch(0.92 0.005 85);
-  --term-dim: oklch(0.65 0.01 85);
-  --term-ok: oklch(0.8 0.13 155);
-  --term-warn: oklch(0.82 0.13 80);
-  --term-err: oklch(0.72 0.17 30);
+  --ok: oklch(0.78 0.15 152);
+  --warn: oklch(0.83 0.14 80);
+  --err: oklch(0.7 0.18 25);
+  --info: oklch(0.74 0.13 250);
+  --agent: oklch(0.74 0.15 295);
 
+  /* Thread colours: one per agent in graphs and avatars. */
+  --thread-1: oklch(0.82 0.12 210);
+  --thread-2: oklch(0.74 0.15 295);
+  --thread-3: oklch(0.83 0.14 80);
+  --thread-4: oklch(0.78 0.15 152);
+  --thread-5: oklch(0.72 0.16 15);
+
+  /* Terminals are always dark. */
+  --term-bg: oklch(0.12 0.004 260);
+  --term-border: oklch(0.25 0.006 260);
+  --term-text: oklch(0.93 0.004 260);
+  --term-dim: oklch(0.62 0.008 260);
+  --term-ok: var(--ok);
+  --term-warn: var(--warn);
+  --term-err: var(--err);
+
+  --shadow-pop: 0 0 0 1px var(--border), 0 16px 48px -12px oklch(0 0 0 / 0.6);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  color-scheme: light;
+  color-scheme: dark;
 }
 
-:root[data-theme="dark"] {
-  --bg: oklch(0.17 0.006 60);
-  --surface: oklch(0.205 0.007 60);
-  --surface-2: oklch(0.23 0.008 60);
-  --border: oklch(0.3 0.008 60);
-  --border-strong: oklch(0.38 0.01 60);
-  --text: oklch(0.95 0.005 85);
-  --text-2: oklch(0.75 0.008 85);
-  --text-3: oklch(0.6 0.008 85);
-  --accent: oklch(0.68 0.19 32);
-  --accent-soft: oklch(0.3 0.06 30);
-  --on-accent: oklch(0.15 0.01 60);
-  --term-bg: oklch(0.14 0.006 60);
-  --term-border: oklch(0.28 0.008 60);
-  color-scheme: dark;
+:root[data-theme="light"] {
+  --bg: oklch(0.99 0.002 260);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.97 0.003 260);
+  --surface-3: oklch(0.94 0.004 260);
+  --border: oklch(0.91 0.004 260);
+  --border-strong: oklch(0.84 0.006 260);
+  --text: oklch(0.2 0.01 260);
+  --text-2: oklch(0.43 0.01 260);
+  --text-3: oklch(0.57 0.01 260);
+
+  --accent: oklch(0.55 0.13 225);
+  --accent-strong: oklch(0.48 0.13 225);
+  --accent-soft: oklch(0.55 0.13 225 / 0.1);
+  --on-accent: oklch(0.99 0 0);
+
+  --ok: oklch(0.55 0.15 152);
+  --warn: oklch(0.62 0.14 70);
+  --err: oklch(0.56 0.2 25);
+  --info: oklch(0.52 0.15 255);
+  --agent: oklch(0.52 0.18 295);
+
+  --thread-1: oklch(0.55 0.13 225);
+  --thread-2: oklch(0.52 0.18 295);
+  --thread-3: oklch(0.62 0.14 70);
+  --thread-4: oklch(0.55 0.15 152);
+  --thread-5: oklch(0.56 0.2 15);
+
+  --shadow-pop: 0 0 0 1px var(--border), 0 16px 40px -16px oklch(0.2 0.02 260 / 0.25);
+  color-scheme: light;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-ink: var(--text);
   --color-ink-2: var(--text-2);
   --color-ink-3: var(--text-3);
   --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+  --color-agent: var(--agent);
   --color-term: var(--term-bg);
   --color-term-line: var(--term-border);
   --color-term-text: var(--term-text);
@@ -75,149 +111,41 @@
   --color-term-err: var(--term-err);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --shadow-pop: var(--shadow-pop);
 }
+
+/* ------------------------------------------------------------------ base */
 
 html {
   background: var(--bg);
   -webkit-tap-highlight-color: transparent;
-  scroll-behavior: smooth;
   scrollbar-gutter: stable;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  font-size: 14px;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: color-mix(in oklch, var(--accent) 30%, transparent);
   color: var(--text);
 }
 
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: 2px;
   border-radius: 6px;
 }
 
-/* Press feedback for anything clickable. */
-.pressable {
-  transition:
-    transform 160ms var(--ease-out),
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
-}
-.pressable:active {
-  transform: scale(0.97);
-}
-
-/* Threads draw themselves once, on load. */
-.thread-path {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: draw-thread 1.8s var(--ease-out) forwards;
-}
-.thread-fade {
-  opacity: 0;
-  animation: fade-in 600ms var(--ease-out) forwards;
-}
-@keyframes draw-thread {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-@keyframes fade-in {
-  to {
-    opacity: 1;
-  }
-}
-
-/* Gentle staggered entrance for the hero copy. */
-.rise {
-  opacity: 0;
-  transform: translateY(8px);
-  animation: rise 600ms var(--ease-out) forwards;
-}
-@keyframes rise {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Warp threads behind the hero: the fixed vertical threads of a loom that the
-   coloured weft (one per agent) crosses. */
-.hero-backdrop {
-  background: repeating-linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--text) 7%, transparent) 0 1px,
-    transparent 1px 26px
-  );
-  mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 95%);
-}
-
-/* ---------------------------------------------------------------- threads */
-
-/* A bright bead of light travelling along each thread toward the merge. */
-.thread-pulse {
-  stroke-dasharray: 0.07 0.93;
-  stroke-dashoffset: 1;
-  opacity: 0;
-  animation:
-    fade-in 400ms ease forwards 2.2s,
-    pulse-run 3.2s linear infinite 2.2s;
-}
-@keyframes pulse-run {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.knot-ring {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: knot 2.4s var(--ease-out) infinite 2.4s;
-  opacity: 0;
-}
-@keyframes knot {
-  0% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(3.2);
-  }
-}
-
-/* Hovering one person or agent isolates their thread. */
-.thread-group {
-  transition: opacity 220ms ease;
-  cursor: default;
-}
-.threads-svg:has(.thread-group:hover) .thread-group:not(:hover) {
-  opacity: 0.18;
-}
-
-/* Thread labels would be ~4px tall on a phone; scale them up there. */
-@media (max-width: 640px) {
-  .thread-label {
-    transform: scale(2.1);
-    transform-box: fill-box;
-    transform-origin: left center;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .no-scrollbar {
@@ -227,367 +155,72 @@ body {
   display: none;
 }
 
-/* --------------------------------------------------------------- header */
-
-/* Frosted floating pill. */
-.nav-pill {
-  background: color-mix(in oklch, var(--bg) 72%, transparent);
-  border-color: color-mix(in oklch, var(--text) 9%, transparent);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow:
-    0 1px 0 0 oklch(1 0 0 / 0.5) inset,
-    0 1px 2px oklch(0.2 0.02 60 / 0.04),
-    0 8px 24px -12px oklch(0.2 0.02 60 / 0.12);
-}
-.nav-pill[data-scrolled="true"] {
-  background: color-mix(in oklch, var(--bg) 82%, transparent);
-  box-shadow:
-    0 1px 0 0 oklch(1 0 0 / 0.5) inset,
-    0 1px 2px oklch(0.2 0.02 60 / 0.06),
-    0 16px 40px -16px oklch(0.2 0.02 60 / 0.22);
-}
-[data-theme="dark"] .nav-pill {
-  box-shadow:
-    0 1px 0 0 oklch(1 0 0 / 0.06) inset,
-    0 16px 40px -16px oklch(0 0 0 / 0.6);
-}
-
-/* Menus grow out of their trigger. */
-.nav-popover {
-  border-radius: 18px;
-  border: 1px solid color-mix(in oklch, var(--text) 9%, transparent);
-  background: color-mix(in oklch, var(--surface) 98%, transparent);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow:
-    0 1px 2px oklch(0.2 0.02 60 / 0.06),
-    0 24px 56px -20px oklch(0.2 0.02 60 / 0.28);
-  transform-origin: top center;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(-50%) translateY(-4px) scale(0.97);
+/* Press feedback for anything clickable. */
+.pressable {
   transition:
-    opacity 150ms ease,
-    transform 200ms var(--ease-out),
-    visibility 0s linear 200ms;
+    transform 140ms var(--ease-out),
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
 }
-.nav-popover[data-open="true"] {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0) scale(1);
-  transition:
-    opacity 150ms ease,
-    transform 200ms var(--ease-out),
-    visibility 0s;
-}
-/* Invisible bridge over the gap so the pointer can travel to the menu. */
-.nav-popover::before {
-  content: "";
-  position: absolute;
-  inset: -16px 0 auto;
-  height: 16px;
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-.nav-mobile {
-  border-radius: 22px;
-  border: 1px solid color-mix(in oklch, var(--text) 9%, transparent);
-  background: var(--surface);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow: 0 24px 56px -20px oklch(0.2 0.02 60 / 0.3);
-  transform-origin: top center;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-6px) scale(0.98);
-  transition:
-    opacity 160ms ease,
-    transform 220ms var(--ease-out),
-    visibility 0s linear 220ms;
-}
-.nav-mobile[data-open="true"] {
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-  transition:
-    opacity 160ms ease,
-    transform 220ms var(--ease-out),
-    visibility 0s;
+/* Numbers that change in place (counters, meters) do not jitter. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ------------------------------------------------------------------ code */
+/* --------------------------------------------------------------- landing */
 
-/* Shiki emits both themes as CSS variables; pick one per theme. */
-.code-view .shiki,
-.code-view .shiki span {
-  color: var(--shiki-light);
-  background-color: transparent;
-}
-[data-theme="dark"] .code-view .shiki,
-[data-theme="dark"] .code-view .shiki span {
-  color: var(--shiki-dark);
-}
-.code-view pre {
-  margin: 0;
-  overflow-x: auto;
-  padding: 12px 0;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.7;
-  tab-size: 4;
-}
-.code-view code {
-  counter-reset: line;
-  display: block;
-  min-width: max-content;
-}
-.code-view .line {
-  display: inline-block;
-  width: 100%;
-  padding-right: 24px;
-}
-.code-view .line::before {
-  counter-increment: line;
-  content: counter(line);
-  display: inline-block;
-  width: 3.5rem;
-  margin-right: 1.25rem;
-  padding-right: 0.75rem;
-  text-align: right;
-  color: color-mix(in oklch, var(--text-3) 70%, transparent);
-  border-right: 1px solid var(--border);
-  user-select: none;
-}
-.code-view .line:hover {
-  background: color-mix(in oklch, var(--text) 4%, transparent);
-}
-.code-view.code-plain .line::before {
-  display: none;
-}
-.code-view.code-plain .line {
-  padding-left: 16px;
+/* A hairline grid that fades out from the top centre. */
+.grid-backdrop {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--text) 6%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 75%);
 }
 
-/* Command palette. */
-.palette {
-  animation: palette-in 180ms var(--ease-out);
-}
-@keyframes palette-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-}
-
-/* ------------------------------------------------------------ hero words */
-
-/* Each headline word rises out of its own mask on load. */
-.word-mask {
-  display: inline-block;
-  overflow: hidden;
-  vertical-align: top;
-  padding: 0 0.04em 0.12em;
-  margin: 0 -0.04em -0.12em;
-}
-.word-mask > span {
-  display: inline-block;
-  transform: translateY(110%);
-  animation: word-up 900ms var(--ease-out) forwards;
-}
-@keyframes word-up {
-  to {
-    transform: translateY(0);
-  }
-}
-
-/* ------------------------------------------------------------- spotlight */
-
-.spotlight-card {
-  position: relative;
-  isolation: isolate;
-}
-.spotlight-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
+/* A soft glow of the signal colour behind the hero product shot. */
+.signal-glow {
   background: radial-gradient(
-    280px circle at var(--x, -999px) var(--y, -999px),
-    color-mix(in oklch, var(--accent) 9%, transparent),
-    transparent 65%
+    ellipse 50% 60% at 50% 40%,
+    color-mix(in oklch, var(--accent) 22%, transparent),
+    transparent 70%
   );
-  opacity: 0;
-  transition: opacity 300ms ease;
-  pointer-events: none;
-}
-@media (hover: hover) and (pointer: fine) {
-  *:hover > .spotlight-card::before {
-    opacity: 1;
-  }
+  filter: blur(40px);
 }
 
-/* Agent setup: the snippet cross-fades when the tab changes. */
-.setup-swap {
-  animation: setup-in 260ms var(--ease-out);
+/* Elements fade up once, on load (hero) or when scrolled into view. */
+.rise {
+  animation: rise 700ms var(--ease-out) both;
 }
-@keyframes setup-in {
+@keyframes rise {
   from {
     opacity: 0;
-    filter: blur(3px);
-    transform: translateY(4px);
+    transform: translateY(10px);
   }
 }
 
-/* ----------------------------------------------------------------- reveal */
-
-/* Scroll-driven animations (CSS only, no JS). Browsers without
-   animation-timeline simply show everything in place; reduced motion turns
-   them all off. */
-@media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) {
-    /* Generic fade-up. */
-    .reveal {
-      animation: reveal linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 28%;
-    }
-
-    /* Section titles rise out of a mask, like a line of type being set. */
-    .reveal-mask {
-      animation: mask-up linear both;
-      animation-timeline: view();
-      animation-range: entry 10% cover 30%;
-    }
-
-    /* Section number and label slide in from the left. */
-    .reveal-left {
-      animation: from-left linear both;
-      animation-timeline: view();
-      animation-range: entry 5% cover 25%;
-    }
-
-    /* Product windows tilt up into place. */
-    .reveal-tilt {
-      animation: tilt-in linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 35%;
-      transform-origin: 50% 100%;
-    }
-    .reveal-tilt-late {
-      animation: tilt-in linear both;
-      animation-timeline: view();
-      animation-range: entry 15% cover 45%;
-      transform-origin: 50% 100%;
-    }
-
-    /* Children arrive one after another. */
-    .stagger > * {
-      animation: reveal linear both;
-      animation-timeline: view();
-    }
-    .stagger > :nth-child(1) {
-      animation-range: entry 0% cover 22%;
-    }
-    .stagger > :nth-child(2) {
-      animation-range: entry 6% cover 28%;
-    }
-    .stagger > :nth-child(3) {
-      animation-range: entry 12% cover 34%;
-    }
-    .stagger > :nth-child(4) {
-      animation-range: entry 18% cover 40%;
-    }
-    .stagger > :nth-child(5) {
-      animation-range: entry 24% cover 46%;
-    }
-    .stagger > :nth-child(6) {
-      animation-range: entry 30% cover 52%;
-    }
-    .stagger > :nth-child(7) {
-      animation-range: entry 36% cover 58%;
-    }
-    .stagger > :nth-child(n + 8) {
-      animation-range: entry 40% cover 62%;
-    }
-
-    /* A thread under the header fills up with the page. */
-    .scroll-progress {
-      animation: grow-x linear both;
-      animation-timeline: scroll(root);
-    }
-
-    /* Footer threads are drawn as they scroll into view. */
-    .draw-on-scroll {
-      stroke-dasharray: 1;
-      animation: draw-thread linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 50%;
-    }
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 22%;
   }
 }
 
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(28px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes mask-up {
-  from {
-    opacity: 0;
-    clip-path: inset(0 0 100% 0);
-    transform: translateY(0.6em);
-  }
-  to {
-    opacity: 1;
-    clip-path: inset(0 0 -10% 0);
-    transform: translateY(0);
-  }
-}
-@keyframes from-left {
-  from {
-    opacity: 0;
-    transform: translateX(-24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes tilt-in {
-  from {
-    opacity: 0;
-    transform: perspective(1400px) rotateX(16deg) translateY(48px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: perspective(1400px) rotateX(0) translateY(0) scale(1);
-  }
-}
-@keyframes grow-x {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-/* --------------------------------------------------------------- terminal */
-
+/* Typing caret in terminal mockups. */
 .caret {
   display: inline-block;
   width: 0.55em;
-  height: 1.05em;
-  margin-left: 1px;
-  vertical-align: -0.15em;
-  background: var(--term-text);
-  animation: blink 1s steps(1) infinite;
+  height: 1.1em;
+  vertical-align: -0.18em;
+  background: currentColor;
+  animation: blink 1.1s steps(1) infinite;
 }
 @keyframes blink {
   50% {
@@ -595,8 +228,9 @@ body {
   }
 }
 
-/* ----------------------------------------------------------------- visuals */
+/* ------------------------------------------------------------------- app */
 
+/* Live indicator: a dot with a ring that pulses outward. */
 .live-dot {
   position: relative;
 }
@@ -619,216 +253,78 @@ body {
   }
 }
 
-.typing-dots span {
+/* Popovers and the palette appear from their origin. */
+.pop {
+  animation: pop 160ms var(--ease-out);
+  transform-origin: var(--origin, top);
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* Highlighted code (Shiki emits both themes as CSS variables). */
+.code-view .shiki,
+.code-view .shiki span {
+  color: var(--shiki-dark);
+  background-color: transparent;
+}
+[data-theme="light"] .code-view .shiki,
+[data-theme="light"] .code-view .shiki span {
+  color: var(--shiki-light);
+}
+.code-view pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 10px 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  tab-size: 4;
+}
+.code-view code {
+  counter-reset: line;
+  display: block;
+  min-width: max-content;
+}
+.code-view .line {
   display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin: 0 1px;
-  border-radius: 9999px;
-  background: currentColor;
-  animation: typing 1.2s ease-in-out infinite;
+  width: 100%;
+  padding-right: 24px;
 }
-.typing-dots span:nth-child(2) {
-  animation-delay: 150ms;
+.code-view .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.25rem;
+  margin-right: 1rem;
+  padding-right: 0.75rem;
+  text-align: right;
+  color: var(--text-3);
+  opacity: 0.7;
+  user-select: none;
 }
-.typing-dots span:nth-child(3) {
-  animation-delay: 300ms;
+.code-view .line:hover {
+  background: color-mix(in oklch, var(--text) 4%, transparent);
 }
-@keyframes typing {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
+.code-view.code-plain .line::before {
+  display: none;
 }
-
-.progress-fill {
-  transform-origin: left;
-  animation: progress 6s var(--ease-in-out) infinite;
-}
-@keyframes progress {
-  0% {
-    transform: scaleX(0.08);
-  }
-  70%,
-  100% {
-    transform: scaleX(1);
-  }
-}
-
-/* codex's cursor walks up the file into the lines claude-code claimed
-   (24px per line; line 7 -> 6 -> 5 -> 4). */
-.coord-cursor {
-  animation: coord-cursor 8s var(--ease-in-out) infinite;
-}
-@keyframes coord-cursor {
-  0%,
-  10% {
-    transform: translateY(144px);
-  }
-  22%,
-  32% {
-    transform: translateY(120px);
-  }
-  44%,
-  52% {
-    transform: translateY(96px);
-  }
-  62%,
-  90% {
-    transform: translateY(72px);
-  }
-  100% {
-    transform: translateY(144px);
-  }
-}
-.toast-late {
-  animation: toast-late 8s var(--ease-out) infinite;
-}
-@keyframes toast-late {
-  0%,
-  62% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
-  }
-  67%,
-  88% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  94%,
-  100% {
-    opacity: 0;
-    transform: translateY(4px) scale(0.99);
-  }
-}
-
-/* The overlap warning slides in, waits, and leaves. */
-.toast-cycle {
-  animation: toast 7s var(--ease-out) infinite;
-}
-@keyframes toast {
-  0%,
-  30% {
-    opacity: 0;
-    transform: translateY(12px) scale(0.97);
-  }
-  36%,
-  82% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  90%,
-  100% {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-}
-
-/* Conflict recorded, then resolved. */
-.conflict-on {
-  animation: conflict-on 6s ease infinite;
-}
-.conflict-off {
-  animation: conflict-off 6s ease infinite;
-}
-@keyframes conflict-on {
-  0%,
-  45% {
-    opacity: 1;
-  }
-  55%,
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes conflict-off {
-  0%,
-  45% {
-    opacity: 0;
-  }
-  55%,
-  100% {
-    opacity: 1;
-  }
-}
-.merge-flow {
-  stroke-dasharray: 0.08 0.92;
-  stroke-dashoffset: 1;
-  animation: pulse-run 2.6s linear infinite;
-}
-
-/* Cards: hairline lights up on hover. */
-.card-hover {
-  transition:
-    border-color 200ms ease,
-    transform 200ms var(--ease-out),
-    box-shadow 200ms ease;
-}
-@media (hover: hover) and (pointer: fine) {
-  .card-hover:hover {
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
-    transform: translateY(-2px);
-    box-shadow: 0 18px 40px -24px color-mix(in oklch, var(--accent) 45%, transparent);
-  }
+.code-view.code-plain .line {
+  padding-left: 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thread-path {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
-  .thread-fade,
-  .rise {
-    animation: fade-in 200ms ease forwards;
-    transform: none;
-  }
-  .thread-pulse,
-  .knot-ring,
+  .rise,
+  .reveal,
+  .pop,
   .live-dot::after,
-  .typing-dots span,
-  .progress-fill,
-  .coord-cursor,
-  .merge-flow,
   .caret {
     animation: none;
   }
-  .thread-pulse,
-  .knot-ring {
-    opacity: 0;
-  }
-  .toast-cycle,
-  .toast-late,
-  .conflict-off {
-    animation: none;
-    opacity: 1;
-  }
-  .conflict-on {
-    animation: none;
-    opacity: 0;
-  }
-  .word-mask > span {
-    animation: none;
+  .pressable:active:not(:disabled) {
     transform: none;
-  }
-  .setup-swap,
-  .palette {
-    animation: none;
-  }
-  .nav-popover,
-  .nav-popover[data-open="true"],
-  .nav-mobile,
-  .nav-mobile[data-open="true"] {
-    transition:
-      opacity 120ms ease,
-      visibility 0s;
-  }
-  .coord-cursor {
-    transform: translateY(72px);
   }
 }

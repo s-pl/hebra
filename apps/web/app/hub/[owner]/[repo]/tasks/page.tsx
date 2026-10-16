@@ -87,7 +87,7 @@ export default async function TasksPage({ params, searchParams }: Params) {
       </PageTitle>
 
       {creating && canCreate ? (
-        <div className="mt-6 rounded-2xl border border-line bg-surface p-5 sm:p-6">
+        <div className="mt-6 rounded-lg border border-line bg-surface p-5 sm:p-6">
           <ActionForm action={createTask.bind(null, full)}>
             <Field label="Title" htmlFor="title">
               <Input id="title" name="title" required maxLength={200} placeholder="Add Google sign-in" autoFocus />
@@ -142,7 +142,7 @@ export default async function TasksPage({ params, searchParams }: Params) {
           </Empty>
         </div>
       ) : (
-        <Stagger as="ol" className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+        <Stagger as="ol" className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
           {shown.map((t) => (
             <StaggerItem key={t.id} className="border-line border-b last:border-b-0">
               <Link
@@ -166,7 +166,8 @@ export default async function TasksPage({ params, searchParams }: Params) {
                     ))}
                   </span>
                   <span className="mt-0.5 block truncate text-[12.5px] text-ink-3">
-                    {t.acceptance.length} criteria · opened by {t.created_by} {ago(t.created_at)}
+                    {t.acceptance.length} {t.acceptance.length === 1 ? "criterion" : "criteria"} · opened by{" "}
+                    {t.created_by} {ago(t.created_at)}
                   </span>
                 </span>
                 {t.claimed_by && t.state === "claimed" ? (

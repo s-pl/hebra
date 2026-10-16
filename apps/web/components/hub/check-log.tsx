@@ -66,7 +66,7 @@ export function CheckLog({
   }, [text]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-term">
+    <div className="overflow-hidden rounded-lg border border-line bg-term">
       <div className="flex items-center justify-between gap-3 border-[color-mix(in_oklch,var(--term-text)_14%,transparent)] border-b px-4 py-2 font-mono text-[11.5px] text-[color-mix(in_oklch,var(--term-text)_65%,transparent)]">
         <span>log</span>
         <span className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export function CheckLog({
         {text || (ACTIVE.has(state) ? "Waiting for output…" : "No output.")}
       </pre>
       {error ? (
-        <p className="border-[color-mix(in_oklch,var(--term-text)_14%,transparent)] border-t px-4 py-2 text-[12px] text-accent">
+        <p className="border-[color-mix(in_oklch,var(--term-text)_14%,transparent)] border-t px-4 py-2 text-[12px] text-err">
           {error}
         </p>
       ) : null}

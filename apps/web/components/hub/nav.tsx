@@ -4,12 +4,9 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { quick, spring } from "@/components/hub/motion";
+import { quick } from "@/components/hub/motion";
 
-/**
- * Sidebar link. The active one gets a highlight that glides between items
- * (shared layout animation), instead of jumping.
- */
+/** Sidebar link; the current page is marked (no animation: it is clicked all day). */
 export function NavLink({
   href,
   match = "exact",
@@ -26,19 +23,12 @@ export function NavLink({
   const samePath = match === "prefix" ? pathname.startsWith(path ?? "") : pathname === path;
   const active = samePath && (rev === null || params.get("rev") === rev || (!params.get("rev") && rev === "main"));
   return (
-    <li className="relative">
-      {active ? (
-        <motion.span
-          layoutId="nav-active"
-          transition={spring}
-          className="absolute inset-0 rounded-md bg-[color-mix(in_oklch,var(--text)_8%,transparent)]"
-        />
-      ) : null}
+    <li>
       <Link
         href={href}
         aria-current={active ? "page" : undefined}
-        className={`relative flex h-8 items-center gap-2.5 rounded-md px-3 text-[13.5px] transition-colors duration-150 ${
-          active ? "font-medium text-ink" : "text-ink-2 hover:text-ink"
+        className={`flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-100 ${
+          active ? "bg-surface-3 text-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink"
         }`}
       >
         {children}
@@ -74,7 +64,7 @@ export function MobileNav({ children }: { children: ReactNode }) {
         aria-label="Open navigation"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="pressable -ml-1.5 grid size-8 place-items-center rounded-md text-ink-2 hover:text-ink lg:hidden"
+        className="pressable -ml-1.5 grid size-8 place-items-center rounded-md text-ink-2 hover:bg-surface-2 hover:text-ink lg:hidden"
       >
         <svg
           viewBox="0 0 24 24"
@@ -93,14 +83,14 @@ export function MobileNav({ children }: { children: ReactNode }) {
             <motion.button
               type="button"
               aria-label="Close navigation"
-              className="absolute inset-0 bg-[oklch(0.15_0.01_60/0.4)] backdrop-blur-[2px]"
+              className="absolute inset-0 bg-[oklch(0_0_0/0.5)]"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: quick }}
               onClick={() => setOpen(false)}
             />
             <motion.aside
-              className="absolute inset-y-0 left-0 w-[82vw] max-w-[300px] overflow-y-auto border-line border-r bg-bg shadow-2xl"
+              className="absolute inset-y-0 left-0 w-[84vw] max-w-[288px] overflow-y-auto border-line border-r bg-bg"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%", transition: { type: "spring", duration: 0.3, bounce: 0 } }}

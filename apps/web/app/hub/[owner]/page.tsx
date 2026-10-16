@@ -30,7 +30,7 @@ export default async function OwnerPage({ params }: Params) {
     const missing = e instanceof HubError && e.status === 404;
     return (
       <HubShell repos={[]} crumbs={[{ label: owner }]}>
-        <div className="mx-auto max-w-[1180px]">
+        <div className="mx-auto max-w-[1080px]">
           {missing ? (
             <Empty title={`No account named ${owner}`} />
           ) : (
@@ -59,7 +59,7 @@ export default async function OwnerPage({ params }: Params) {
 
   return (
     <HubShell repos={shell.repos.map((r) => r.full_name)} me={me} caps={shell.caps} crumbs={[{ label: owner }]}>
-      <div className="mx-auto max-w-[1180px]">
+      <div className="mx-auto max-w-[1080px]">
         <div className="flex flex-wrap items-center gap-5">
           {account.avatar_url ? (
             // biome-ignore lint/performance/noImgElement: avatars come from the identity provider; no optimizer needed
@@ -77,7 +77,7 @@ export default async function OwnerPage({ params }: Params) {
             />
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="flex flex-wrap items-center gap-2 font-semibold text-[28px] tracking-[-0.025em]">
+            <h1 className="flex flex-wrap items-center gap-2 font-semibold text-[22px] tracking-[-0.02em]">
               {account.name}
               <Chip>{kind}</Chip>
             </h1>

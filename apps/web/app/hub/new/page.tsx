@@ -68,7 +68,7 @@ export default async function NewRepoPage({ searchParams }: { searchParams: Prom
                 ).map(([value, title, hint]) => (
                   <label
                     key={value}
-                    className="flex cursor-pointer items-start gap-3 rounded-xl border border-line px-4 py-3 has-[:checked]:border-ink"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-4 py-3 has-[:checked]:border-ink"
                   >
                     <input
                       type="radio"

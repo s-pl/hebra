@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { SITE } from "@/lib/site";
@@ -7,19 +7,13 @@ import "./globals.css";
 
 const sans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
-const serif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: "italic",
-  variable: "--font-instrument-serif",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
-  title: "Hebra: version control for many agents at once",
+  title: { default: "Hebra: version control for people and agents", template: "%s · Hebra" },
   description: SITE.description,
   openGraph: {
-    title: "Hebra: version control for many agents at once",
+    title: "Hebra: version control for people and agents",
     description: SITE.description,
     url: SITE.url,
     siteName: "Hebra",
@@ -30,19 +24,19 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf8f3" },
-    { media: "(prefers-color-scheme: dark)", color: "#1b1917" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e0f12" },
+    { media: "(prefers-color-scheme: light)", color: "#fcfcfd" },
   ],
 };
 
-// Applies the saved theme before first paint, so there is no flash.
-const themeScript = `try{if(localStorage.getItem("hebra-theme")==="dark"){document.documentElement.dataset.theme="dark"}}catch(e){}`;
+// Applies a saved light theme before first paint, so there is no flash.
+const themeScript = `try{if(localStorage.getItem("hebra-theme")==="light"){document.documentElement.dataset.theme="light"}}catch(e){}`;
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Set by proxy.ts; the CSP only lets scripts with this nonce run.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline script, no user input */}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
@@ -50,7 +44,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body className="min-h-dvh">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-surface-2 focus:px-3 focus:py-2"
         >
           Skip to content
         </a>

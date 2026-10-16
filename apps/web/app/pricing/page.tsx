@@ -149,12 +149,11 @@ export default async function PricingPage() {
       <SiteHeader />
       <main id="main">
         <section className="relative overflow-hidden">
-          <div aria-hidden="true" className="hero-backdrop pointer-events-none absolute inset-x-0 top-0 h-[560px]" />
-          <div className="relative mx-auto max-w-6xl px-4 pt-32 pb-16 text-center sm:px-8 md:border-line md:border-x md:pt-40">
-            <p className="font-mono text-[12px] text-accent uppercase tracking-[0.14em]">Pricing</p>
-            <h1 className="mx-auto mt-4 max-w-3xl text-balance font-semibold text-[40px] leading-[1.04] tracking-[-0.035em] sm:text-6xl">
-              Free to run yourself. <span className="font-normal font-serif text-accent italic">Fair</span> when we run
-              it.
+          <div aria-hidden="true" className="grid-backdrop pointer-events-none absolute inset-0" />
+          <div className="relative mx-auto max-w-[1200px] px-4 pt-32 pb-16 text-center sm:px-8  md:pt-40">
+            <p className="font-mono text-[12px] text-accent">Pricing</p>
+            <h1 className="mx-auto mt-4 max-w-3xl text-balance font-semibold text-[40px] leading-[1.04] tracking-[-0.035em] sm:text-[60px]">
+              Free to run yourself. Fair when we run it.
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-pretty text-ink-2 text-lg leading-relaxed">
               People are seats; agents are not. Run as many agents as you like, and pay only for what costs money to
@@ -165,13 +164,13 @@ export default async function PricingPage() {
 
         {/* Editions */}
         <section className="border-line border-t" aria-labelledby="editions">
-          <div className="mx-auto max-w-6xl border-line px-4 py-16 sm:px-8 md:border-x">
+          <div className="mx-auto max-w-[1200px] border-line px-4 py-16 sm:px-6">
             <h2 id="editions" className="sr-only">
               Editions
             </h2>
             <div className="grid gap-4 lg:grid-cols-2">
-              <article className="flex flex-col rounded-2xl border border-line bg-surface p-7">
-                <p className="font-mono text-[11.5px] text-ink-3 uppercase tracking-[0.12em]">Self-hosted</p>
+              <article className="flex flex-col rounded-xl border border-line bg-surface p-7">
+                <p className="font-mono text-[11.5px] text-ink-3">Self-hosted</p>
                 <h3 className="mt-2 font-semibold text-[24px] tracking-[-0.02em]">Hebra Community</h3>
                 <p className="mt-2 text-[14.5px] text-ink-2">
                   The whole platform on your own servers: one binary for a laptop, or a Helm chart for Kubernetes with
@@ -192,8 +191,8 @@ export default async function PricingPage() {
                   Deployment guide
                 </a>
               </article>
-              <article className="flex flex-col rounded-2xl border border-ink bg-surface p-7 shadow-[0_24px_60px_-30px_oklch(0.2_0.02_60/0.45)]">
-                <p className="font-mono text-[11.5px] text-accent uppercase tracking-[0.12em]">Hosted</p>
+              <article className="flex flex-col rounded-xl border border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] bg-surface p-7">
+                <p className="font-mono text-[11.5px] text-accent">Hosted</p>
                 <h3 className="mt-2 font-semibold text-[24px] tracking-[-0.02em]">Hebra Cloud</h3>
                 <p className="mt-2 text-[14.5px] text-ink-2">
                   Everything in Community, run by us, plus the features that need us to run them: agent verification
@@ -208,13 +207,13 @@ export default async function PricingPage() {
                 <div className="mt-auto flex flex-wrap gap-2 pt-6">
                   <a
                     href="/login?plan=free"
-                    className="pressable inline-flex h-10 items-center rounded-full bg-ink px-5 font-medium text-[14px] text-bg"
+                    className="pressable inline-flex h-10 items-center rounded-md bg-ink px-5 font-medium text-[14px] text-bg"
                   >
                     Start free
                   </a>
                   <a
                     href="#plans"
-                    className="pressable inline-flex h-10 items-center rounded-full border border-line px-5 font-medium text-[14px] hover:border-line-strong"
+                    className="pressable inline-flex h-10 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
                   >
                     See plans
                   </a>
@@ -222,7 +221,7 @@ export default async function PricingPage() {
               </article>
             </div>
 
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-line bg-surface">
+            <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-surface">
               <table className="w-full min-w-[560px] text-left text-[13.5px]">
                 <thead>
                   <tr className="border-line border-b text-ink-3">
@@ -255,9 +254,9 @@ export default async function PricingPage() {
 
         {/* Cloud plans */}
         <section id="plans" className="scroll-mt-20 border-line border-t">
-          <div className="mx-auto max-w-6xl border-line px-4 py-16 sm:px-8 md:border-x">
+          <div className="mx-auto max-w-[1200px] border-line px-4 py-16 sm:px-6">
             <div className="text-center">
-              <h2 className="text-balance font-semibold text-3xl tracking-[-0.025em] sm:text-[40px]">
+              <h2 className="text-balance font-semibold text-[30px] tracking-[-0.03em] sm:text-[38px]">
                 Hebra Cloud plans
               </h2>
               <p className="mx-auto mt-3 max-w-xl text-ink-2">
@@ -268,7 +267,7 @@ export default async function PricingPage() {
               <PlanCards plans={visible} />
             </div>
 
-            <div className="mt-12 overflow-x-auto rounded-2xl border border-line bg-surface">
+            <div className="mt-12 overflow-x-auto rounded-xl border border-line bg-surface">
               <table className="w-full min-w-[820px] text-left text-[13.5px]">
                 <caption className="sr-only">Plan comparison</caption>
                 <thead>
@@ -304,14 +303,11 @@ export default async function PricingPage() {
 
         {/* Credits */}
         <section id="credits" className="scroll-mt-20 border-line border-t">
-          <div className="mx-auto max-w-6xl border-line px-4 py-16 sm:px-8 md:border-x">
-            <div className="grid gap-4 md:grid-cols-[180px_1fr] md:gap-10">
-              <p className="flex items-baseline gap-3 font-mono text-xs uppercase tracking-[0.12em]">
-                <span className="text-accent">01</span>
-                <span className="text-ink-3">Usage</span>
-              </p>
+          <div className="mx-auto max-w-[1200px] border-line px-4 py-16 sm:px-6">
+            <div className="max-w-2xl">
+              <p className="font-mono text-[12px] text-accent">Usage</p>
               <div>
-                <h2 className="max-w-3xl text-balance font-semibold text-3xl leading-[1.08] tracking-[-0.025em] sm:text-[40px]">
+                <h2 className="mt-3 max-w-3xl text-balance font-semibold text-[30px] leading-[1.1] tracking-[-0.03em] sm:text-[38px]">
                   Agent credits, and nothing you did not agree to.
                 </h2>
                 <p className="mt-4 max-w-2xl text-ink-2 text-lg leading-relaxed">
@@ -329,7 +325,7 @@ export default async function PricingPage() {
                 runLimit={plans.credits_per_run_limit}
               />
             </div>
-            <div className="mt-6 rounded-2xl border border-line border-dashed px-6 py-5">
+            <div className="mt-6 rounded-xl border border-line border-dashed px-6 py-5">
               <p className="font-medium">Cloud runners are coming</p>
               <p className="mt-1 text-[14px] text-ink-2">
                 Until then, checks run on machines you connect, free on every plan. When cloud runners launch they will
@@ -341,8 +337,8 @@ export default async function PricingPage() {
 
         {/* FAQ */}
         <section id="faq" className="scroll-mt-20 border-line border-t">
-          <div className="mx-auto max-w-6xl border-line px-4 py-16 sm:px-8 md:border-x">
-            <h2 className="font-semibold text-3xl tracking-[-0.025em] sm:text-[40px]">Questions</h2>
+          <div className="mx-auto max-w-[1200px] border-line px-4 py-16 sm:px-6">
+            <h2 className="font-semibold text-[30px] tracking-[-0.03em] sm:text-[38px]">Questions</h2>
             <div className="mt-8 grid border-line border-t">
               {FAQ.map((f) => (
                 <details key={f.q} className="group border-line border-b">

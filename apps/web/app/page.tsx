@@ -1,642 +1,472 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { AGENTS, type AgentId, AgentLogo } from "@/components/agent-logo";
-import { AgentSetup } from "@/components/agent-setup";
 import { CopyCommand } from "@/components/copy-command";
-import { CountUp } from "@/components/count-up";
-import { Details } from "@/components/details";
-import { Logo } from "@/components/logo";
-import { ScrollStory } from "@/components/scroll-story";
-import { ScrubText } from "@/components/scrub-text";
-import { Point, Section } from "@/components/section";
+import { ProductShot } from "@/components/landing/product-shot";
+import { Term } from "@/components/landing/term";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { Terminal, type TermLine } from "@/components/terminal";
-import { Threads } from "@/components/threads";
-import { CoordinationVisual, MergeVisual, ProvenanceVisual, WorkspacesVisual } from "@/components/visuals";
 import { SITE } from "@/lib/site";
+import { button } from "@/lib/ui";
 
-const FEATURES = [
-  { id: "workspaces", label: "Workspaces", icon: "M4 6h16M4 12h16M4 18h10" },
+/* -------------------------------------------------------------- content */
+
+const STEPS = [
   {
-    id: "coordination",
-    label: "Coordination",
-    icon: "M12 3v4m0 10v4M3 12h4m10 0h4M7.8 7.8l2 2m4.4 4.4 2 2m0-8.4-2 2m-4.4 4.4-2 2",
-  },
-  { id: "merge", label: "Merge", icon: "M6 3v6c0 3 3 4 6 4s6 1 6 4v4M18 3v6c0 3-3 4-6 4" },
-  { id: "provenance", label: "Provenance", icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c1-3.5 4-5 7-5s6 1.5 7 5" },
-] as const;
-
-const HEADLINE = ["Every", "agent", "gets", "its", "own", "thread."];
-
-const START: TermLine[] = [
-  { cmd: 'hb start "add OAuth login" --agent claude-code' },
-  { out: "Started workspace add-oauth-login for: add OAuth login" },
-  { out: "  path:   .hebra/workspaces/add-oauth-login", tone: "dim" },
-  { out: "  change: msxsmlkv", tone: "dim" },
-  { out: "  base:   038c03ca65a2", tone: "dim" },
-  { out: "Work in that directory; every change is recorded automatically." },
-  { out: "" },
-  { cmd: 'hb start "fix session bug" --agent codex' },
-  { out: "Started workspace fix-session-bug for: fix session bug" },
-  { out: "  path:   .hebra/workspaces/fix-session-bug", tone: "dim" },
-];
-
-const STATUS: TermLine[] = [
-  { cmd: "hb status" },
-  { out: "Workspace:    fix-session-bug" },
-  { out: "Working copy: tmtovovk eae0b63046a1  fix session bug" },
-  { out: "Parent:       rylsywxx 038c03ca65a2  initial import" },
-  { out: "Changes:" },
-  { out: "  M src/auth.rs", tone: "ok" },
-  { out: "Coordination warnings:" },
-  {
-    out: "  src/auth.rs is claimed by claude-code (agent for ana) in workspace add-oauth-login (adding OAuth)",
-    tone: "warn",
-  },
-  {
-    out: "  src/auth.rs is also being changed in workspace add-oauth-login by claude-code (agent for ana)",
-    tone: "warn",
-  },
-];
-
-const MERGE: TermLine[] = [
-  { cmd: "hb merge add-oauth-login@- fix-session-bug@-" },
-  { out: "Merged into kllmzvxx 1ec607916959  merge msxsmlkv (add OAuth login),", tone: "dim" },
-  { out: "tmtovovk (fix session bug)", tone: "dim" },
-  { out: "Conflicts (recorded, not blocking):" },
-  { out: "  ! src/auth.rs (content)", tone: "err" },
-  { out: "Edit the files to resolve; markers are detected automatically." },
-  { out: "" },
-  { cmd: "hb status" },
-  { out: "Changes:" },
-  { out: "  M src/auth.rs", tone: "ok" },
-  { out: "" },
-  { cmd: "hb undo" },
-  { out: "Undid operation 42 (merge).", tone: "accent" },
-];
-
-const SHOW: TermLine[] = [
-  { cmd: "hb show msxs" },
-  { out: "Change:  msxsmlkvtuwyqrkpmzlnoxvsrtqwyzkl" },
-  { out: "Author:  claude-code (agent for ana)" },
-  { out: "Date:    2026-10-15T09:12:44Z (2m ago)", tone: "dim" },
-  { out: "Parent:  038c03ca65a2", tone: "dim" },
-  { out: "Task:    add OAuth login", tone: "accent" },
-  { out: "Session: sess_7Kq2", tone: "accent" },
-  { out: "Prompt:  Add Google sign-in to the login page", tone: "accent" },
-  { out: "" },
-  { out: "    add OAuth login" },
-];
-
-const INSTALL_COMMAND = `cargo install --locked --git ${SITE.repo} hebra-cli`;
-
-const INSTALL: TermLine[] = [
-  { cmd: INSTALL_COMMAND },
-  { cmd: "cd my-app && hb init" },
-  { out: "Initialized Hebra repository in ~/code/my-app" },
-  { out: "Imported 214 file(s) into change rylsywxx." },
-];
-
-const COMPARISON: [string, string, string][] = [
-  ["Staging area", "Index you must manage", "None. The working copy is the change"],
-  ["Many agents at once", "Worktrees, branches, manual care", "One workspace per agent, one command"],
-  ["Conflicts", "Stop the merge until resolved", "Recorded as data; work continues"],
-  ["Who changed what", "Name and e-mail", "Person, agent, task, session and prompt"],
-  ["Undo", "Depends on the command (reflog)", "Every operation, always"],
-  ["Collisions", "Discovered at merge time", "Warned before they happen (claims, overlaps)"],
-  ["Line endings", "Per-machine configuration", "Normalized by the format"],
-  ["Agent interface", "Parse human output", "--json everywhere and a built-in MCP server"],
-];
-
-const ROADMAP = [
-  {
-    stage: "Works today",
-    title: "v0.1",
-    items: [
-      "One workspace per agent, claims, overlap warnings",
-      "Merges that never block, undo for everything",
-      "Provenance on every change",
-      "MCP server and --json output",
-      "Hebra server: push, pull, presence across machines",
-      "Per-agent tokens; agents can't move main",
-      "Import from and export to Git",
-      "Web hub: history, diffs, files, who is working",
+    n: "1",
+    title: "Each agent gets its own workspace",
+    body: "One command makes an isolated copy of the repository with a fresh change. Agents edit there; nothing they do touches your files or each other's.",
+    term: [
+      { cmd: 'hb start "add OAuth login" --agent claude-code' },
+      { out: "Started workspace add-oauth-login for: add OAuth login", tone: "ok" as const },
+      { out: "  change: rysttrtz   base: a6d6307d777f", tone: "dim" as const },
+      { cmd: 'hb start "rate limit login" --agent codex' },
+      { out: "Started workspace rate-limit-login for: rate limit login", tone: "ok" as const },
     ],
   },
   {
-    stage: "Next",
-    title: "Sharper coordination",
-    items: [
-      "Real-time presence over WebSocket",
-      "Review requests and approvals in the hub",
-      "Structural merge by syntax tree",
-      "Symlink support and Merkle trees",
+    n: "2",
+    title: "Collisions show up before the merge",
+    body: "Agents claim files they are about to change. When two of them touch the same file, both are told right away, in the CLI, over MCP, and live in the hub.",
+    term: [
+      { cmd: "hb status" },
+      { out: "Changes:", tone: "dim" as const },
+      { out: "  M src/auth.rs" },
+      { out: "Coordination warnings:", tone: "warn" as const },
+      { out: "  src/auth.rs is claimed by claude-code in add-oauth-login", tone: "warn" as const },
+      { out: "  (adding OAuth)", tone: "dim" as const },
     ],
   },
   {
-    stage: "Later",
-    title: "Scale",
-    items: ["Semantic search over history and intent", "Lazy fetch for huge monorepos", "Hosted Hebra"],
+    n: "3",
+    title: "People review, then it lands",
+    body: "Agents open a review. Checks run on your own machines, an optional verifier reads the change against the task, and a person approves the merge.",
+    term: [
+      { cmd: "hb push --bookmark agents/claude-code/oauth -r @-" },
+      { cmd: 'hb review open agents/claude-code/oauth -t "Add OAuth login"' },
+      { out: "Opened review #12 into main", tone: "ok" as const },
+      { out: "  checks: test ✓  lint ✓   approvals: 0 of 1", tone: "dim" as const },
+    ],
   },
-] as const;
+];
+
+type Feature = { title: string; body: string; icon: string; cloud?: boolean };
+
+const FEATURES: Feature[] = [
+  {
+    title: "Workspaces per agent",
+    body: "hb start gives each agent an isolated working copy in milliseconds. No worktrees, no stash.",
+    icon: "M2.5 3.5h11v9h-11zM2.5 6.5h11",
+  },
+  {
+    title: "Claims and overlap warnings",
+    body: "Agents reserve files for a while; anyone touching them is warned before the work collides.",
+    icon: "M8 2.5v5l3 2M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z",
+  },
+  {
+    title: "Conflicts never block",
+    body: "A merge always finishes. Conflicts are stored in the change and resolved when someone is ready.",
+    icon: "M4 2.5v11M12 2.5v4a4 4 0 0 1-4 4H4",
+  },
+  {
+    title: "Provenance on every change",
+    body: "Who made it, for whom, under which task, from which session and prompt. Kept in history and in Git exports.",
+    icon: "M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4M8 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
+  },
+  {
+    title: "Mandates instead of tokens",
+    body: "Hand an agent a credential narrowed to one repo, a few operations and its own bookmarks. It expires, and revoking yours revokes it.",
+    icon: "M5.5 7V5a2.5 2.5 0 0 1 5 0v2M4 7h8v6.5H4z",
+  },
+  {
+    title: "Tasks with leases",
+    body: "Write tasks with acceptance criteria and dependencies. Agents claim one; if they stop, the claim runs out and someone else takes it.",
+    icon: "M2.5 4.5 4 6l2.5-2.5M2.5 10.5 4 12l2.5-2.5M9 5h4.5M9 11h4.5",
+  },
+  {
+    title: "Checks on your machines",
+    body: "Connect any computer as a runner. It pulls work over an outbound connection, so nothing is exposed. Always free.",
+    icon: "M2.5 3.5h11v7h-11zM5.5 13.5h5M8 10.5v3",
+  },
+  {
+    title: "Agent verification",
+    body: "A verifier agent reads the change against the task's contract and reports what is missing. Capped per run.",
+    icon: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM5.8 8.2l1.5 1.5 3-3.2",
+    cloud: true,
+  },
+  {
+    title: "Merge queue",
+    body: "Approved reviews are merged together and tested once. A failing batch is split until the culprit is found.",
+    icon: "M2.5 4h11M2.5 8h11M2.5 12h6",
+    cloud: true,
+  },
+  {
+    title: "Signed transparency log",
+    body: "Every bookmark move is hash-chained and the head is signed. hb verify-log catches a rewritten history, even by the server.",
+    icon: "M4 2.5h6l2.5 2.5v8.5h-8.5zM6 7h4M6 9.5h4",
+  },
+  {
+    title: "Built for agents to drive",
+    body: "--json on every command, stable error codes, an MCP server with 32 tools, nothing interactive.",
+    icon: "M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4",
+  },
+  {
+    title: "Git in and out",
+    body: "Import a Git repository with its history. Export to Git deterministically, provenance included as trailers.",
+    icon: "M4.5 5.6v4.8M11.5 10.4V7a2 2 0 0 0-2-2H7.5M4.5 2.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Zm0 8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Zm7 0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Z",
+  },
+];
+
+const VERSUS: [string, string, string][] = [
+  ["Several agents at once", "Worktrees and branches by hand", "hb start: one workspace each"],
+  ["Two agents on one file", "Found at merge time", "Warned while they work"],
+  ["Conflicts", "Stop the merge", "Recorded; work continues"],
+  ["Who changed what", "Name and email", "Person, agent, task, session, prompt"],
+  ["Credentials for agents", "Your token, all of it", "A narrowed, expiring mandate"],
+  ["Staging area", "An index to manage", "None: the working copy is the change"],
+  ["Undo", "Depends on the command", "Every operation, files included"],
+  ["Interface for agents", "Parse human output", "--json everywhere and MCP"],
+];
 
 const GAPS = [
-  "Presence refreshes when someone runs a command, not live yet",
+  "Merges are line-based, not syntax-aware yet",
+  "Trees are flat, so very large repositories are slow",
   "Symlinks are not tracked",
-  "Trees are flat, so very large repos will be slow",
-  "Merges are line-based for now",
-] as const;
+  "Cloud runners are not available yet",
+];
 
-function ButtonLink({ href, children, primary = false }: { href: string; children: ReactNode; primary?: boolean }) {
-  const base = "pressable inline-flex h-10 items-center gap-2 rounded-md px-4 font-medium text-[15px]";
-  const tone = primary
-    ? "bg-ink text-bg hover:bg-[color-mix(in_oklch,var(--text)_88%,var(--bg))]"
-    : "border border-line bg-surface text-ink hover:border-line-strong";
+/* ---------------------------------------------------------------- parts */
+
+function SectionHead({
+  eyebrow,
+  title,
+  intro,
+  center = false,
+}: {
+  eyebrow: string;
+  title: ReactNode;
+  intro?: ReactNode;
+  center?: boolean;
+}) {
   return (
-    <a href={href} className={`${base} ${tone}`}>
-      {children}
-    </a>
-  );
-}
-
-function GitHubIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden="true">
-      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
-    </svg>
-  );
-}
-
-function Hero() {
-  return (
-    <section id="top" className="relative overflow-hidden">
-      <div aria-hidden="true" className="hero-backdrop pointer-events-none absolute inset-x-0 top-0 h-[760px]" />
-      <div className="relative mx-auto max-w-6xl px-4 pt-32 sm:px-8 md:border-line md:border-x md:pt-40">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-balance font-semibold text-[44px] leading-[1.02] tracking-[-0.035em] sm:text-6xl md:text-7xl">
-            {HEADLINE.map((word, i) => (
-              <Fragment key={word}>
-                <span className="word-mask">
-                  <span
-                    className={i === HEADLINE.length - 1 ? "font-normal font-serif text-accent italic" : undefined}
-                    style={{ animationDelay: `${60 + i * 70}ms` }}
-                  >
-                    {word}
-                  </span>
-                </span>
-                {i < HEADLINE.length - 1 ? " " : null}
-              </Fragment>
-            ))}
-          </h1>
-          <p
-            className="rise mx-auto mt-6 max-w-[34rem] text-pretty text-ink-2 text-lg leading-relaxed"
-            style={{ animationDelay: "160ms" }}
-          >
-            Hebra is version control for repositories where several coding agents work at once. Each agent gets its own
-            workspace, Hebra warns them before they edit the same file, and every change records who asked for it.
-          </p>
-          <div className="rise mt-8 flex flex-wrap justify-center gap-3" style={{ animationDelay: "240ms" }}>
-            <ButtonLink href="#install" primary>
-              Install hb
-            </ButtonLink>
-            <ButtonLink href={SITE.repo}>
-              <GitHubIcon />
-              Read the source
-            </ButtonLink>
-          </div>
-          <div className="rise mt-5 flex justify-center" style={{ animationDelay: "320ms" }}>
-            <CopyCommand command={INSTALL_COMMAND} />
-          </div>
-        </div>
-        <div className="mt-14 md:mt-16">
-          <Threads />
-        </div>
-        <ul className="grid grid-cols-2 border-line border-t sm:grid-cols-4">
-          {FEATURES.map((f, i) => (
-            <li
-              key={f.id}
-              className={`border-line ${i % 2 === 1 ? "border-l" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""} sm:border-l sm:first:border-l-0`}
-            >
-              <a
-                href={`#${f.id}`}
-                className="group flex items-center justify-center gap-2.5 py-5 text-[14px] text-ink-2 transition-colors duration-150 hover:text-ink"
-              >
-                <span className="font-mono text-[11px] text-ink-3 transition-colors duration-150 group-hover:text-accent">
-                  0{i + 1}
-                </span>
-                {f.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/** Threads falling from above and gathering into one point over the closing headline. */
-function FooterThreads() {
-  const threads = [
-    { x: 90, c: "var(--thread-1)" },
-    { x: 290, c: "var(--thread-2)" },
-    { x: 500, c: "var(--thread-3)" },
-    { x: 710, c: "var(--thread-4)" },
-    { x: 910, c: "var(--thread-5)" },
-  ];
-  return (
-    <svg viewBox="0 0 1000 220" className="mx-auto h-auto w-full max-w-3xl" aria-hidden="true">
-      {threads.map(({ x, c }, i) => {
-        const d = `M ${x} 0 C ${x} 120, 500 110, 500 210`;
-        return (
-          <g key={c}>
-            <path
-              d={d}
-              pathLength={1}
-              fill="none"
-              stroke={c}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              opacity={0.85}
-              className="draw-on-scroll"
-            />
-            <path
-              d={d}
-              pathLength={1}
-              fill="none"
-              stroke="white"
-              strokeWidth={3.5}
-              strokeLinecap="round"
-              className="thread-pulse"
-              style={{ animationDelay: `${i * 450}ms, ${i * 450}ms`, animationDuration: "400ms, 3.4s" }}
-            />
-          </g>
-        );
-      })}
-      <circle cx={500} cy={210} r={7} fill="var(--bg)" stroke="var(--text)" strokeWidth={2.5} />
-      <circle cx={500} cy={210} r={2.8} fill="var(--accent)" />
-    </svg>
-  );
-}
-
-const WORKS_WITH: AgentId[] = ["claude-code", "codex", "cursor", "gemini-cli", "copilot"];
-
-/** Agents Hebra works with: anything that can run a command or speak MCP. */
-function WorksWith() {
-  return (
-    <div className="md:ml-[220px]">
-      <ul className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {WORKS_WITH.map((id) => (
-          <li
-            key={id}
-            className="card-hover flex flex-col items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-5"
-          >
-            <AgentLogo agent={id} size={44} />
-            <span className="font-medium text-[14px]">{AGENTS[id].title}</span>
-            <span className="font-mono text-[11px] text-ink-3">
-              {id === "claude-code" ? "detected automatically" : "MCP or shell"}
-            </span>
-          </li>
-        ))}
-        <li className="card-hover flex flex-col items-center justify-center gap-2.5 rounded-lg border border-line border-dashed bg-surface-2/60 px-3 py-5 text-center">
-          <span className="grid size-11 place-items-center rounded-full border border-line bg-surface font-mono text-ink-2">
-            +
-          </span>
-          <span className="font-medium text-[14px]">Your agent</span>
-          <span className="font-mono text-[11px] text-ink-3">HB_ACTOR=…</span>
-        </li>
-      </ul>
-      <p className="mt-4 text-[12px] text-ink-3">
-        Product names and logos are trademarks of their respective owners. Hebra is an independent project and is not
-        affiliated with or endorsed by them.
-      </p>
+    <div className={center ? "mx-auto max-w-2xl text-center" : "max-w-2xl"}>
+      <p className="font-mono text-[12px] text-accent">{eyebrow}</p>
+      <h2 className="mt-3 text-balance font-semibold text-[30px] leading-[1.1] tracking-[-0.03em] sm:text-[38px]">
+        {title}
+      </h2>
+      {intro ? <p className="mt-4 text-pretty text-[16px] text-ink-2 leading-relaxed">{intro}</p> : null}
     </div>
   );
 }
 
-const STATS = [
-  { value: "8", label: "agents working in parallel" },
-  { value: "48", label: "concurrent commands" },
-  { value: "0", label: "lock errors" },
-  { value: "1", label: "merge of all eight, clean" },
-] as const;
-
-function Stats() {
+function FeatureIcon({ d }: { d: string }) {
   return (
-    <section className="border-line border-t" aria-label="Concurrency test results">
-      <div className="mx-auto max-w-6xl border-line md:border-x">
-        <dl className="stagger grid grid-cols-2 lg:grid-cols-4">
-          {STATS.map((s, i) => (
-            <div
-              key={s.label}
-              className={`border-line px-6 py-10 text-center ${i % 2 === 1 ? "border-l" : ""} ${i >= 2 ? "border-t lg:border-t-0" : ""} lg:border-l lg:first:border-l-0`}
-            >
-              <dt className="sr-only">{s.label}</dt>
-              <dd>
-                <CountUp value={s.value} className="block font-semibold text-5xl tracking-[-0.04em] tabular-nums" />
-                <span className="mt-2 block text-ink-2 text-sm">{s.label}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="border-line border-t px-6 py-3 text-center font-mono text-[11px] text-ink-3">
-          Measured on a laptop: eight workspaces editing and committing at the same time, then merged in one go. The
-          script is scripts/stress.sh in the repo.
-        </p>
-      </div>
-    </section>
+    <span className="grid size-8 place-items-center rounded-md border border-line bg-surface-2 text-ink-2">
+      <svg
+        viewBox="0 0 16 16"
+        className="size-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d={d} />
+      </svg>
+    </span>
   );
 }
 
-/** Inline code inside prose. */
-function C({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-surface-2 px-1 py-px font-mono text-[0.9em]">{children}</code>;
-}
+const AGENT_LIST: AgentId[] = ["claude-code", "codex", "cursor", "gemini-cli", "copilot"];
+
+/* ----------------------------------------------------------------- page */
 
 export default function Home() {
   return (
     <>
       <SiteHeader />
       <main id="main">
-        <Hero />
-        <Stats />
+        {/* Hero */}
+        <section className="relative overflow-hidden pt-14">
+          <div aria-hidden="true" className="grid-backdrop pointer-events-none absolute inset-0" />
+          <div className="relative mx-auto max-w-[1200px] px-4 pt-20 pb-10 text-center sm:px-6 sm:pt-28">
+            <a
+              href={SITE.repo}
+              className="rise inline-flex h-7 items-center gap-2 rounded-full border border-line bg-surface px-3 text-[12.5px] text-ink-2 hover:border-line-strong hover:text-ink"
+            >
+              <span className="size-1.5 rounded-full bg-accent" />
+              Early preview · open source
+              <span aria-hidden="true" className="text-ink-3">
+                →
+              </span>
+            </a>
+            <h1 className="rise mx-auto mt-6 max-w-[16ch] text-balance font-semibold text-[42px] leading-[1.02] tracking-[-0.045em] [animation-delay:60ms] sm:text-[64px] lg:text-[76px]">
+              Version control for people and agents
+            </h1>
+            <p className="rise mx-auto mt-6 max-w-[58ch] text-pretty text-[16.5px] text-ink-2 leading-relaxed [animation-delay:120ms] sm:text-[18px]">
+              Hebra gives every coding agent its own workspace, warns when two of them touch the same file, and records
+              who asked for each change. People review and merge. Self-host it for free or use Hebra Cloud.
+            </p>
+            <div className="rise mt-9 flex flex-wrap items-center justify-center gap-3 [animation-delay:180ms]">
+              <a href="#start" className={button({ variant: "primary", size: "lg" })}>
+                Get started
+              </a>
+              <a href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
+                Self-host or Cloud
+              </a>
+            </div>
+          </div>
 
-        <section className="border-line border-t" aria-label="Why Hebra exists">
-          <div className="mx-auto max-w-6xl border-line px-4 py-24 sm:px-8 md:border-x md:py-32">
-            <p className="font-mono text-ink-3 text-xs uppercase tracking-[0.12em]">Why</p>
-            <ScrubText
-              className="mt-6 max-w-4xl text-balance font-semibold text-3xl leading-[1.15] tracking-[-0.025em] sm:text-5xl"
-              text="Git was built for people who take turns. Agents don't. They start at the same time, edit the same files and rarely leave a note about why. Hebra keeps them apart while they work, warns them before they collide, and writes down who asked for every change."
-            />
+          <div className="rise relative mx-auto max-w-[1080px] px-4 pb-20 [animation-delay:260ms] sm:px-6">
+            <div aria-hidden="true" className="signal-glow pointer-events-none absolute inset-x-10 -top-10 bottom-10" />
+            <div className="relative">
+              <ProductShot />
+            </div>
+          </div>
+
+          <div className="relative border-line border-y bg-surface/40">
+            <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-center gap-x-8 gap-y-4 px-4 py-6 sm:px-6">
+              <span className="text-[12.5px] text-ink-3">Works with</span>
+              {AGENT_LIST.map((a) => (
+                <span key={a} className="flex items-center gap-2 text-[13.5px] text-ink-2">
+                  <AgentLogo agent={a} size={18} />
+                  {AGENTS[a].title}
+                </span>
+              ))}
+              <span className="font-mono text-[12.5px] text-ink-3">any shell via --json</span>
+            </div>
           </div>
         </section>
 
-        <ScrollStory
-          steps={[
-            {
-              id: "workspaces",
-              number: "01",
-              label: "Workspaces",
-              title: "One command gives an agent its own copy of the repo",
-              intro: (
-                <>
-                  <C>hb start</C> makes a directory with a fresh change in it. The agent works there, and nobody
-                  else&apos;s files move underneath it.
-                </>
-              ),
-              points: (
-                <>
-                  <Point title="No branches to name">
-                    A workspace starts from any revision and you refer to it by name, like <C>add-oauth-login@</C>.
-                  </Point>
-                  <Point title="Nothing to stage">
-                    The working copy is the change. Hebra records the files before every command, so an agent can&apos;t
-                    forget to commit.
-                  </Point>
-                </>
-              ),
-              terminal: <Terminal title="~/code/my-app" lines={START} />,
-              visual: <WorkspacesVisual />,
-            },
-            {
-              id: "coordination",
-              number: "02",
-              label: "Coordination",
-              title: "Two agents reach for the same file. Hebra notices first.",
-              intro:
-                "Agents can claim the lines and paths they're about to edit. If two workspaces change the same file anyway, both get a warning long before anyone merges.",
-              points: (
-                <>
-                  <Point title="Claims run out">
-                    <C>hb claim src/auth --ttl 30m</C> reserves a file or folder. When the time is up the claim goes
-                    away, so nothing stays locked overnight.
-                  </Point>
-                  <Point title="Overlaps show up early">
-                    Hebra looks at the other workspaces too, so <C>hb status</C> warns you even if the other agent
-                    hasn&apos;t run a command yet.
-                  </Point>
-                </>
-              ),
-              terminal: <Terminal title="~/code/my-app/.hebra/workspaces/fix-session-bug" lines={STATUS} />,
-              visual: <CoordinationVisual />,
-            },
-            {
-              id: "merge",
-              number: "03",
-              label: "Merge",
-              title: "A merge that always finishes",
-              intro:
-                "When two changes collide, Hebra writes the conflict into the merged change and moves on. Fix the file whenever you like. The conflict clears as soon as the markers are gone.",
-              points: (
-                <>
-                  <Point title="Undo is always there">
-                    Every operation goes into a log. <C>hb undo</C> reverts the last one, files included, and leaves
-                    other agents&apos; work alone.
-                  </Point>
-                  <Point title="Syntax-aware merge is next">
-                    Today merges work line by line. Next they&apos;ll work on the syntax tree, so edits to different
-                    functions stop conflicting.
-                  </Point>
-                </>
-              ),
-              terminal: <Terminal title="~/code/my-app" lines={MERGE} />,
-              visual: <MergeVisual />,
-            },
-            {
-              id: "provenance",
-              number: "04",
-              label: "Provenance",
-              title: "Every change says who asked for it",
-              intro:
-                "Hebra stores whether a person or an agent wrote a change, which person the agent was working for, and the task, session and prompt behind it.",
-              points: (
-                <>
-                  <Point title="Agents sign their work">
-                    Claude Code is detected on its own. Other agents set <C>HB_ACTOR</C> and <C>HB_ON_BEHALF_OF</C>.
-                  </Point>
-                  <Point title="The prompt stays with the code">
-                    Set <C>HB_TASK</C>, <C>HB_SESSION</C> or <C>HB_PROMPT</C> and they&apos;re saved on the change for
-                    whoever reviews it.
-                  </Point>
-                </>
-              ),
-              terminal: <Terminal title="~/code/my-app" lines={SHOW} />,
-              visual: <ProvenanceVisual />,
-            },
-          ]}
-        />
-
-        <Section
-          id="for-agents"
-          number="05"
-          label="For agents"
-          title="Made to be called by programs"
-          intro={
-            <>
-              Every command takes <C>--json</C> and every error comes with a stable code. <C>hb mcp</C> exposes the same
-              commands as MCP tools, so an agent never has to parse text meant for people.
-            </>
-          }
-        >
-          <WorksWith />
-          <div className="reveal mt-10 md:ml-[220px]">
-            <AgentSetup />
-          </div>
-        </Section>
-
-        <Section
-          id="under-the-hood"
-          number="06"
-          label="Under the hood"
-          title="The boring parts"
-          intro="A version control system lives or dies on these. All of them are in v0.1 and covered by tests."
-        >
-          <Details />
-        </Section>
-
-        <Section
-          id="versus-git"
-          number="07"
-          label="Versus Git"
-          title="Where Hebra differs from Git"
-          intro="Hebra keeps content addressing and full local history. What changes is everything that hurts when several agents share one repository."
-        >
-          <div className="reveal hidden overflow-x-auto rounded-lg border border-line bg-surface sm:block md:ml-[220px]">
-            <table className="w-full min-w-[560px] text-left text-[15px]">
-              <thead>
-                <tr className="border-line border-b text-ink-3 text-xs uppercase tracking-wider">
-                  <th scope="col" className="px-5 py-3 font-medium font-mono" />
-                  <th scope="col" className="px-5 py-3 font-medium font-mono">
-                    Git
-                  </th>
-                  <th scope="col" className="px-5 py-3 font-medium font-mono text-accent">
-                    Hebra
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="stagger">
-                {COMPARISON.map(([topic, git, hebra]) => (
-                  <tr key={topic} className="border-line border-b last:border-b-0">
-                    <th scope="row" className="px-5 py-3.5 font-medium">
-                      {topic}
-                    </th>
-                    <td className="px-5 py-3.5 text-ink-3">{git}</td>
-                    <td className="px-5 py-3.5 text-ink">{hebra}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <dl className="stagger grid gap-3 sm:hidden">
-            {COMPARISON.map(([topic, git, hebra]) => (
-              <div key={topic} className="rounded-lg border border-line bg-surface p-4">
-                <dt className="font-semibold text-[15px]">{topic}</dt>
-                <dd className="mt-2 grid gap-1 text-[14px]">
-                  <span className="text-ink-3">
-                    <span className="font-mono text-[11px] uppercase tracking-wider">Git</span> · {git}
-                  </span>
-                  <span className="text-ink">
-                    <span className="font-mono text-[11px] text-accent uppercase tracking-wider">Hebra</span> · {hebra}
-                  </span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Section>
-
-        <Section
-          id="install"
-          number="08"
-          label="Install"
-          title="Try it on a repo you don't mind breaking"
-          intro={
-            <>
-              It&apos;s v0.1. Install it with Cargo, run <C>hb init</C> in a copy of a project, and point a couple of
-              agents at it. Your files and <C>.gitignore</C> are picked up as they are.
-            </>
-          }
-        >
-          <div className="reveal max-w-3xl md:ml-[220px]">
-            <Terminal title="install" lines={INSTALL} />
-            <p className="mt-4 text-ink-3 text-sm">
-              Or download <code className="font-mono">hb</code> and <code className="font-mono">hebra-server</code> for
-              macOS, Linux and Windows from the GitHub releases page.
-            </p>
-          </div>
-        </Section>
-
-        <Section
-          id="roadmap"
-          number="09"
-          label="Roadmap"
-          title="What works, and what doesn't yet"
-          intro="The local core, the server and the hub work today. This is what comes next, and what still has rough edges."
-        >
-          <div className="md:ml-[220px]">
-            <ol className="stagger grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">
-              {ROADMAP.map((r, i) => (
-                <li key={r.stage} className="bg-surface p-6">
-                  <p
-                    className={`font-mono text-xs uppercase tracking-[0.12em] ${i === 0 ? "text-accent" : "text-ink-3"}`}
-                  >
-                    {r.stage}
-                  </p>
-                  <h3 className="mt-1 font-semibold text-lg">{r.title}</h3>
-                  <ul className="mt-4 grid gap-2 text-[15px] text-ink-2">
-                    {r.items.map((item) => (
-                      <li key={item} className="flex gap-2.5">
-                        <span aria-hidden="true" className={i === 0 ? "text-accent" : "text-ink-3"}>
-                          {i === 0 ? "✓" : "○"}
-                        </span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+        {/* How it works */}
+        <section id="how" className="scroll-mt-14">
+          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
+            <SectionHead
+              eyebrow="How it works"
+              title="Many agents in one repository, without stepping on each other"
+              intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
+            />
+            <ol className="mt-14 grid gap-5 lg:grid-cols-3">
+              {STEPS.map((s) => (
+                <li key={s.n} className="reveal flex flex-col rounded-xl border border-line bg-surface p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-6 place-items-center rounded-full border border-line font-mono text-[11.5px] text-ink-2">
+                      {s.n}
+                    </span>
+                    <h3 className="font-medium text-[15px]">{s.title}</h3>
+                  </div>
+                  <p className="mt-3 text-[14px] text-ink-2 leading-relaxed">{s.body}</p>
+                  <Term className="mt-5" lines={s.term} />
                 </li>
               ))}
             </ol>
-            <div className="reveal mt-6 rounded-lg border border-line border-dashed px-6 py-5">
-              <p className="font-mono text-ink-3 text-xs uppercase tracking-[0.12em]">Known gaps in v0.1</p>
-              <ul className="mt-3 grid gap-1.5 text-[15px] text-ink-2 sm:grid-cols-2">
-                {GAPS.map((gap) => (
-                  <li key={gap} className="flex gap-2.5">
-                    <span aria-hidden="true" className="text-ink-3">
-                      –
-                    </span>
-                    {gap}
+          </div>
+        </section>
+
+        {/* Features */}
+        <section id="features" className="scroll-mt-14 border-line border-t">
+          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
+            <SectionHead
+              eyebrow="Features"
+              title="Everything a team of agents needs, and nothing that gets in their way"
+              intro="The core runs on your machine. The server adds collaboration: reviews, tasks, checks, and an audit trail you can verify yourself."
+            />
+            <div className="mt-14 grid overflow-hidden rounded-xl border border-line bg-line [gap:1px] sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map((f) => (
+                <div key={f.title} className="bg-bg p-6">
+                  <div className="flex items-center justify-between">
+                    <FeatureIcon d={f.icon} />
+                    {f.cloud ? (
+                      <span className="rounded border border-line px-1.5 font-mono text-[10.5px] text-ink-3">
+                        cloud
+                      </span>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-4 font-medium text-[14.5px]">{f.title}</h3>
+                  <p className="mt-1.5 text-[13.5px] text-ink-3 leading-relaxed">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Agents */}
+        <section id="agents" className="scroll-mt-14 border-line border-t">
+          <div className="mx-auto grid max-w-[1200px] items-center gap-12 px-4 py-24 sm:px-6 lg:grid-cols-2">
+            <div>
+              <SectionHead
+                eyebrow="For agents"
+                title="Agents are users, not an afterthought"
+                intro="Everything a person can do from the CLI, an agent can do over MCP or with --json, and every action is recorded as the agent, on behalf of the person who sent it."
+              />
+              <ul className="mt-8 grid gap-3 text-[14px] text-ink-2">
+                {[
+                  "Nothing interactive: no prompts, no pagers, no editors",
+                  "Errors carry stable codes agents can branch on",
+                  "Identity from the environment: HB_ACTOR, HB_TASK, HB_PROMPT",
+                  "Claude Code is detected automatically",
+                ].map((t) => (
+                  <li key={t} className="flex gap-3">
+                    <span className="mt-[9px] size-1 shrink-0 rounded-full bg-accent" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="grid gap-4">
+              <Term
+                title="claude code"
+                lines={[
+                  { cmd: "claude mcp add hebra -- hb mcp" },
+                  { out: "Added stdio MCP server hebra", tone: "ok" },
+                  { gap: true },
+                  { cmd: "hb mandate grant --agent claude-code --repo acme/web --ttl 8h" },
+                  { out: "hbm_…", tone: "accent" },
+                  { out: "For claude-code until 18:42: read, push, review, task on acme/web,", tone: "dim" },
+                  { out: "bookmarks agents/claude-code/*. Give it to the agent as HB_TOKEN.", tone: "dim" },
+                ]}
+              />
+              <Term
+                title="--json"
+                lines={[
+                  { cmd: "hb status --json" },
+                  { out: '{ "changes": [{ "path": "src/auth.rs", "status": "modified" }],', tone: "dim" },
+                  { out: '  "warnings": { "claimed_by_others": [{ "claim": {', tone: "warn" },
+                  { out: '    "actor": { "kind": "agent", "name": "claude-code" },', tone: "warn" },
+                  { out: '    "path": "src/auth.rs", "note": "adding OAuth" } }] } }', tone: "warn" },
+                ]}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Versus Git */}
+        <section id="versus-git" className="scroll-mt-14 border-line border-t">
+          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
+            <SectionHead
+              eyebrow="Compared with Git"
+              title="Keep Git where it fits. Use Hebra where agents work."
+              intro="Hebra imports Git history and exports back to Git, so GitHub and your CI keep working while agents work in Hebra."
+            />
+            <div className="mt-12 overflow-x-auto rounded-xl border border-line">
+              <table className="w-full min-w-[640px] text-left text-[13.5px]">
+                <thead>
+                  <tr className="border-line border-b bg-surface">
+                    <th scope="col" className="w-1/3 px-5 py-3 font-medium text-ink-3">
+                      {" "}
+                    </th>
+                    <th scope="col" className="px-5 py-3 font-medium text-ink-3">
+                      Git
+                    </th>
+                    <th scope="col" className="px-5 py-3 font-medium">
+                      Hebra
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {VERSUS.map(([what, git, hebra]) => (
+                    <tr key={what} className="border-line border-b last:border-b-0">
+                      <th scope="row" className="px-5 py-3 font-normal text-ink-2">
+                        {what}
+                      </th>
+                      <td className="px-5 py-3 text-ink-3">{git}</td>
+                      <td className="px-5 py-3">{hebra}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* Get started */}
+        <section id="start" className="scroll-mt-14 border-line border-t">
+          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
+            <SectionHead
+              eyebrow="Get started"
+              title="Try it on a repository you don't mind breaking"
+              intro="Install the CLI, import a project, and start two agents. It takes about a minute."
+            />
+            <div className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+              <div className="rounded-xl border border-line bg-surface p-6">
+                <h3 className="font-medium text-[15px]">On your machine</h3>
+                <ol className="mt-5 grid gap-5">
+                  {(
+                    [
+                      ["Install hb", "cargo install --locked --git https://github.com/s-pl/hebra hebra-cli"],
+                      ["Import a project (it honours .gitignore)", "cd my-app && hb init"],
+                      ["Start a workspace for an agent", 'hb start "add OAuth login" --agent claude-code'],
+                      ["Let your agent use it", "claude mcp add hebra -- hb mcp"],
+                    ] as [string, string][]
+                  ).map(([label, cmd], i) => (
+                    <li key={cmd} className="grid gap-2">
+                      <p className="text-[13px] text-ink-2">
+                        <span className="mr-2 font-mono text-ink-3">{i + 1}</span>
+                        {label}
+                      </p>
+                      <div className="grid [&>*]:min-w-0">
+                        <CopyCommand command={cmd} />
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-6 text-[12.5px] text-ink-3">
+                  Prefer a binary? Download hb for macOS, Linux or Windows from the{" "}
+                  <a href={`${SITE.repo}/releases`} className="text-ink-2 underline underline-offset-4 hover:text-ink">
+                    releases page
+                  </a>
+                  , with checksums and signed provenance.
+                </p>
+              </div>
+              <div className="grid gap-5">
+                <div className="flex flex-col rounded-xl border border-line bg-surface p-6">
+                  <p className="font-mono text-[11.5px] text-ink-3">Self-hosted</p>
+                  <h3 className="mt-1 font-medium text-[15px]">Hebra Community</h3>
+                  <p className="mt-2 text-[13.5px] text-ink-2 leading-relaxed">
+                    The whole server on your hardware, free forever. One binary, or Kubernetes with Postgres, S3 and
+                    NATS.
+                  </p>
+                  <a
+                    href={`${SITE.repo}/tree/main/deploy`}
+                    className={button({ variant: "secondary", size: "sm", className: "mt-5 self-start" })}
+                  >
+                    Deployment guide
+                  </a>
+                </div>
+                <div className="flex flex-col rounded-xl border border-[color-mix(in_oklch,var(--accent)_35%,var(--border))] bg-surface p-6">
+                  <p className="font-mono text-[11.5px] text-accent">Hosted</p>
+                  <h3 className="mt-1 font-medium text-[15px]">Hebra Cloud</h3>
+                  <p className="mt-2 text-[13.5px] text-ink-2 leading-relaxed">
+                    We run it for you, with agent verification and a merge queue. Free to start; agents never count as
+                    seats.
+                  </p>
+                  <div className="mt-5 flex gap-2">
+                    <a href="/login" className={button({ variant: "accent", size: "sm" })}>
+                      Start free
+                    </a>
+                    <a href="/pricing" className={button({ variant: "ghost", size: "sm" })}>
+                      Pricing
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-10 rounded-xl border border-line border-dashed p-6">
+              <p className="font-medium text-[13.5px]">Known gaps in v0.1</p>
+              <ul className="mt-3 grid gap-x-8 gap-y-1.5 text-[13.5px] text-ink-3 sm:grid-cols-2">
+                {GAPS.map((g) => (
+                  <li key={g} className="flex gap-2.5">
+                    <span aria-hidden="true">–</span>
+                    {g}
                   </li>
                 ))}
               </ul>
             </div>
           </div>
-        </Section>
+        </section>
       </main>
-
-      <footer className="relative overflow-hidden border-line border-t">
-        <div className="relative mx-auto max-w-6xl border-line px-4 pt-0 pb-10 text-center sm:px-8 md:border-x">
-          <FooterThreads />
-          <h2 className="reveal relative mx-auto mt-6 max-w-3xl text-balance font-semibold text-4xl tracking-[-0.035em] sm:text-6xl">
-            Give your agents some <span className="font-normal font-serif text-accent italic">room.</span>
-          </h2>
-          <p className="reveal relative mx-auto mt-5 max-w-md text-ink-2 text-lg">
-            Hebra is built in the open by one developer. Issues and pull requests are welcome.
-          </p>
-          <div className="reveal relative mt-8 flex justify-center gap-3">
-            <ButtonLink href="#install" primary>
-              Install hb
-            </ButtonLink>
-            <ButtonLink href={SITE.repo}>
-              <GitHubIcon />
-              Read the source
-            </ButtonLink>
-          </div>
-          <div className="relative mt-24 flex flex-col items-center justify-between gap-4 border-line border-t pt-6 text-ink-3 text-sm sm:flex-row">
-            <Logo />
-            <p>Apache 2.0 license</p>
-            <a href="#top" className="transition-colors duration-150 hover:text-ink">
-              Back to top ↑
-            </a>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }

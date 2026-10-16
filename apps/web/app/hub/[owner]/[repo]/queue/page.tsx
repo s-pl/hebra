@@ -51,7 +51,7 @@ export default async function QueuePage({ params }: Params) {
             </Empty>
           </div>
         ) : (
-          <Stagger as="ol" className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+          <Stagger as="ol" className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
             {queued.map((r, i) => (
               <StaggerItem key={r.id} className="border-line border-b last:border-b-0">
                 <Link

@@ -7,7 +7,7 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
   return (
     <Link
       href={`/hub/${repo.full_name}`}
-      className="card-hover group flex h-full flex-col rounded-xl border border-line bg-surface p-5"
+      className="card-hover group flex h-full flex-col rounded-lg border border-line bg-surface p-5"
     >
       <div className="flex items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[color-mix(in_oklch,var(--text)_8%,transparent)] font-mono font-semibold uppercase">

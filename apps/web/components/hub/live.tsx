@@ -41,11 +41,11 @@ export function LiveRefresh({ repo }: { repo: string }) {
   }, [repo, router]);
 
   const label = state === "live" ? "Live" : state === "connecting" ? "Connecting" : "Offline";
-  const color = state === "live" ? "var(--term-ok)" : state === "connecting" ? "var(--term-warn)" : "var(--accent)";
+  const color = state === "live" ? "var(--ok)" : state === "connecting" ? "var(--warn)" : "var(--err)";
   return (
     <span
-      className={`inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 font-mono text-[11.5px] transition-colors duration-300 ${
-        flash ? "border-[color-mix(in_oklch,var(--term-ok)_60%,var(--border))] text-ink" : "border-line text-ink-3"
+      className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] transition-colors duration-300 ${
+        flash ? "border-[color-mix(in_oklch,var(--ok)_60%,var(--border))] text-ink" : "border-line text-ink-3"
       }`}
       title={state === "live" ? "Updates appear as soon as they happen" : "Waiting for the server"}
     >

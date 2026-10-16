@@ -4,25 +4,23 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
-export function ThemeToggle({ bare = false }: { bare?: boolean }) {
-  const [theme, setTheme] = useState<Theme>("light");
+/** Switches between the dark default and the light theme; remembers it. */
+export function ThemeToggle({ className = "" }: { className?: string }) {
+  const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+    setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
   }, []);
 
   function toggle() {
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);
-    if (next === "dark") {
-      document.documentElement.dataset.theme = "dark";
-    } else {
-      delete document.documentElement.dataset.theme;
-    }
+    if (next === "light") document.documentElement.dataset.theme = "light";
+    else delete document.documentElement.dataset.theme;
     try {
       localStorage.setItem("hebra-theme", next);
     } catch {
-      // Storage can be unavailable (private mode); the toggle still works for this visit.
+      // Storage can be unavailable (private mode); the switch still works for this visit.
     }
   }
 
@@ -33,26 +31,26 @@ export function ThemeToggle({ bare = false }: { bare?: boolean }) {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className={`pressable grid size-9 place-items-center rounded-full text-ink-2 hover:text-ink ${bare ? "hover:bg-[color-mix(in_oklch,var(--text)_7%,transparent)]" : "border border-line hover:border-line-strong"}`}
+      className={`pressable grid size-8 place-items-center rounded-md text-ink-3 hover:bg-surface-2 hover:text-ink ${className}`}
     >
       <svg
-        viewBox="0 0 24 24"
-        className="size-4"
+        viewBox="0 0 16 16"
+        className="size-[15px]"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.4"
         aria-hidden="true"
       >
         {theme === "dark" ? (
           <>
-            <circle cx="12" cy="12" r="4" />
+            <circle cx="8" cy="8" r="2.75" />
             <path
-              d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+              d="M8 1.5v1.25M8 13.25v1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M1.5 8h1.25M13.25 8h1.25M3.4 12.6l.9-.9M11.7 4.3l.9-.9"
               strokeLinecap="round"
             />
           </>
         ) : (
-          <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" strokeLinejoin="round" />
+          <path d="M13.5 9.6A5.5 5.5 0 0 1 6.4 2.5a5.5 5.5 0 1 0 7.1 7.1Z" strokeLinejoin="round" />
         )}
       </svg>
     </button>

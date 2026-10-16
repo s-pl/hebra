@@ -13,7 +13,7 @@ export async function loadSettings(next: string): Promise<{ ctx: SettingsContext
       return {
         error: (
           <HubShell repos={shell.repos.map((r) => r.full_name)} caps={shell.caps} crumbs={[{ label: "Settings" }]}>
-            <div className="mx-auto max-w-[920px]">
+            <div className="mx-auto max-w-[880px]">
               <SignInNeeded next={next} />
             </div>
           </HubShell>
@@ -25,7 +25,7 @@ export async function loadSettings(next: string): Promise<{ ctx: SettingsContext
     return {
       error: (
         <HubShell repos={[]} crumbs={[{ label: "Settings" }]}>
-          <div className="mx-auto max-w-[920px]">
+          <div className="mx-auto max-w-[880px]">
             <ServerDown message={e instanceof HubError ? e.message : String(e)} />
           </div>
         </HubShell>
@@ -68,9 +68,9 @@ export function SettingsFrame({
 }) {
   return (
     <HubShell repos={ctx.repos} me={ctx.me} caps={ctx.caps} crumbs={crumbs}>
-      <div className="mx-auto max-w-[920px]">
-        <h1 className="font-semibold text-[28px] tracking-[-0.025em]">{title}</h1>
-        {sub ? <p className="mt-1 text-[13.5px] text-ink-3">{sub}</p> : null}
+      <div className="mx-auto max-w-[880px]">
+        <h1 className="font-semibold text-[22px] tracking-[-0.02em]">{title}</h1>
+        {sub ? <p className="mt-1 text-[13px] text-ink-3">{sub}</p> : null}
         {tabs && tabs.length > 0 ? (
           <div className="mt-6">
             <Tabs tabs={tabs} current={current ?? ""} />

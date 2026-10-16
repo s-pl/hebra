@@ -52,7 +52,7 @@ export default async function CheckPage({ params }: Params) {
         {run.required ? <Chip>required</Chip> : null}
       </div>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-        <h1 className="font-semibold text-[28px] leading-tight tracking-[-0.025em]">{run.name}</h1>
+        <h1 className="font-semibold text-[22px] leading-tight tracking-[-0.02em]">{run.name}</h1>
         {canWrite && ctx.me ? (
           <div className="flex gap-2">
             {active ? (
@@ -76,7 +76,7 @@ export default async function CheckPage({ params }: Params) {
               <p className="whitespace-pre-wrap text-[14px] text-ink-2">{run.spec.contract}</p>
             </Card>
           ) : run.spec.run ? (
-            <pre className="mb-4 overflow-x-auto rounded-xl border border-line bg-surface px-4 py-3 font-mono text-[13px]">
+            <pre className="mb-4 overflow-x-auto rounded-lg border border-line bg-surface px-4 py-3 font-mono text-[13px]">
               <span className="text-ink-3">$ </span>
               {run.spec.run}
             </pre>

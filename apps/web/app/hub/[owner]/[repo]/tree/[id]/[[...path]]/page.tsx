@@ -109,7 +109,7 @@ export default async function CodePage({ params }: Params) {
         <section className="min-w-0">
           {node.kind === "dir" ? (
             <>
-              <div className="overflow-hidden rounded-xl border border-line bg-surface">
+              <div className="overflow-hidden rounded-lg border border-line bg-surface">
                 <div className="flex items-center justify-between border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5">
                   <span className="font-mono text-[13px]">{rel || repo}</span>
                   <span className="font-mono text-[11.5px] text-ink-3">{node.entries.length} entries</span>
@@ -160,7 +160,7 @@ export default async function CodePage({ params }: Params) {
                 </ul>
               </div>
               {readme ? (
-                <div className="mt-6 overflow-hidden rounded-xl border border-line bg-surface">
+                <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
                   <div className="border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5 font-mono text-[13px]">
                     {readme.path}
                   </div>
@@ -174,7 +174,7 @@ export default async function CodePage({ params }: Params) {
               ) : null}
             </>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-line bg-surface">
+            <div className="overflow-hidden rounded-lg border border-line bg-surface">
               <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5">
                 <span className="min-w-0 truncate font-mono text-[13px]">{node.path}</span>
                 <span className="flex items-center gap-3 font-mono text-[11.5px] text-ink-3">

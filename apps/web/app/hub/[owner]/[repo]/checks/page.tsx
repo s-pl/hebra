@@ -70,7 +70,7 @@ export default async function ChecksPage({ params }: Params) {
           {[...groups].map(([commit, list]) => {
             const waiting = list.some((r) => r.state === "waiting");
             return (
-              <StaggerItem key={commit} className="overflow-hidden rounded-xl border border-line bg-surface">
+              <StaggerItem key={commit} className="overflow-hidden rounded-lg border border-line bg-surface">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_60%,var(--surface))] px-4 py-2.5">
                   <span className="flex min-w-0 items-center gap-2 text-[13px]">
                     <Link href={`/hub/${full}/c/${commit}`} className="font-mono text-ink-2 hover:text-ink">

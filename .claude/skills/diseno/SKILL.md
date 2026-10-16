@@ -5,34 +5,30 @@ description: Sistema de diseño de la marca, la landing y la web (dirección vis
 
 # Sistema de diseño
 
-> Estado: **borrador**. La dirección visual, el nombre y los colores de marca están por decidir con el autor.
-> Rellena las secciones marcadas como PENDIENTE a medida que se decidan; no las inventes.
+> Estado: **decidido** (2026-10-16). Cambios de dirección, siempre con el autor.
 
-## Referencia principal
+## Referencia histórica
 - **entire.io**, sobre todo el hero. Sirve de inspiración, **no se copia**: se toma el nivel de calidad, el ritmo y la sensación, no la maquetación literal, los textos ni los recursos gráficos.
 - Antes de diseñar una sección, analiza la referencia (estructura, jerarquía tipográfica, espacio, movimiento) y anota aquí qué se toma y qué se cambia.
 
-## Decisiones de la landing (tomadas)
-- Nombre: **Hebra**, comando `hb`. Metáfora: cada persona o agente es una hebra en una tela común.
-- Mensaje principal del hero: **hecho para agentes** (control de versiones para cuando la mayoría del código lo escriben agentes).
-- Idioma: **inglés**.
-- Tema: **claro por defecto**, con modo oscuro opcional.
-- Secciones bajo el hero, una por funcionalidad:
-  1. Workspaces por agente (`hb start`, aislamiento instantáneo).
-  2. Coordinación en tiempo real (presencia y reservas).
-  3. Merge que entiende código (por estructura; los conflictos se guardan y no bloquean).
-  4. Procedencia y permisos (persona, agente, prompt y tarea; permisos por agente; aprobación humana).
+## Dirección visual (decidida por el autor, 2026-10-16)
+**Herramienta de precisión**, en la línea de Linear y Vercel. Sustituye a la dirección editorial cálida anterior (serif, papel, hilos de colores), que el autor descartó por genérica, confusa y poco pulida.
 
-## Análisis de entire.io (2026-10-15)
-Lo que se toma: hero centrado con una píldora de anuncio encima del titular; titular de dos líneas, seminegrita y con interlineado ajustado, con una **palabra que rota** (reservando el ancho máximo para que nada salte); párrafo corto y un único CTA principal; fila de iconos y etiquetas al pie del hero que enlaza a las secciones; secciones con una **etiqueta en mono, mayúsculas y color de acento** sobre un título centrado; **líneas guía verticales** que enmarcan el contenido; una maqueta del producto real (CLI o web) en vez de ilustraciones.
-Lo que se cambia: entire.io es oscuro y Hebra es **claro** (papel cálido); su visual de fondo es un paisaje y el de Hebra son **hebras de colores** (agentes) que convergen en una línea principal; su tipografía es propia y Hebra usa Geist con una serif itálica para la palabra que rota.
+- **Tema oscuro por defecto**, claro opcional (`data-theme="light"`, guardado en `localStorage`).
+- **Neutros grafito** con un tinte frío (hue 260) y **un único color de señal: cian** (`--accent`) para foco, acción principal de la landing y elementos activos. Nada más usa acento.
+- **Colores semánticos**: `--ok` (verde), `--warn` (ámbar), `--err` (rojo), `--info` (azul) y `--agent` (violeta). Los agentes son violeta y cuadrados redondeados en avatares; las personas son círculos neutros.
+- **Tipografía**: solo Geist y Geist Mono. Nada de serif. Mono para datos (ids, bookmarks, comandos, contadores).
+- **Forma**: radios contenidos (`rounded-md` en controles, `rounded-lg` en tarjetas), bordes de 1px, casi sin sombras (solo `shadow-pop` en popovers y paleta).
+- **Densidad**: app a 13–14px, filas de 44px, títulos de página a 22px. La landing usa titulares grandes (hasta 76px) y aire.
+- **Movimiento**: solo de respuesta (pulsar, drawer, popover, 140–250 ms, `--ease-out`). Las páginas y listas de la app **no** entran animadas; la paleta ⌘K abre sin animación. La landing usa `.rise` al cargar y `.reveal` al hacer scroll (CSS, sin JS).
+- **Recetas compartidas** en `apps/web/lib/ui.ts` (`button()`, `control`, `TONE_BADGE`) y componentes en `components/hub/ui.tsx` y `components/hub/forms.tsx`. Usarlos siempre en vez de clases sueltas.
 
-## Dirección visual (decidida por Claude, revisable por el autor)
-- Papel cálido de fondo, tinta casi negra y **rojo hilo** (bermellón, `oklch(0.6 0.2 30)`) como acento.
-- Colores de hebra para los agentes: rojo, verde azulado, ámbar, violeta y azul.
-- Tipografía: Geist (interfaz y titulares), Geist Mono (código y etiquetas) e Instrument Serif en itálica (palabra que rota).
-- La terminal se muestra en oscuro también en el tema claro, como contrapunto.
-- Movimiento: el dibujo de las hebras al cargar y la rotación de la palabra; nada más. Todo se desactiva con `prefers-reduced-motion`.
+## Landing (estructura actual)
+1. Hero centrado: píldora, titular «Version control for people and agents», párrafo que dice qué hace y para quién, dos CTA (Get started y Self-host or Cloud) y una **captura del producto hecha en HTML** (`components/landing/product-shot.tsx`), no una ilustración.
+2. Franja «Works with» con los agentes compatibles.
+3. How it works: tres pasos con terminales cuya salida coincide con la CLI real.
+4. Features: rejilla de 12 con icono, título y una frase; las de Cloud se marcan.
+5. For agents, comparación con Git, Get started (comandos copiables y las dos ediciones) y Known gaps.
 
 ## Voz y texto (para que no suene a IA)
 El autor pidió expresamente quitar el "tono de IA". Reglas:
@@ -41,7 +37,6 @@ El autor pidió expresamente quitar el "tono de IA". Reglas:
 - Concreto antes que grandilocuente: decir qué hace el comando y qué pasa después (`hb start` crea una carpeta con un cambio nuevo).
 - Honestidad visible: lo que aún no funciona se dice (lista "Known gaps"). Ninguna cifra sin fuente: las de la franja de datos salen de `scripts/stress.sh`.
 - Un poco de humor seco está bien ("Try it on a repo you don't mind breaking").
-- Layout: secciones numeradas con cabecera a la izquierda (no la plantilla centrada de etiqueta, título e intro repetida); sin brillos degradados ni retícula de puntos; radios contenidos (`rounded-lg`) y sombras sobrias.
 
 ## Principios
 1. **Una idea por sección.** La landing explica un concepto cada vez: qué es, por qué ahora, cómo funciona, empieza.
@@ -50,12 +45,8 @@ El autor pidió expresamente quitar el "tono de IA". Reglas:
 4. **Rendimiento como parte del diseño.** El hero se ve completo sin esperar a JavaScript.
 5. **El movimiento tiene propósito** y respeta `prefers-reduced-motion`.
 
-## Tokens (PENDIENTE)
-Se definen como variables CSS en `:root` y se exponen a Tailwind. Esperado:
-- Color: fondo, superficie, borde, texto (primario, secundario, terciario), acento y estados (éxito, aviso, error).
-- Modo claro y oscuro (PENDIENTE: ¿oscuro por defecto?).
-- Tipografía: una sans para interfaz y titulares y una mono para código (PENDIENTE).
-- Escala de espaciado, radios, sombras y duraciones o curvas de animación.
+## Tokens
+Definidos en `apps/web/app/globals.css` (`:root` oscuro y `:root[data-theme="light"]`) y expuestos a Tailwind con `@theme inline`: `bg`, `surface`, `surface-2`, `surface-3`, `line`, `line-strong`, `ink`, `ink-2`, `ink-3`, `accent`, `ok`, `warn`, `err`, `info`, `agent` y `term-*` (la terminal siempre es oscura).
 
 ## Skills globales que conviene usar
 - `emil-design-eng` y `apple-design`: pulido de interfaz y detalles.

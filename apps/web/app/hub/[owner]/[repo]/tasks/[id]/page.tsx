@@ -61,7 +61,7 @@ export default async function TaskPage({ params }: Params) {
             <Chip key={l}>{l}</Chip>
           ))}
         </div>
-        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[28px] leading-tight tracking-[-0.025em]">
+        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[22px] leading-tight tracking-[-0.02em]">
           {t.title}
         </h1>
         <p className="mt-2 text-[13px] text-ink-3">

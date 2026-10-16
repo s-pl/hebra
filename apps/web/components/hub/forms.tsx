@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import {
   type ComponentProps,
@@ -15,12 +14,9 @@ import {
 } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/app/hub/actions";
-import { quick } from "@/components/hub/motion";
+import { button, control, type Size, type Variant } from "@/lib/ui";
 
 /* ---------------------------------------------------------------- inputs */
-
-const control =
-  "w-full rounded-lg border border-line bg-surface px-3 text-[14px] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 focus:border-ink focus:shadow-[0_0_0_3px_color-mix(in_oklch,var(--text)_10%,transparent)] disabled:opacity-60";
 
 export function Field({
   label,
@@ -34,18 +30,18 @@ export function Field({
   htmlFor: string;
 }) {
   return (
-    <div className="grid gap-1.5">
-      <label htmlFor={htmlFor} className="font-medium text-[13px]">
+    <div className="grid content-start gap-1.5">
+      <label htmlFor={htmlFor} className="font-medium text-[12.5px] text-ink-2">
         {label}
       </label>
       {children}
-      {hint ? <p className="text-[12px] text-ink-3">{hint}</p> : null}
+      {hint ? <p className="text-[12px] text-ink-3 leading-relaxed">{hint}</p> : null}
     </div>
   );
 }
 
 export function Input(props: ComponentProps<"input">) {
-  return <input {...props} className={`${control} h-10 ${props.className ?? ""}`} />;
+  return <input {...props} className={`${control} h-9 ${props.className ?? ""}`} />;
 }
 
 export function TextArea(props: ComponentProps<"textarea">) {
@@ -53,87 +49,79 @@ export function TextArea(props: ComponentProps<"textarea">) {
 }
 
 export function Select(props: ComponentProps<"select">) {
-  return <select {...props} className={`${control} h-10 ${props.className ?? ""}`} />;
+  return <select {...props} className={`${control} h-9 pr-8 ${props.className ?? ""}`} />;
 }
 
 /* --------------------------------------------------------------- buttons */
 
-const tones = {
-  primary: "bg-ink text-bg",
-  quiet: "border border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink",
-  danger: "bg-[oklch(0.55_0.19_28)] text-white",
-  success: "bg-[oklch(0.55_0.14_150)] text-white",
+/** Older call sites name tones; they map onto the button variants. */
+export type Tone = "primary" | "quiet" | "danger" | "success" | "accent";
+const VARIANT: Record<Tone, Variant> = {
+  primary: "primary",
+  quiet: "secondary",
+  danger: "danger",
+  success: "success",
+  accent: "accent",
 };
 
-export type Tone = keyof typeof tones;
-
-function Spinner({ light }: { light: boolean }) {
+function Spinner() {
   return (
     <span
-      className={`size-3.5 animate-spin rounded-full border-2 border-t-transparent ${light ? "border-white" : "border-current"}`}
+      className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
       aria-hidden="true"
     />
   );
 }
 
-/** A form's submit button: pending state while the action runs. */
+/** A form's submit button: shows progress while the action runs. */
 export function SubmitButton({
   children,
   tone = "primary",
+  size = "md",
   pendingLabel,
+  name,
+  value,
 }: {
   children: ReactNode;
   tone?: Tone;
+  size?: Size;
   pendingLabel?: string;
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <motion.button
+    <button
       type="submit"
+      name={name}
+      value={value}
       disabled={pending}
-      whileTap={{ scale: 0.97 }}
-      className={`relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-lg px-4 font-medium text-[14px] disabled:opacity-75 ${tones[tone]}`}
+      className={button({ variant: VARIANT[tone], size })}
     >
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={pending ? "busy" : "idle"}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8, transition: quick }}
-          className="flex items-center gap-2"
-        >
-          {pending ? (
-            <>
-              <Spinner light={tone !== "quiet"} />
-              {pendingLabel ?? "Working"}
-            </>
-          ) : (
-            children
-          )}
-        </motion.span>
-      </AnimatePresence>
-    </motion.button>
+      {pending ? (
+        <>
+          <Spinner />
+          {pendingLabel ?? "Working"}
+        </>
+      ) : (
+        children
+      )}
+    </button>
   );
 }
 
 /* ------------------------------------------------------------- feedback */
 
 export function Feedback({ result }: { result: ActionResult | null }) {
+  if (!result?.message) return null;
   return (
-    <AnimatePresence initial={false} mode="popLayout">
-      {result?.message ? (
-        <motion.p
-          key={result.message}
-          role={result.ok ? "status" : "alert"}
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, transition: quick }}
-          className={`text-[13px] ${result.ok ? "text-[oklch(0.55_0.14_150)]" : "text-accent"}`}
-        >
-          {result.message}
-        </motion.p>
-      ) : null}
-    </AnimatePresence>
+    <p
+      key={result.message}
+      role={result.ok ? "status" : "alert"}
+      className={`rise text-[12.5px] ${result.ok ? "text-ok" : "text-err"}`}
+    >
+      {result.message}
+    </p>
   );
 }
 
@@ -217,19 +205,16 @@ export function ActionButton({
     });
   };
   return (
-    <span className="inline-grid gap-1">
-      <motion.button
+    <span className="inline-grid justify-items-end gap-1">
+      <button
         type="button"
         onClick={click}
         disabled={pending}
-        whileTap={{ scale: 0.97 }}
-        className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium disabled:opacity-60 ${
-          size === "sm" ? "h-8 px-3 text-[12.5px]" : "h-10 px-4 text-[14px]"
-        } ${armed ? tones.danger : tones[tone]}`}
+        className={button({ variant: armed ? "danger" : VARIANT[tone], size: size === "sm" ? "xs" : "sm" })}
       >
-        {pending ? <Spinner light={tone !== "quiet" || armed} /> : null}
+        {pending ? <Spinner /> : null}
         {armed ? confirm : children}
-      </motion.button>
+      </button>
       {result && !result.ok ? <Feedback result={result} /> : null}
     </span>
   );
@@ -246,14 +231,10 @@ export function SecretOnce({ field = "mandate", help }: { field?: string; help?:
   const [copied, setCopied] = useState(false);
   if (!value) return null;
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="grid gap-2 rounded-xl border border-[color-mix(in_oklch,var(--term-warn)_50%,var(--border))] bg-[color-mix(in_oklch,var(--term-warn)_10%,var(--surface))] p-3"
-    >
-      <p className="font-medium text-[13px]">Copy this now. It is not shown again.</p>
+    <div className="rise grid gap-2 rounded-md border border-[color-mix(in_oklch,var(--warn)_40%,var(--border))] bg-[color-mix(in_oklch,var(--warn)_7%,var(--surface))] p-3">
+      <p className="font-medium text-[12.5px] text-warn">Copy it now. It is not shown again.</p>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-md bg-surface px-2 py-1.5 font-mono text-[12px]">{value}</code>
+        <code className="min-w-0 flex-1 truncate rounded bg-bg px-2 py-1.5 font-mono text-[12px]">{value}</code>
         <button
           type="button"
           onClick={async () => {
@@ -261,12 +242,12 @@ export function SecretOnce({ field = "mandate", help }: { field?: string; help?:
             setCopied(true);
             window.setTimeout(() => setCopied(false), 1500);
           }}
-          className="pressable h-8 shrink-0 rounded-md border border-line bg-surface px-3 text-[12.5px]"
+          className={button({ size: "xs" })}
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      {help ? <div className="text-[12.5px] text-ink-2">{help}</div> : null}
-    </motion.div>
+      {help ? <div className="text-[12px] text-ink-2 leading-relaxed">{help}</div> : null}
+    </div>
   );
 }

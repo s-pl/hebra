@@ -80,13 +80,13 @@ export default async function ChangePage({ params }: Params) {
             </Link>
           ))}
         </div>
-        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[28px] leading-tight tracking-[-0.025em]">
+        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[22px] leading-tight tracking-[-0.02em]">
           {firstLine(c.description)}
         </h1>
         {rest ? <p className="mt-3 max-w-3xl whitespace-pre-wrap text-[15px] text-ink-2">{rest}</p> : null}
 
         {/* Provenance */}
-        <div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
           <div className="flex items-center gap-3 bg-surface p-4">
             <ActorAvatar actor={c.author} size={38} />
             <div className="min-w-0 leading-tight">
@@ -110,7 +110,7 @@ export default async function ChangePage({ params }: Params) {
         </div>
 
         {c.conflicts.length > 0 ? (
-          <div className="mt-4 rounded-xl border border-[color-mix(in_oklch,var(--term-warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--term-warn)_10%,var(--surface))] px-5 py-4">
+          <div className="mt-4 rounded-lg border border-[color-mix(in_oklch,var(--term-warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--term-warn)_10%,var(--surface))] px-5 py-4">
             <p className="font-medium">Conflicts are recorded in this change</p>
             <p className="mt-0.5 text-[13px] text-ink-2">Work continues; they clear when the markers are removed.</p>
             <ul className="mt-2 grid gap-1 font-mono text-[13px]">
@@ -146,8 +146,7 @@ export default async function ChangePage({ params }: Params) {
                       {f.path}
                     </span>
                     <span className="shrink-0 font-mono text-[11px]">
-                      <span className="text-[oklch(0.6_0.14_150)]">+{f.additions}</span>{" "}
-                      <span className="text-accent">−{f.deletions}</span>
+                      <span className="text-ok">+{f.additions}</span> <span className="text-err">−{f.deletions}</span>
                     </span>
                   </a>
                 </li>

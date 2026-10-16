@@ -60,7 +60,7 @@ export default async function SettingsPage() {
             Run <code className="font-mono">hb login</code> in a terminal, or create one below.
           </Empty>
         ) : (
-          <ul className="grid divide-y divide-[var(--border)] rounded-xl border border-line">
+          <ul className="grid divide-y divide-[var(--border)] rounded-lg border border-line">
             {active.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -128,7 +128,7 @@ export default async function SettingsPage() {
               <li key={o.account.handle}>
                 <Link
                   href={`/settings/${o.account.handle}`}
-                  className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
+                  className="flex items-center gap-3 rounded-lg border border-line px-4 py-3 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
                 >
                   <span className="grid size-8 place-items-center rounded-lg bg-surface-2 font-semibold text-[13px] uppercase">
                     {o.account.handle.slice(0, 1)}

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { type ActionResult, decideDevice } from "@/app/hub/actions";
+import { button, control } from "@/lib/ui";
 
 /** Enter or confirm a device code, then approve or deny it. */
 export function DeviceDecision({
@@ -47,14 +48,14 @@ export function DeviceDecision({
           autoComplete="one-time-code"
           autoCapitalize="characters"
           spellCheck={false}
-          className="h-12 rounded-lg border border-line bg-surface px-3 text-center font-mono text-[20px] uppercase tracking-[0.2em] outline-none focus:border-ink"
+          className={`${control} h-12 text-center font-mono text-[20px] uppercase tracking-[0.2em]`}
         />
         {problem || device ? (
-          <p role="alert" className="text-[13px] text-accent">
+          <p role="alert" className="text-[13px] text-err">
             {problem ?? `This request is already ${device?.status}.`}
           </p>
         ) : null}
-        <button type="submit" className="pressable h-10 rounded-lg bg-ink font-medium text-[14px] text-bg">
+        <button type="submit" className={button({ variant: "primary", size: "lg" })}>
           Continue
         </button>
       </form>
@@ -77,7 +78,7 @@ export function DeviceDecision({
           type="button"
           disabled={pending}
           onClick={() => decide(false)}
-          className="pressable h-10 rounded-lg border border-line bg-surface text-[14px] text-ink-2 hover:text-ink disabled:opacity-60"
+          className={button({ variant: "secondary", size: "lg" })}
         >
           Deny
         </button>
@@ -85,13 +86,13 @@ export function DeviceDecision({
           type="button"
           disabled={pending}
           onClick={() => decide(true)}
-          className="pressable h-10 rounded-lg bg-ink font-medium text-[14px] text-bg disabled:opacity-60"
+          className={button({ variant: "primary", size: "lg" })}
         >
           {pending ? "Working…" : "Approve"}
         </button>
       </div>
       {result && !result.ok ? (
-        <p role="alert" className="text-[13px] text-accent">
+        <p role="alert" className="text-[13px] text-err">
           {result.message}
         </p>
       ) : null}

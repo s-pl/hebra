@@ -59,17 +59,17 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
   return (
     <div>
       <div className="flex justify-center">
-        <fieldset className="relative grid grid-cols-2 rounded-full border border-line bg-surface p-1 text-[13.5px]">
+        <fieldset className="relative grid grid-cols-2 rounded-lg border border-line bg-surface p-1 text-[13.5px]">
           <legend className="sr-only">Billing period</legend>
           <span
             aria-hidden="true"
-            className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full bg-ink transition-transform duration-200 ease-[var(--ease-out)]"
+            className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-md bg-ink transition-transform duration-200 ease-[var(--ease-out)]"
             style={{ transform: period === "year" ? "translateX(100%)" : "none" }}
           />
           {(["month", "year"] as const).map((p) => (
             <label
               key={p}
-              className={`relative z-10 flex h-8 cursor-pointer items-center justify-center rounded-full px-4 transition-colors duration-200 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${period === p ? "text-bg" : "text-ink-2 hover:text-ink"}`}
+              className={`relative z-10 flex h-8 cursor-pointer items-center justify-center rounded-md px-4 transition-colors duration-200 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${period === p ? "text-bg" : "text-ink-2 hover:text-ink"}`}
             >
               <input
                 type="radio"
@@ -92,9 +92,9 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
           return (
             <article
               key={p.id}
-              className={`relative flex flex-col rounded-2xl border p-6 ${
+              className={`relative flex flex-col rounded-xl border p-6 ${
                 featured
-                  ? "border-ink bg-surface shadow-[0_24px_60px_-30px_oklch(0.2_0.02_60/0.45)]"
+                  ? "border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] bg-surface"
                   : "border-line bg-surface"
               }`}
             >
@@ -120,8 +120,10 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
               </p>
               <a
                 href={`/login?plan=${p.id}&period=${period}`}
-                className={`pressable mt-5 inline-flex h-10 items-center justify-center rounded-full font-medium text-[14px] ${
-                  featured ? "bg-ink text-bg" : "border border-line hover:border-line-strong"
+                className={`pressable mt-5 inline-flex h-10 items-center justify-center rounded-md font-medium text-[14px] ${
+                  featured
+                    ? "bg-accent text-on-accent hover:bg-accent-strong"
+                    : "border border-line hover:border-line-strong"
                 }`}
               >
                 {p.price_cents === 0 ? "Start free" : `Choose ${p.name}`}
@@ -140,7 +142,7 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
       </div>
 
       {enterprise ? (
-        <div className="mt-4 flex flex-col items-start justify-between gap-4 rounded-2xl border border-line bg-surface p-6 sm:flex-row sm:items-center">
+        <div className="mt-4 flex flex-col items-start justify-between gap-4 rounded-xl border border-line bg-surface p-6 sm:flex-row sm:items-center">
           <div>
             <h3 className="font-semibold text-[17px]">{enterprise.name}</h3>
             <p className="mt-1 max-w-xl text-[13.5px] text-ink-2">
@@ -150,7 +152,7 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
           </div>
           <a
             href="mailto:hello@hebra.dev?subject=Hebra%20Enterprise"
-            className="pressable inline-flex h-10 shrink-0 items-center rounded-full border border-line px-5 font-medium text-[14px] hover:border-line-strong"
+            className="pressable inline-flex h-10 shrink-0 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
           >
             Talk to us
           </a>
@@ -188,7 +190,7 @@ export function CreditEstimator({
   const choices = plans.filter((p) => !p.contact);
 
   return (
-    <div className="grid gap-6 rounded-2xl border border-line bg-surface p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-10">
+    <div className="grid gap-6 rounded-xl border border-line bg-surface p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-10">
       <div className="grid gap-6">
         <label htmlFor={`${id}-runs`} className="grid gap-2">
           <span className="flex justify-between text-[13.5px]">

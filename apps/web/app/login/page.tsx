@@ -6,6 +6,7 @@ import { AuthFrame } from "@/components/auth-frame";
 import { ActionForm, SubmitButton, TextArea } from "@/components/hub/forms";
 import { capabilities, currentUser } from "@/lib/hub";
 import { safeNext } from "@/lib/session";
+import { button, TONE_BADGE } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sign in · Hebra" };
@@ -62,10 +63,7 @@ export default async function LoginPage({
       }
     >
       {error ? (
-        <p
-          role="alert"
-          className="mb-4 rounded-lg border border-[color-mix(in_oklch,var(--accent)_35%,var(--border))] bg-accent-soft px-3 py-2 text-[13px] text-accent"
-        >
+        <p role="alert" className={`mb-5 rounded-md border px-3 py-2 text-[13px] ${TONE_BADGE.err}`}>
           {ERRORS[error] ?? ERRORS.github}
         </p>
       ) : null}
@@ -76,7 +74,7 @@ export default async function LoginPage({
           {github ? (
             <a
               href={`/auth/github?next=${encodeURIComponent(next)}`}
-              className="pressable flex h-11 items-center justify-center gap-2.5 rounded-lg bg-ink font-medium text-[14.5px] text-bg"
+              className={button({ variant: "primary", size: "lg", className: "w-full" })}
             >
               <GitHubMark />
               Continue with GitHub

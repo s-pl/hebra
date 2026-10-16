@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title: `Review #${id} · ${owner}/${repo} · Hebra` };
 }
 
-const OK = "oklch(0.55 0.14 150)";
+const OK = "var(--ok)";
 
 function Mergeability({ review }: { review: Review }) {
   const m = review.mergeability;
@@ -36,7 +36,7 @@ function Mergeability({ review }: { review: Review }) {
       title: "No conflicts",
       text: `The server creates a merge commit on ${review.target}, signed by you.`,
     },
-    conflicts: { tone: "var(--accent)", title: `Conflicts with ${review.target}`, text: "" },
+    conflicts: { tone: "var(--err)", title: `Conflicts with ${review.target}`, text: "" },
   }[m.kind];
   return (
     <div className="flex items-start gap-3">
@@ -79,10 +79,7 @@ function Dot({ tone, mark }: { tone: string; mark: string }) {
 function Requirement({ ok, title, children }: { ok: boolean | null; title: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <Dot
-        tone={ok === null ? "var(--term-warn)" : ok ? OK : "var(--accent)"}
-        mark={ok === null ? "…" : ok ? "✓" : "×"}
-      />
+      <Dot tone={ok === null ? "var(--term-warn)" : ok ? OK : "var(--err)"} mark={ok === null ? "…" : ok ? "✓" : "×"} />
       <div className="min-w-0">
         <p className="font-medium text-[14px]">{title}</p>
         {children ? <div className="mt-0.5 text-[13px] text-ink-2">{children}</div> : null}
@@ -106,7 +103,7 @@ function CommentItem({
   return (
     <li className={`grid grid-cols-[auto_minmax(0,1fr)] gap-3 ${c.resolved ? "opacity-60" : ""}`}>
       <ActorAvatar actor={author} size={26} />
-      <div className="min-w-0 rounded-xl border border-line bg-surface">
+      <div className="min-w-0 rounded-lg border border-line bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-2 border-line border-b px-3.5 py-2 text-[12.5px]">
           <span className="min-w-0 truncate">
             <span className="font-medium text-ink">{c.author}</span>
@@ -180,7 +177,7 @@ export default async function ReviewPage({ params }: Params) {
           <StateBadge state={r.state} />
           <span className="font-mono text-[12.5px] text-ink-3">#{r.id}</span>
         </div>
-        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[28px] leading-tight tracking-[-0.025em]">
+        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[22px] leading-tight tracking-[-0.02em]">
           {r.title}
         </h1>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[13.5px] text-ink-2">
@@ -224,7 +221,7 @@ export default async function ReviewPage({ params }: Params) {
                   <ActorAvatar actor={{ name: a.handle, kind: "human" }} size={26} />
                   <span>
                     <span className="font-medium">{a.handle}</span>{" "}
-                    <span className={a.state === "approved" ? "text-[oklch(0.5_0.14_150)]" : "text-accent"}>
+                    <span className={a.state === "approved" ? "text-ok" : "text-err"}>
                       {a.state === "approved" ? "approved" : "requested changes"}
                     </span>
                     <span className="text-ink-3">
@@ -237,7 +234,7 @@ export default async function ReviewPage({ params }: Params) {
               ))}
             </ol>
             {me && live ? (
-              <div className="mt-4 rounded-xl border border-line bg-surface p-4">
+              <div className="mt-4 rounded-lg border border-line bg-surface p-4">
                 <ActionForm action={commentOnReview.bind(null, full, r.id)}>
                   <TextArea
                     name="body"
@@ -277,7 +274,7 @@ export default async function ReviewPage({ params }: Params) {
               <h2 className="font-semibold text-[15px]">
                 {r.commits.length} change{r.commits.length === 1 ? "" : "s"}
               </h2>
-              <Stagger as="ol" className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+              <Stagger as="ol" className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
                 {r.commits.map((c) => (
                   <StaggerItem key={c.commit_id} className="border-line border-b last:border-b-0">
                     <Link
@@ -412,24 +409,23 @@ export default async function ReviewPage({ params }: Params) {
               <ActionForm action={approveReview.bind(null, full, r.id)}>
                 <TextArea name="note" placeholder="Optional note" aria-label="Note" className="min-h-16" />
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="submit"
-                    name="verdict"
-                    value="approve"
-                    className="pressable h-9 rounded-lg bg-[oklch(0.55_0.14_150)] px-3.5 font-medium text-[13.5px] text-white"
-                  >
+                  <SubmitButton tone="success" size="sm" name="verdict" value="approve" pendingLabel="Saving">
                     Approve
-                  </button>
-                  <button
-                    type="submit"
-                    name="verdict"
-                    value="changes"
-                    className="pressable h-9 rounded-lg border border-line bg-surface px-3.5 text-[13.5px] text-ink-2 hover:text-ink"
-                  >
+                  </SubmitButton>
+                  <SubmitButton tone="quiet" size="sm" name="verdict" value="changes" pendingLabel="Saving">
                     Request changes
-                  </button>
+                  </SubmitButton>
                 </div>
               </ActionForm>
+            </Card>
+          ) : live && me && mine ? (
+            <Card title="Someone else approves this">
+              <p className="text-[12.5px] text-ink-3 leading-relaxed">
+                {r.author.includes("agent")
+                  ? `${r.author.split(" ")[0]} worked on your behalf, so you count as the author.`
+                  : "You opened this review."}{" "}
+                Approvals count only from people other than the author; add a reviewer from the repository settings.
+              </p>
             </Card>
           ) : null}
         </aside>

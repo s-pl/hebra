@@ -32,7 +32,7 @@ function Row({ children }: { children: React.ReactNode }) {
 }
 
 function List({ children }: { children: React.ReactNode }) {
-  return <ul className="grid divide-y divide-[var(--border)] rounded-xl border border-line">{children}</ul>;
+  return <ul className="grid divide-y divide-[var(--border)] rounded-lg border border-line">{children}</ul>;
 }
 
 export default async function OwnerSettingsPage({ params, searchParams }: Params) {
@@ -150,7 +150,7 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
           ) : (
             <div className="grid gap-3">
               {teams.map((t) => (
-                <div key={t.id} className="rounded-xl border border-line p-4">
+                <div key={t.id} className="rounded-lg border border-line p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-medium text-[14.5px]">
                       {t.name} <span className="font-mono text-[12px] text-ink-3">team:{t.handle}</span>

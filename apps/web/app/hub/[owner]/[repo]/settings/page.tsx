@@ -66,7 +66,7 @@ export default async function RepoSettingsPage({ params }: Params) {
               ).map(([value, title, hint]) => (
                 <label
                   key={value}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-line px-4 py-3 has-[:checked]:border-ink"
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-4 py-3 has-[:checked]:border-ink"
                 >
                   <input
                     type="radio"
@@ -82,7 +82,7 @@ export default async function RepoSettingsPage({ params }: Params) {
                 </label>
               ))}
             </fieldset>
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line px-4 py-3 has-[:checked]:border-ink">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-4 py-3 has-[:checked]:border-ink">
               <input
                 type="checkbox"
                 name="open_contributions"
@@ -123,7 +123,7 @@ export default async function RepoSettingsPage({ params }: Params) {
           {access.length === 0 ? (
             <p className="text-[13.5px] text-ink-3">No one has been added directly.</p>
           ) : (
-            <ul className="grid divide-y divide-[var(--border)] rounded-xl border border-line">
+            <ul className="grid divide-y divide-[var(--border)] rounded-lg border border-line">
               {access.map((g) => {
                 const who = label(g);
                 const kind = "team" in g.principal ? "team" : g.principal.kind;
