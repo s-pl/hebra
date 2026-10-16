@@ -66,7 +66,7 @@ export function DiffFile({ file }: { file: FileDiff }) {
       id={fileAnchor(file.path)}
       className="diff-file group scroll-mt-16 overflow-hidden rounded-lg border border-line bg-surface"
     >
-      <summary className="sticky top-12 z-10 flex cursor-pointer list-none items-center gap-3 border-line border-b bg-surface-2 px-4 py-2 group-[:not([open])]:border-b-0">
+      <summary className="flex cursor-pointer list-none items-center gap-3 border-line border-b bg-surface-2 px-4 py-2 group-[:not([open])]:border-b-0">
         <svg
           viewBox="0 0 12 12"
           className="size-3 shrink-0 text-ink-3 transition-transform duration-150 group-[:not([open])]:-rotate-90"

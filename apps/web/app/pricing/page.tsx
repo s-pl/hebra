@@ -4,6 +4,7 @@ import { CopyCommand } from "@/components/copy-command";
 import { CreditEstimator, PlanCards } from "@/components/pricing";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { SmartLink } from "@/components/smart-link";
 import { dollars, loadPlans, type Plan } from "@/lib/plans";
 import { SITE } from "@/lib/site";
 
@@ -184,12 +185,12 @@ export default async function PricingPage() {
                   <CopyCommand command="hebra-server user create you --admin" />
                   <CopyCommand command="hebra-server serve" />
                 </div>
-                <a
+                <SmartLink
                   href={`${SITE.repo}/tree/main/deploy`}
                   className="mt-4 text-[13.5px] text-ink-2 underline underline-offset-4 hover:text-ink"
                 >
                   Deployment guide
-                </a>
+                </SmartLink>
               </article>
               <article className="flex flex-col rounded-xl border border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] bg-surface p-7">
                 <p className="font-mono text-[11.5px] text-accent">Hosted</p>
@@ -205,18 +206,18 @@ export default async function PricingPage() {
                   </span>
                 </p>
                 <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                  <a
+                  <SmartLink
                     href="/login?plan=free"
                     className="pressable inline-flex h-10 items-center rounded-md bg-ink px-5 font-medium text-[14px] text-bg"
                   >
                     Start free
-                  </a>
-                  <a
+                  </SmartLink>
+                  <SmartLink
                     href="#plans"
                     className="pressable inline-flex h-10 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
                   >
                     See plans
-                  </a>
+                  </SmartLink>
                 </div>
               </article>
             </div>
@@ -357,9 +358,9 @@ export default async function PricingPage() {
             </div>
             <p className="mt-8 text-[14px] text-ink-3">
               The full rules, from proration to refunds, are in the{" "}
-              <a href="/legal/billing" className="text-ink-2 underline underline-offset-4 hover:text-ink">
+              <SmartLink href="/legal/billing" className="text-ink-2 underline underline-offset-4 hover:text-ink">
                 billing policy
-              </a>
+              </SmartLink>
               . Prices in US dollars, before taxes.
             </p>
           </div>

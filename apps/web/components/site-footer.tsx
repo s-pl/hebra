@@ -1,4 +1,5 @@
 import { Logo } from "@/components/logo";
+import { SmartLink } from "@/components/smart-link";
 import { SITE } from "@/lib/site";
 
 const COLUMNS = [
@@ -46,9 +47,12 @@ export function SiteFooter() {
             <ul className="mt-3 grid gap-2">
               {c.links.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink">
+                  <SmartLink
+                    href={l.href}
+                    className="text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink"
+                  >
                     {l.label}
-                  </a>
+                  </SmartLink>
                 </li>
               ))}
             </ul>

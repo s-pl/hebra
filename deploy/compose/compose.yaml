@@ -5,9 +5,9 @@
 #
 #   cp deploy/compose/.env.example deploy/compose/.env    # then fill it in
 #   docker compose -f deploy/compose/compose.yaml up -d --build
-#   docker compose -f deploy/compose/compose.yaml run --rm server repo create acme
-#   docker compose -f deploy/compose/compose.yaml run --rm server token create --name you --admin
-#   open https://localhost   (Caddy's local CA; `hb remote add origin https://localhost/acme`)
+#   docker compose -f deploy/compose/compose.yaml run --rm server user create you --admin
+#   open the printed one-time link (Caddy's local CA; `caddy trust` silences warnings)
+#   hb login https://localhost && hb remote add origin https://localhost/you/my-app
 
 name: hebra
 
@@ -27,6 +27,12 @@ x-server-env: &server-env
   AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
   AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
   HEBRA_ENCRYPTION_KEYS: ${HEBRA_ENCRYPTION_KEYS:?run `hebra-server keygen` and set HEBRA_ENCRYPTION_KEYS in .env}
+  HEBRA_MANDATE_KEY: ${HEBRA_MANDATE_KEY:?run `hebra-server keygen mandate` and set HEBRA_MANDATE_KEY in .env}
+  HEBRA_PUBLIC_URL: ${HEBRA_PUBLIC_URL:-https://localhost}
+  HEBRA_EDITION: ${HEBRA_EDITION:-community}
+  HEBRA_SIGNUP: ${HEBRA_SIGNUP:-invite}
+  HEBRA_GITHUB_CLIENT_ID: ${HEBRA_GITHUB_CLIENT_ID:-}
+  HEBRA_GITHUB_CLIENT_SECRET: ${HEBRA_GITHUB_CLIENT_SECRET:-}
   HEBRA_TRUST_PROXY: "true"
   HEBRA_HSTS: "true"
   HEBRA_METRICS_ADDR: 0.0.0.0:9090

@@ -235,8 +235,8 @@ export default async function RepoPage({ params, searchParams }: Params) {
         />
       </div>
 
-      <div className="mt-8 grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="grid min-w-0 gap-8">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8">
           {/* Needs attention */}
           {reviews.reviews.length > 0 || inProgress.length > 0 ? (
             <section>

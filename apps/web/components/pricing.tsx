@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { SmartLink } from "@/components/smart-link";
 import { dollars, type Plan } from "@/lib/plans";
 
 type Period = "month" | "year";
@@ -118,7 +119,7 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
                   ? `${dollars(p.price_cents * 10)}${p.per_person ? " per person" : ""} billed yearly`
                   : ""}
               </p>
-              <a
+              <SmartLink
                 href={`/login?plan=${p.id}&period=${period}`}
                 className={`pressable mt-5 inline-flex h-10 items-center justify-center rounded-md font-medium text-[14px] ${
                   featured
@@ -127,7 +128,7 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
                 }`}
               >
                 {p.price_cents === 0 ? "Start free" : `Choose ${p.name}`}
-              </a>
+              </SmartLink>
               <ul className="mt-6 grid gap-2.5 border-line border-t pt-5 text-[13.5px]">
                 {features(p).map((f) => (
                   <li key={f} className="flex gap-2.5">
@@ -150,12 +151,12 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
               Community on your own infrastructure with a support contract.
             </p>
           </div>
-          <a
+          <SmartLink
             href="mailto:hello@hebra.dev?subject=Hebra%20Enterprise"
             className="pressable inline-flex h-10 shrink-0 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
           >
             Talk to us
-          </a>
+          </SmartLink>
         </div>
       ) : null}
     </div>

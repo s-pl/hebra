@@ -124,7 +124,7 @@ export default async function ChangePage({ params }: Params) {
         ) : null}
 
         {/* Files + diff */}
-        <div className="mt-8 grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="lg:sticky lg:top-16">
             <div className="flex items-center justify-between px-1">
               <p className="font-semibold text-[14px]">
@@ -172,7 +172,7 @@ export default async function ChangePage({ params }: Params) {
               </div>
             ) : null}
           </aside>
-          <div className="grid min-w-0 gap-4">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
             {c.files.length === 0 ? <p className="text-ink-3">This change has no file changes.</p> : null}
             {c.files.map((f) => (
               <DiffFile key={f.path} file={f} />

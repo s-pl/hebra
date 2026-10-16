@@ -60,6 +60,20 @@ spec:
             - { name: HEBRA_BURST_TOKEN, value: {{ .Values.server.rateLimits.tokenBurst | quote }} }
             - { name: HEBRA_RATE_IP, value: {{ .Values.server.rateLimits.ip | quote }} }
             - { name: HEBRA_BURST_IP, value: {{ .Values.server.rateLimits.ipBurst | quote }} }
+            - { name: HEBRA_EDITION, value: {{ .Values.server.edition | quote }} }
+            - { name: HEBRA_PUBLIC_URL, value: {{ required "server.publicUrl is required (where people reach Hebra)" .Values.server.publicUrl | quote }} }
+            - { name: HEBRA_SIGNUP, value: {{ .Values.server.signup | quote }} }
+            - name: HEBRA_MANDATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.server.mandate.existingSecret }}
+                  key: {{ .Values.server.mandate.key }}
+            {{- with .Values.server.verifierModel }}
+            - { name: HEBRA_VERIFIER_MODEL, value: {{ . | quote }} }
+            {{- end }}
+            {{- if .Values.server.billingPlansConfigMap }}
+            - { name: HEBRA_BILLING_PLANS, value: /config/billing/plans.toml }
+            {{- end }}
             - name: HEBRA_ENCRYPTION_KEYS
               valueFrom:
                 secretKeyRef:
@@ -95,6 +109,16 @@ spec:
             - { name: HEBRA_TLS_CERT, value: /secrets/tls/tls.crt }
             - { name: HEBRA_TLS_KEY, value: /secrets/tls/tls.key }
             {{- end }}
+          {{- with .Values.server.integrations }}
+          {{- if or .github .stripe .verifier }}
+          envFrom:
+            {{- range $name := list .github .stripe .verifier }}
+            {{- if $name }}
+            - secretRef: { name: {{ $name }} }
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- end }}
           startupProbe:
             httpGet: { path: /api/v1/ready, port: api, scheme: {{ $scheme }} }
             periodSeconds: 2
@@ -124,6 +148,9 @@ spec:
             {{- if .Values.server.nats.credsSecret }}
             - { name: nats-creds, mountPath: /secrets/nats, readOnly: true }
             {{- end }}
+            {{- if .Values.server.billingPlansConfigMap }}
+            - { name: billing-plans, mountPath: /config/billing, readOnly: true }
+            {{- end }}
       volumes:
         - name: data
           emptyDir: { sizeLimit: 256Mi }
@@ -141,6 +168,10 @@ spec:
         {{- with .Values.server.nats.credsSecret }}
         - name: nats-creds
           secret: { secretName: {{ . }} }
+        {{- end }}
+        {{- with .Values.server.billingPlansConfigMap }}
+        - name: billing-plans
+          configMap: { name: {{ . }}, items: [{ key: plans.toml, path: plans.toml }] }
         {{- end }}
       {{- with .Values.server.nodeSelector }}
       nodeSelector:

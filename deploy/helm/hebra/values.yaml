@@ -32,6 +32,36 @@ server:
   cacheMiB: 256
   rateLimits: { token: 100, tokenBurst: 1000, ip: 200, ipBurst: 2000 }
 
+  # Which product this is: `community` (self-hosted, free) or `cloud`
+  # (plans and billing, merge queue, agent verification).
+  edition: community
+  # Where people reach Hebra (the web front), used in sign-in, device and
+  # invitation links. REQUIRED, e.g. https://hebra.example.com
+  publicUrl: ""
+  # Who may create an account: `invite` (an administrator sends a link) or
+  # `open` (anyone who signs in with GitHub).
+  signup: invite
+
+  # Ed25519 key that signs mandates and transparency log heads; every
+  # replica must share it. REQUIRED:
+  #   kubectl create secret generic hebra-mandate --from-literal=key=$(hebra-server keygen mandate)
+  mandate:
+    existingSecret: hebra-mandate
+    key: key
+
+  # Optional integrations, each a Secret whose keys are the variable names:
+  #   github:   HEBRA_GITHUB_CLIENT_ID, HEBRA_GITHUB_CLIENT_SECRET (sign in with GitHub)
+  #   stripe:   HEBRA_STRIPE_SECRET_KEY, HEBRA_STRIPE_WEBHOOK_SECRET (Cloud billing)
+  #   verifier: HEBRA_ANTHROPIC_API_KEY (agent verification, Cloud)
+  integrations:
+    github: ""
+    stripe: ""
+    verifier: ""
+  # Model for agent verification (empty: the server default).
+  verifierModel: ""
+  # ConfigMap with a `plans.toml` replacing the built-in Cloud plans.
+  billingPlansConfigMap: ""
+
   # Object encryption keys (XChaCha20-Poly1305). REQUIRED: a Secret with
   # comma-separated 64-hex keys, the first one encrypting. Create it with
   #   kubectl create secret generic hebra-encryption --from-literal=keys=$(hebra-server keygen)

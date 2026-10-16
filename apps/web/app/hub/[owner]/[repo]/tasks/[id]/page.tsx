@@ -69,8 +69,8 @@ export default async function TaskPage({ params }: Params) {
         </p>
       </Reveal>
 
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="grid min-w-0 gap-6">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
           <Card title="Description">
             {t.body ? (
               <p className="whitespace-pre-wrap text-[14.5px] text-ink-2 leading-relaxed">{t.body}</p>

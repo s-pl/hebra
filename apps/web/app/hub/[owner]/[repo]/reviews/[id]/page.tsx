@@ -192,8 +192,8 @@ export default async function ReviewPage({ params }: Params) {
         {r.body ? <p className="mt-4 max-w-3xl whitespace-pre-wrap text-[15px] text-ink-2">{r.body}</p> : null}
       </Reveal>
 
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid min-w-0 gap-8">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8">
           {/* Conversation */}
           <section>
             <h2 className="font-semibold text-[15px]">

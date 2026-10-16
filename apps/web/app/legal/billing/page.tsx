@@ -39,7 +39,7 @@ export default async function BillingPolicyPage() {
           <p className="mt-3 max-w-2xl text-ink-2 text-lg">
             How Hebra Cloud charges, and what it never does. Hebra Community, the self-hosted edition, is free.
           </p>
-          <div className="mt-12 grid items-start gap-10 lg:grid-cols-[200px_minmax(0,1fr)]">
+          <div className="mt-12 grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[200px_minmax(0,1fr)]">
             <nav aria-label="On this page" className="hidden lg:sticky lg:top-28 lg:block">
               <p className="font-mono text-[11px] text-ink-3 uppercase tracking-[0.12em]">On this page</p>
               <ul className="mt-3 grid gap-2 text-[13.5px]">

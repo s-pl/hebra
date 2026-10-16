@@ -93,7 +93,7 @@ export default async function CodePage({ params }: Params) {
       crumbs={crumbs}
       palette={files.map((f) => ({ group: "Files", label: f, href: treeHref(base, f) }))}
     >
-      <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="hidden lg:sticky lg:top-16 lg:block">
           <div className="flex items-center justify-between px-2 pb-2">
             <Link href={base} className="font-mono text-[12px] text-ink-2 hover:text-ink">

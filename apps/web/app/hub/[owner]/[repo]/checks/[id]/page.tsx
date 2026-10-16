@@ -69,7 +69,7 @@ export default async function CheckPage({ params }: Params) {
       </div>
       {run.summary ? <p className="mt-2 max-w-3xl text-[14.5px] text-ink-2">{run.summary}</p> : null}
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
           {run.kind === "agent" && run.spec.contract ? (
             <Card title="Contract" sub="What the verifier was asked to confirm.">

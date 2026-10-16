@@ -5,6 +5,7 @@ import { ProductShot } from "@/components/landing/product-shot";
 import { Term } from "@/components/landing/term";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { SmartLink } from "@/components/smart-link";
 import { SITE } from "@/lib/site";
 import { button } from "@/lib/ui";
 
@@ -190,7 +191,7 @@ export default function Home() {
         <section className="relative overflow-hidden pt-14">
           <div aria-hidden="true" className="grid-backdrop pointer-events-none absolute inset-0" />
           <div className="relative mx-auto max-w-[1200px] px-4 pt-20 pb-10 text-center sm:px-6 sm:pt-28">
-            <a
+            <SmartLink
               href={SITE.repo}
               className="rise inline-flex h-7 items-center gap-2 rounded-full border border-line bg-surface px-3 text-[12.5px] text-ink-2 hover:border-line-strong hover:text-ink"
             >
@@ -199,7 +200,7 @@ export default function Home() {
               <span aria-hidden="true" className="text-ink-3">
                 →
               </span>
-            </a>
+            </SmartLink>
             <h1 className="rise mx-auto mt-6 max-w-[16ch] text-balance font-semibold text-[42px] leading-[1.02] tracking-[-0.045em] [animation-delay:60ms] sm:text-[64px] lg:text-[76px]">
               Version control for people and agents
             </h1>
@@ -208,12 +209,12 @@ export default function Home() {
               who asked for each change. People review and merge. Self-host it for free or use Hebra Cloud.
             </p>
             <div className="rise mt-9 flex flex-wrap items-center justify-center gap-3 [animation-delay:180ms]">
-              <a href="#start" className={button({ variant: "primary", size: "lg" })}>
+              <SmartLink href="#start" className={button({ variant: "primary", size: "lg" })}>
                 Get started
-              </a>
-              <a href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
+              </SmartLink>
+              <SmartLink href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
                 Self-host or Cloud
-              </a>
+              </SmartLink>
             </div>
           </div>
 
@@ -412,9 +413,12 @@ export default function Home() {
                 </ol>
                 <p className="mt-6 text-[12.5px] text-ink-3">
                   Prefer a binary? Download hb for macOS, Linux or Windows from the{" "}
-                  <a href={`${SITE.repo}/releases`} className="text-ink-2 underline underline-offset-4 hover:text-ink">
+                  <SmartLink
+                    href={`${SITE.repo}/releases`}
+                    className="text-ink-2 underline underline-offset-4 hover:text-ink"
+                  >
                     releases page
-                  </a>
+                  </SmartLink>
                   , with checksums and signed provenance.
                 </p>
               </div>
@@ -426,12 +430,12 @@ export default function Home() {
                     The whole server on your hardware, free forever. One binary, or Kubernetes with Postgres, S3 and
                     NATS.
                   </p>
-                  <a
+                  <SmartLink
                     href={`${SITE.repo}/tree/main/deploy`}
                     className={button({ variant: "secondary", size: "sm", className: "mt-5 self-start" })}
                   >
                     Deployment guide
-                  </a>
+                  </SmartLink>
                 </div>
                 <div className="flex flex-col rounded-xl border border-[color-mix(in_oklch,var(--accent)_35%,var(--border))] bg-surface p-6">
                   <p className="font-mono text-[11.5px] text-accent">Hosted</p>
@@ -441,12 +445,12 @@ export default function Home() {
                     seats.
                   </p>
                   <div className="mt-5 flex gap-2">
-                    <a href="/login" className={button({ variant: "accent", size: "sm" })}>
+                    <SmartLink href="/login" className={button({ variant: "accent", size: "sm" })}>
                       Start free
-                    </a>
-                    <a href="/pricing" className={button({ variant: "ghost", size: "sm" })}>
+                    </SmartLink>
+                    <SmartLink href="/pricing" className={button({ variant: "ghost", size: "sm" })}>
                       Pricing
-                    </a>
+                    </SmartLink>
                   </div>
                 </div>
               </div>
