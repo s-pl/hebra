@@ -320,10 +320,14 @@ pub(crate) async fn access(
     UrlPath((owner, name)): UrlPath<(String, String)>,
 ) -> ApiResult<axum::Json<Value>> {
     let (repo, _) = s.access(&headers, &owner, &name, Action::Admin).await?;
+    let teams = s.db.teams(&repo.owner_id).await?;
     let mut out = Vec::new();
     for (principal, role) in s.db.access_list(&repo.id).await? {
         let who = if principal.starts_with("team_") {
-            json!({ "team": principal })
+            match teams.iter().find(|t| t.id == principal) {
+                Some(t) => json!({ "team": t.handle }),
+                None => continue,
+            }
         } else {
             match s.db.account(&principal).await? {
                 Some(a) => json!({ "account": a.handle, "kind": a.kind }),

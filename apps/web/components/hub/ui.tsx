@@ -139,12 +139,11 @@ export function DiffView({ file }: { file: FileDiff }) {
 
 export function ServerDown({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-line border-dashed bg-surface px-6 py-10 text-center">
+    <div className="rounded-xl border border-line border-dashed bg-surface px-6 py-10 text-center">
       <p className="font-semibold text-lg">The Hebra server is not answering</p>
       <p className="mt-2 text-ink-2">{message}</p>
       <pre className="mx-auto mt-6 inline-block rounded-md bg-term px-4 py-3 text-left font-mono text-[13px] text-term-text">
-        {`hebra-server repo create my-app
-hebra-server token create --name you
+        {`hebra-server user create you --admin
 hebra-server serve`}
       </pre>
       <p className="mt-4 text-ink-3 text-sm">
@@ -154,19 +153,152 @@ hebra-server serve`}
   );
 }
 
-/** Review state pill. */
-export function StateBadge({ state }: { state: "open" | "merged" | "closed" }) {
-  const tone = {
-    open: "border-[color-mix(in_oklch,oklch(0.6_0.14_150)_45%,var(--border))] bg-[color-mix(in_oklch,oklch(0.6_0.14_150)_12%,var(--surface))] text-[oklch(0.5_0.14_150)]",
-    merged:
-      "border-[color-mix(in_oklch,var(--thread-4)_45%,var(--border))] bg-[color-mix(in_oklch,var(--thread-4)_12%,var(--surface))] text-[var(--thread-4)]",
-    closed: "border-line bg-surface-2 text-ink-3",
-  }[state];
+type Tone = "green" | "violet" | "grey" | "amber" | "red" | "blue";
+
+const TONES: Record<Tone, string> = {
+  green:
+    "border-[color-mix(in_oklch,oklch(0.6_0.14_150)_45%,var(--border))] bg-[color-mix(in_oklch,oklch(0.6_0.14_150)_12%,var(--surface))] text-[oklch(0.5_0.14_150)]",
+  violet:
+    "border-[color-mix(in_oklch,var(--thread-4)_45%,var(--border))] bg-[color-mix(in_oklch,var(--thread-4)_12%,var(--surface))] text-[var(--thread-4)]",
+  grey: "border-line bg-surface-2 text-ink-3",
+  amber:
+    "border-[color-mix(in_oklch,var(--term-warn)_50%,var(--border))] bg-[color-mix(in_oklch,var(--term-warn)_14%,var(--surface))] text-ink",
+  red: "border-[color-mix(in_oklch,var(--accent)_40%,var(--border))] bg-accent-soft text-accent",
+  blue: "border-[color-mix(in_oklch,oklch(0.6_0.13_250)_45%,var(--border))] bg-[color-mix(in_oklch,oklch(0.6_0.13_250)_12%,var(--surface))] text-[oklch(0.5_0.13_250)]",
+};
+
+const STATE_TONE: Record<string, Tone> = {
+  open: "green",
+  queued: "blue",
+  merged: "violet",
+  closed: "grey",
+  claimed: "amber",
+  done: "violet",
+  cancelled: "grey",
+  waiting: "amber",
+  running: "blue",
+  success: "green",
+  failure: "red",
+  error: "red",
+  skipped: "grey",
+  testing: "blue",
+  failed: "red",
+  stale: "grey",
+  ready: "green",
+};
+
+/** A state pill (reviews, tasks, checks, batches). */
+export function StateBadge({ state, label }: { state: string; label?: string }) {
+  const tone = TONES[STATE_TONE[state] ?? "grey"];
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium text-[11.5px] capitalize ${tone}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-[11.5px] capitalize ${tone}`}
     >
-      {state}
+      {state === "running" ? <span className="live-dot inline-block size-1.5 rounded-full bg-current" /> : null}
+      {label ?? state.replace("_", " ")}
     </span>
+  );
+}
+
+/** The heading block of a page. */
+export function PageTitle({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-balance font-semibold text-[28px] leading-tight tracking-[-0.025em]">{title}</h1>
+        {sub ? <p className="mt-1 text-[13.5px] text-ink-3">{sub}</p> : null}
+      </div>
+      {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
+    </div>
+  );
+}
+
+export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-line border-dashed px-6 py-10 text-center">
+      <p className="font-medium">{title}</p>
+      {children ? <div className="mx-auto mt-2 max-w-lg text-[13.5px] text-ink-2">{children}</div> : null}
+    </div>
+  );
+}
+
+/** A section card with an optional heading. */
+export function Card({
+  title,
+  sub,
+  action,
+  children,
+  tone,
+}: {
+  title?: ReactNode;
+  sub?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+  tone?: "danger";
+}) {
+  return (
+    <section
+      className={`rounded-2xl border bg-surface p-5 sm:p-6 ${tone === "danger" ? "border-[color-mix(in_oklch,var(--accent)_40%,var(--border))]" : "border-line"}`}
+    >
+      {title || action ? (
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title ? <h2 className="font-semibold text-[15px]">{title}</h2> : null}
+            {sub ? <p className="mt-0.5 text-[13px] text-ink-3">{sub}</p> : null}
+          </div>
+          {action}
+        </div>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+/** Tabs as links (server-rendered; the current one is marked). */
+export function Tabs({
+  tabs,
+  current,
+}: {
+  tabs: { href: string; label: string; count?: number; key: string }[];
+  current: string;
+}) {
+  return (
+    <nav className="flex gap-1 overflow-x-auto border-line border-b" aria-label="Filter">
+      {tabs.map((t) => {
+        const active = t.key === current;
+        return (
+          <Link
+            key={t.key}
+            href={t.href}
+            aria-current={active ? "page" : undefined}
+            className={`relative -mb-px flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-[13.5px] transition-colors ${
+              active ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink"
+            }`}
+          >
+            {t.label}
+            {t.count !== undefined ? (
+              <span className="rounded-full bg-[color-mix(in_oklch,var(--text)_8%,transparent)] px-1.5 font-mono text-[11px]">
+                {t.count}
+              </span>
+            ) : null}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Not allowed, or not signed in. */
+export function SignInNeeded({ next }: { next: string }) {
+  return (
+    <Empty title="Sign in to see this">
+      <Link
+        href={`/login?next=${encodeURIComponent(next)}`}
+        className="font-medium text-ink underline underline-offset-4"
+      >
+        Sign in
+      </Link>{" "}
+      with an account that has access.
+    </Empty>
   );
 }

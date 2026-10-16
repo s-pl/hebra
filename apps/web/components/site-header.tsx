@@ -15,31 +15,32 @@ const MENUS: Menu[] = [
     label: "Product",
     wide: true,
     items: [
-      { href: "#workspaces", title: "Workspaces", desc: "A copy of the repo per agent" },
-      { href: "#coordination", title: "Coordination", desc: "Claims and overlap warnings" },
-      { href: "#merge", title: "Merge", desc: "Conflicts never stop it" },
-      { href: "#provenance", title: "Provenance", desc: "Who asked for every change" },
-      { href: "#under-the-hood", title: "Under the hood", desc: "The guarantees in v0.1" },
-      { href: "#versus-git", title: "Versus Git", desc: "What changes, what doesn't" },
+      { href: "/#workspaces", title: "Workspaces", desc: "A copy of the repo per agent" },
+      { href: "/#coordination", title: "Coordination", desc: "Claims and overlap warnings" },
+      { href: "/#merge", title: "Merge", desc: "Conflicts never stop it" },
+      { href: "/#provenance", title: "Provenance", desc: "Who asked for every change" },
+      { href: "/#under-the-hood", title: "Under the hood", desc: "The guarantees in v0.1" },
+      { href: "/#versus-git", title: "Versus Git", desc: "What changes, what doesn't" },
     ],
   },
   {
     id: "agents",
     label: "Agents",
     items: [
-      { href: "#setup-claude-code", title: "Claude Code", desc: "Detected automatically", agent: "claude-code" },
-      { href: "#setup-codex", title: "Codex", desc: "~/.codex/config.toml", agent: "codex" },
-      { href: "#setup-cursor", title: "Cursor", desc: ".cursor/mcp.json", agent: "cursor" },
-      { href: "#setup-gemini-cli", title: "Gemini CLI", desc: "~/.gemini/settings.json", agent: "gemini-cli" },
-      { href: "#setup-copilot", title: "Copilot", desc: ".vscode/mcp.json", agent: "copilot" },
-      { href: "#setup-shell", title: "Any shell", desc: "HB_ACTOR and --json", agent: "shell" },
+      { href: "/#setup-claude-code", title: "Claude Code", desc: "Detected automatically", agent: "claude-code" },
+      { href: "/#setup-codex", title: "Codex", desc: "~/.codex/config.toml", agent: "codex" },
+      { href: "/#setup-cursor", title: "Cursor", desc: ".cursor/mcp.json", agent: "cursor" },
+      { href: "/#setup-gemini-cli", title: "Gemini CLI", desc: "~/.gemini/settings.json", agent: "gemini-cli" },
+      { href: "/#setup-copilot", title: "Copilot", desc: ".vscode/mcp.json", agent: "copilot" },
+      { href: "/#setup-shell", title: "Any shell", desc: "HB_ACTOR and --json", agent: "shell" },
     ],
   },
 ];
 
 const LINKS = [
+  { href: "/pricing", label: "Pricing" },
   { href: `${SITE.repo}#readme`, label: "Docs" },
-  { href: "#roadmap", label: "Roadmap" },
+  { href: "/hub", label: "Hub" },
 ];
 
 function ItemIcon({ item }: { item: Item }) {
@@ -157,7 +158,7 @@ export function SiteHeader() {
             scrolled ? "h-12" : "h-14"
           }`}
         >
-          <a href="#top" aria-label="Hebra home" className="flex h-9 items-center rounded-full pr-1">
+          <a href="/#top" aria-label="Hebra home" className="flex h-9 items-center rounded-full pr-1">
             <Logo />
           </a>
 
@@ -235,7 +236,7 @@ export function SiteHeader() {
           <div className="flex items-center gap-1">
             <ThemeToggle bare />
             <a
-              href="#install"
+              href="/#install"
               className="pressable inline-flex h-9 items-center rounded-full bg-ink px-4 font-medium text-[14px] text-bg hover:bg-[color-mix(in_oklch,var(--text)_86%,var(--bg))]"
             >
               Install

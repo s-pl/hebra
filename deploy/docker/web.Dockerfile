@@ -13,6 +13,7 @@ COPY apps/web/package.json apps/web/
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --filter @hebra/web
 COPY apps/web apps/web
+COPY docs/billing-policy.md docs/billing-policy.md
 RUN pnpm --filter @hebra/web build \
  && cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
  && cp -r apps/web/public apps/web/.next/standalone/apps/web/public

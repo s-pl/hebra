@@ -21,6 +21,7 @@ pub struct Repo {
     pub description: String,
     pub public: bool,
     pub open_contributions: bool,
+    /// `owner/name` of the repository this one was forked from.
     pub forked_from: Option<String>,
     /// Repositories this one reads objects from (forks), nearest first.
     #[serde(skip)]
@@ -32,8 +33,8 @@ macro_rules! repo_select {
     ($tail:literal) => {
         concat!(
             "SELECT r.id, r.owner_id, a.handle AS owner, r.name, r.full_name, r.description, r.public,
-                    r.open_contributions, r.forked_from, r.lineage, r.created_at
-             FROM repos r JOIN accounts a ON a.id = r.owner_id ",
+                    r.open_contributions, p.full_name AS forked_from, r.lineage, r.created_at
+             FROM repos r JOIN accounts a ON a.id = r.owner_id LEFT JOIN repos p ON p.id = r.forked_from ",
             $tail
         )
     };

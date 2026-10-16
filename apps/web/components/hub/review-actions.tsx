@@ -15,12 +15,16 @@ export function ReviewActions({
   repo,
   id,
   canMerge,
+  canClose,
+  queue,
   blocked,
   signedIn,
 }: {
   repo: string;
   id: number;
   canMerge: boolean;
+  canClose: boolean;
+  queue: boolean;
   blocked?: string;
   signedIn: boolean;
 }) {
@@ -42,7 +46,7 @@ export function ReviewActions({
   if (!signedIn) {
     return (
       <Link
-        href={`/hub/login?next=${encodeURIComponent(`/hub/${repo}/reviews/${id}`)}`}
+        href={`/login?next=${encodeURIComponent(`/hub/${repo}/reviews/${id}`)}`}
         className="pressable inline-flex h-10 items-center rounded-lg bg-ink px-4 font-medium text-[14px] text-bg"
       >
         Sign in to review
@@ -71,7 +75,7 @@ export function ReviewActions({
               {pending && which === "merge" ? (
                 <>
                   <span className="size-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Merging
+                  {queue ? "Queueing" : "Merging"}
                 </>
               ) : (
                 <>
@@ -85,21 +89,23 @@ export function ReviewActions({
                   >
                     <path d="m3.5 8.5 3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  Approve and merge
+                  {queue ? "Add to merge queue" : "Merge"}
                 </>
               )}
             </motion.span>
           </AnimatePresence>
         </motion.button>
-        <motion.button
-          type="button"
-          onClick={() => run("close")}
-          disabled={pending}
-          whileTap={{ scale: 0.97 }}
-          className="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-[14px] text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-50"
-        >
-          {pending && which === "close" ? "Closing…" : "Close"}
-        </motion.button>
+        {canClose ? (
+          <motion.button
+            type="button"
+            onClick={() => run("close")}
+            disabled={pending}
+            whileTap={{ scale: 0.97 }}
+            className="inline-flex h-10 items-center rounded-lg border border-line bg-surface px-4 text-[14px] text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-50"
+          >
+            {pending && which === "close" ? "Closing…" : "Close"}
+          </motion.button>
+        ) : null}
       </div>
       {blocked ? <p className="text-[13px] text-ink-3">{blocked}</p> : null}
       <AnimatePresence initial={false}>

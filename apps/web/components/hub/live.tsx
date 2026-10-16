@@ -11,13 +11,15 @@ type State = "connecting" | "live" | "offline";
  * are coalesced into one refresh. Shows the connection state.
  */
 export function LiveRefresh({ repo }: { repo: string }) {
+  // `repo` is owner/name.
   const router = useRouter();
   const [state, setState] = useState<State>("connecting");
   const [flash, setFlash] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    const source = new EventSource(`/hub/api/stream/${encodeURIComponent(repo)}`);
+    const [owner = "", name = ""] = repo.split("/");
+    const source = new EventSource(`/hub/api/stream/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
     const refresh = () => {
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => {
@@ -27,7 +29,9 @@ export function LiveRefresh({ repo }: { repo: string }) {
       }, 250);
     };
     source.addEventListener("ready", () => setState("live"));
-    for (const kind of ["bookmark", "presence", "review", "resync"]) source.addEventListener(kind, refresh);
+    for (const kind of ["bookmark", "presence", "review", "task", "check", "queue", "resync"]) {
+      source.addEventListener(kind, refresh);
+    }
     source.onerror = () => setState(source.readyState === EventSource.CLOSED ? "offline" : "connecting");
     source.onopen = () => setState("live");
     return () => {

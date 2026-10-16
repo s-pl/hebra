@@ -19,6 +19,8 @@ const config: NextConfig = {
   poweredByHeader: false,
   // A self-contained server for the container image (deploy/docker/web.Dockerfile).
   output: "standalone",
+  // `next dev` opened from another device (a phone on the LAN): HEBRA_DEV_ORIGINS=192.168.1.16
+  allowedDevOrigins: (process.env.HEBRA_DEV_ORIGINS ?? "").split(",").filter(Boolean),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

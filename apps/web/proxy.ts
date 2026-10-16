@@ -14,7 +14,8 @@ export function proxy(request: NextRequest) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data:",
+    // Avatars come from GitHub sign-in.
+    "img-src 'self' blob: data: https://avatars.githubusercontent.com",
     "font-src 'self'",
     "connect-src 'self'",
     "object-src 'none'",

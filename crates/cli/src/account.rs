@@ -96,11 +96,28 @@ pub fn stored_credential(server: &str) -> Option<String> {
         .map(|s| s.mandate.clone())
 }
 
-/// The credential for a server: HB_TOKEN, then what `hb login` stored.
+/// The token of the current repository's remote, for its server. Set once
+/// per invocation by server-wide commands run inside a repository.
+static REMOTE_TOKEN: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+
+/// Lets server-wide commands use the token of this repository's remote
+/// (`hb remote add … --token`) when they talk to the same server.
+pub fn use_remote_token(server: &str, token: String) {
+    let _ = REMOTE_TOKEN.set((normalize(server), token));
+}
+
+/// The credential for a server: HB_TOKEN, then the current repository's
+/// remote token for that server, then what `hb login` stored.
 pub fn credential(server: &str) -> Option<String> {
     std::env::var("HB_TOKEN")
         .ok()
         .filter(|t| !t.is_empty())
+        .or_else(|| {
+            REMOTE_TOKEN
+                .get()
+                .filter(|(s, _)| *s == normalize(server))
+                .map(|(_, t)| t.clone())
+        })
         .or_else(|| stored_credential(server))
 }
 

@@ -215,3 +215,50 @@ impl Server {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Plans;
+
+    /// The web's pricing page falls back to a copy of the plans; it must say
+    /// the same prices and allowances as the file the server bills with.
+    #[test]
+    fn web_copy_matches_plans_toml() {
+        let web = include_str!("../../../../apps/web/lib/plans.ts");
+        let block = |id: &str| {
+            let start = web
+                .find(&format!("id: \"{id}\""))
+                .unwrap_or_else(|| panic!("plan `{id}` missing from apps/web/lib/plans.ts"));
+            let end = web[start..].find("},").map_or(web.len(), |e| start + e);
+            web[start..end].to_owned()
+        };
+        for plan in Plans::builtin().plans {
+            let text = block(&plan.id);
+            for (field, value) in [
+                ("price_cents", plan.price_cents),
+                ("storage_gb", plan.storage_gb),
+                ("storage_gb_per_person", plan.storage_gb_per_person),
+                ("agent_credits", plan.agent_credits),
+                ("agent_credits_per_person", plan.agent_credits_per_person),
+                ("pitr_days", plan.pitr_days),
+            ] {
+                assert!(
+                    text.contains(&format!("{field}: {value},")),
+                    "plan `{}`: {field} should be {value} in apps/web/lib/plans.ts",
+                    plan.id
+                );
+            }
+            for (field, value) in [
+                ("per_person", plan.per_person),
+                ("merge_queue", plan.merge_queue),
+                ("sso", plan.sso),
+            ] {
+                assert!(
+                    text.contains(&format!("{field}: {value},")),
+                    "plan `{}`: {field} should be {value} in apps/web/lib/plans.ts",
+                    plan.id
+                );
+            }
+        }
+    }
+}

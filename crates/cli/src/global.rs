@@ -53,12 +53,28 @@ fn seconds(text: &str) -> Result<i64> {
     })
 }
 
+/// Makes the token of this repository's `origin` (if it has one) available
+/// to server-wide commands that talk to the same server.
+fn adopt_origin_token(cwd: &Path) {
+    let Ok(ws) = Workspace::open(cwd) else { return };
+    let url = ws.config_get("remote.origin.url").ok().flatten();
+    let token = ws.config_get("remote.origin.token").ok().flatten();
+    if let (Some(url), Some(token)) = (url, token)
+        && let Ok((base, _)) = split_url(&url)
+    {
+        account::use_remote_token(&base, token);
+    }
+}
+
 /// Runs `command` if it is a server-wide one.
 pub fn execute(
     command: Command,
     cwd: &Path,
     json_mode: bool,
 ) -> std::result::Result<Result<Output>, Box<Command>> {
+    if !matches!(command, Command::Login { .. } | Command::Logout { .. }) {
+        adopt_origin_token(cwd);
+    }
     Ok(match command {
         Command::Login { server: s } => server(s, cwd).and_then(|s| account::login(&s, json_mode)),
         Command::Logout { server: s } => server(s, cwd).and_then(|s| account::logout(&s)),

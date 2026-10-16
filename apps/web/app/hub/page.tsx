@@ -1,63 +1,103 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CopyCommand } from "@/components/copy-command";
+import { Stagger, StaggerItem } from "@/components/hub/motion";
+import { RepoCard } from "@/components/hub/repo-card";
 import { HubShell } from "@/components/hub/shell";
-import { ServerDown } from "@/components/hub/ui";
-import { ago, HubError, loadShell } from "@/lib/hub";
+import { Empty, PageTitle, ServerDown, Tabs } from "@/components/hub/ui";
+import { HubError, loadShell, type RepoSummary } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Hub · hebra" };
+export const metadata: Metadata = { title: "Hub · Hebra" };
 
-export default async function HubIndex() {
-  let repos: Awaited<ReturnType<typeof loadShell>>["repos"] = [];
-  let me: Awaited<ReturnType<typeof loadShell>>["me"] = null;
-  let error: string | null = null;
+export default async function HubIndex({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+  const { show } = await searchParams;
+  let shell: Awaited<ReturnType<typeof loadShell>>;
   try {
-    ({ repos, me } = await loadShell());
+    shell = await loadShell();
   } catch (e) {
-    error = e instanceof HubError ? e.message : String(e);
+    return (
+      <HubShell repos={[]} crumbs={[{ label: "Repositories" }]}>
+        <div className="mx-auto max-w-[1180px]">
+          <ServerDown message={e instanceof HubError ? e.message : String(e)} />
+        </div>
+      </HubShell>
+    );
   }
+  const { repos, me, caps } = shell;
+  const owners = new Set(me ? [me.account.handle, ...me.orgs.map((o) => o.account.handle)] : []);
+  const mine = repos.filter((r) => owners.has(r.owner));
+  const scope = me && show !== "all" && mine.length > 0 ? "mine" : "all";
+  const shown: RepoSummary[] = (scope === "mine" ? mine : repos)
+    .slice()
+    .sort((a, b) => (b.last_activity ?? b.created_at).localeCompare(a.last_activity ?? a.created_at));
+  const publicUrl = caps?.public_url ?? "";
 
   return (
-    <HubShell repos={repos.map((r) => r.name)} me={me} crumbs={[{ label: "Repositories" }]}>
+    <HubShell repos={repos.map((r) => r.full_name)} me={me} caps={caps} crumbs={[{ label: "Repositories" }]}>
       <div className="mx-auto max-w-[1180px]">
-        <h1 className="font-semibold text-[28px] tracking-[-0.025em]">Repositories</h1>
-        <p className="mt-1 text-[13.5px] text-ink-3">Everything this Hebra server hosts.</p>
-        <div className="mt-8">
-          {error ? <ServerDown message={error} /> : null}
-          {!error && repos.length === 0 ? (
-            <p className="rounded-xl border border-line border-dashed px-6 py-10 text-center text-ink-2">
-              No repositories yet. Create one with <code className="font-mono">hebra-server repo create my-app</code>.
-            </p>
-          ) : null}
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {repos.map((r) => (
-              <li key={r.name}>
-                <Link
-                  href={`/hub/${r.name}`}
-                  className="card-hover group block rounded-xl border border-line bg-surface p-5"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-9 place-items-center rounded-lg bg-[color-mix(in_oklch,var(--text)_8%,transparent)] font-mono font-semibold uppercase">
-                      {r.name.slice(0, 1)}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold text-[15px]">{r.name}</span>
-                      <span className="block text-[12.5px] text-ink-3">
-                        {r.bookmarks} bookmark{r.bookmarks === 1 ? "" : "s"}
-                        {r.last_activity ? ` · active ${ago(r.last_activity)}` : ""}
-                      </span>
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="ml-auto text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
-                    >
-                      →
-                    </span>
+        <PageTitle
+          title={me ? `Welcome back, ${me.account.name.split(" ")[0]}` : "Repositories"}
+          sub={
+            me
+              ? "Your repositories, and what your agents are doing in them."
+              : "Public repositories on this Hebra server."
+          }
+        >
+          {me ? (
+            <Link
+              href="/hub/new"
+              className="pressable inline-flex h-9 items-center rounded-lg bg-ink px-3.5 font-medium text-[13.5px] text-bg"
+            >
+              New repository
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="pressable inline-flex h-9 items-center rounded-lg bg-ink px-3.5 font-medium text-[13.5px] text-bg"
+            >
+              Sign in
+            </Link>
+          )}
+        </PageTitle>
+
+        {me && mine.length > 0 ? (
+          <div className="mt-6">
+            <Tabs
+              current={scope}
+              tabs={[
+                { key: "mine", label: "Yours", href: "/hub", count: mine.length },
+                { key: "all", label: "Everything you can see", href: "/hub?show=all", count: repos.length },
+              ]}
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-6">
+          {shown.length === 0 ? (
+            <Empty title={me ? "No repositories yet" : "Nothing public here yet"}>
+              {me ? (
+                <>
+                  <p>Create one here, then push an existing project into it from your machine:</p>
+                  <div className="mx-auto mt-4 grid max-w-md gap-2 text-left [&>*]:min-w-0">
+                    <CopyCommand command={`hb login ${publicUrl}`} />
+                    <CopyCommand command={`hb remote add origin ${publicUrl}/${me.account.handle}/my-app`} />
+                    <CopyCommand command="hb push --bookmark main -r @-" />
                   </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                </>
+              ) : (
+                "Sign in to see private repositories you have access to."
+              )}
+            </Empty>
+          ) : (
+            <Stagger as="ul" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shown.map((r) => (
+                <StaggerItem key={r.full_name}>
+                  <RepoCard repo={r} />
+                </StaggerItem>
+              ))}
+            </Stagger>
+          )}
         </div>
       </div>
     </HubShell>
