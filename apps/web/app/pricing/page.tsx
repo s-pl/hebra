@@ -342,7 +342,7 @@ export default async function PricingPage() {
             <h2 className="font-semibold text-[30px] tracking-[-0.03em] sm:text-[38px]">Questions</h2>
             <div className="mt-8 grid border-line border-t">
               {FAQ.map((f) => (
-                <details key={f.q} className="group border-line border-b">
+                <details key={f.q} className="smooth-details group border-line border-b">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 font-medium text-[16px]">
                     {f.q}
                     <span

@@ -5,7 +5,7 @@ export type TermLine =
   | { out: ReactNode; tone?: "dim" | "ok" | "warn" | "err" | "accent" }
   | { gap: true };
 
-const TONES = {
+export const TERM_TONES = {
   dim: "text-term-dim",
   ok: "text-term-ok",
   warn: "text-term-warn",
@@ -13,8 +13,16 @@ const TONES = {
   accent: "text-[oklch(0.82_0.12_210)]",
 };
 
-/** A terminal window with commands and their output. Always dark. */
-export function Term({ title, lines, className = "" }: { title?: string; lines: TermLine[]; className?: string }) {
+/** The window chrome of a terminal. Always dark. */
+export function TermFrame({
+  title,
+  className = "",
+  children,
+}: {
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <div className={`overflow-hidden rounded-lg border border-term-line bg-term text-term-text ${className}`}>
       <div className="flex h-7 items-center gap-1.5 border-term-line border-b px-3">
@@ -23,26 +31,45 @@ export function Term({ title, lines, className = "" }: { title?: string; lines: 
         <span className="size-2 rounded-full bg-term-line" />
         {title ? <span className="ml-2 truncate font-mono text-[10.5px] text-term-dim">{title}</span> : null}
       </div>
-      <pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-[1.75]">
-        {lines.map((l, i) => {
-          // biome-ignore lint/suspicious/noArrayIndexKey: static transcript
-          if ("gap" in l) return <div key={i} className="h-2" />;
-          if ("cmd" in l)
-            return (
-              // biome-ignore lint/suspicious/noArrayIndexKey: static transcript
-              <div key={i}>
-                <span className="select-none text-term-dim">$ </span>
-                {l.cmd}
-              </div>
-            );
-          return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static transcript
-            <div key={i} className={l.tone ? TONES[l.tone] : "text-term-text/85"}>
-              {l.out}
-            </div>
-          );
-        })}
-      </pre>
+      <pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-[1.75]">{children}</pre>
     </div>
+  );
+}
+
+/** One line of a transcript; `hidden` keeps its space without showing it. */
+export function TermRow({
+  line,
+  hidden = false,
+  children,
+}: {
+  line: TermLine;
+  hidden?: boolean;
+  children?: ReactNode;
+}) {
+  const style = hidden ? { visibility: "hidden" as const } : undefined;
+  if ("gap" in line) return <div className="h-2" />;
+  if ("cmd" in line)
+    return (
+      <div style={style}>
+        <span className="select-none text-term-dim">$ </span>
+        {children ?? line.cmd}
+      </div>
+    );
+  return (
+    <div style={style} className={line.tone ? TERM_TONES[line.tone] : "text-term-text/85"}>
+      {line.out}
+    </div>
+  );
+}
+
+/** A terminal window with commands and their output, shown at once. */
+export function Term({ title, lines, className = "" }: { title?: string; lines: TermLine[]; className?: string }) {
+  return (
+    <TermFrame title={title} className={className}>
+      {lines.map((l, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: static transcript
+        <TermRow key={i} line={l} />
+      ))}
+    </TermFrame>
   );
 }

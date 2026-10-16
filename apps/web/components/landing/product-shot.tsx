@@ -7,6 +7,7 @@ import { Mark } from "@/components/logo";
  * at any size, follows the theme, and costs no JavaScript.
  */
 
+/** Who is working. codex is the one that joins during the scene. */
 const WORKING = [
   {
     who: "claude-code",
@@ -17,6 +18,15 @@ const WORKING = [
       ["src/session.rs", false],
     ],
     at: "now",
+    joins: false,
+  },
+  {
+    who: "cursor",
+    for: "samuel",
+    task: "Keyboard shortcuts for reviews",
+    files: [["web/shortcuts.ts", false]],
+    at: "1m",
+    joins: false,
   },
   {
     who: "codex",
@@ -26,14 +36,8 @@ const WORKING = [
       ["src/auth.rs", true],
       ["src/limits.rs", false],
     ],
-    at: "12s",
-  },
-  {
-    who: "cursor",
-    for: "samuel",
-    task: "Dark mode for settings",
-    files: [["web/settings.tsx", false]],
-    at: "1m",
+    at: "now",
+    joins: true,
   },
 ] as const;
 
@@ -83,7 +87,7 @@ export function ProductShot() {
           <SideItem label="Merge queue" />
           <p className="px-2 pt-3 pb-1 text-[10px] text-ink-3">Working now · 3</p>
           {WORKING.map((w) => (
-            <div key={w.who} className="flex h-6 items-center gap-2 px-2 text-ink-2">
+            <div key={w.who} className={`flex h-6 items-center gap-2 px-2 text-ink-2 ${w.joins ? "scene-join" : ""}`}>
               <AgentLogo agent={w.who} size={12} />
               <span className="flex-1 truncate">{w.who}</span>
               <Dot className="bg-ok" />
@@ -108,7 +112,7 @@ export function ProductShot() {
 
           <div className="mt-4 flex items-center justify-between">
             <p className="font-medium text-[12px]">Working now</p>
-            <span className="flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--warn)_40%,transparent)] bg-[color-mix(in_oklch,var(--warn)_10%,transparent)] px-2 py-0.5 text-[10.5px] text-warn">
+            <span className="scene-flag flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--warn)_40%,transparent)] bg-[color-mix(in_oklch,var(--warn)_10%,transparent)] px-2 py-0.5 text-[10.5px] text-warn">
               ▲ src/auth.rs is being edited by 2 agents
             </span>
           </div>
@@ -116,9 +120,9 @@ export function ProductShot() {
             {WORKING.map((w) => (
               <div
                 key={w.who}
-                className={`rounded-lg border bg-surface p-2.5 ${
+                className={`rounded-lg border bg-surface p-2.5 ${w.joins ? "scene-join" : ""} ${
                   w.files.some((f) => f[1])
-                    ? "border-[color-mix(in_oklch,var(--warn)_45%,var(--border))]"
+                    ? "scene-clash border-[color-mix(in_oklch,var(--warn)_45%,var(--border))]"
                     : "border-line"
                 }`}
               >
@@ -134,7 +138,10 @@ export function ProductShot() {
                 <p className="mt-2 truncate text-ink-2">{w.task}</p>
                 <div className="mt-1.5 grid gap-0.5 font-mono text-[10px]">
                   {w.files.map(([f, clash]) => (
-                    <span key={f} className={`flex items-center gap-1.5 ${clash ? "text-warn" : "text-ink-3"}`}>
+                    <span
+                      key={f}
+                      className={`flex items-center gap-1.5 ${clash ? "scene-clash-text text-warn" : "text-ink-3"}`}
+                    >
                       {clash ? "▲" : "●"} <span className="truncate">{f}</span>
                     </span>
                   ))}
@@ -159,13 +166,19 @@ export function ProductShot() {
               </span>
             </div>
             <div className="flex items-center gap-3 px-3 py-2.5">
-              <AgentLogo agent="codex" size={18} />
+              <AgentLogo agent="cursor" size={18} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">Rate-limit the login endpoint</p>
-                <p className="truncate font-mono text-[10px] text-ink-3">agents/codex/rate-limit → main</p>
+                <p className="truncate font-medium">Dark mode for settings</p>
+                <p className="truncate font-mono text-[10px] text-ink-3">agents/cursor/dark-settings → main</p>
               </div>
-              <span className="flex h-5 items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--info)_35%,transparent)] px-1.5 text-[10px] text-info">
-                <Dot className="live-dot bg-info text-info" /> verifying
+              {/* Both states share one grid cell, so the swap never shifts the row. */}
+              <span className="grid justify-items-end [&>*]:col-start-1 [&>*]:row-start-1">
+                <span className="scene-swap-out flex h-5 items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--info)_35%,transparent)] px-1.5 text-[10px] text-info">
+                  <Dot className="live-dot bg-info text-info" /> verifying
+                </span>
+                <span className="scene-swap-in flex h-5 items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--ok)_35%,transparent)] px-1.5 text-[10px] text-ok">
+                  ✓ 2 checks
+                </span>
               </span>
             </div>
           </div>

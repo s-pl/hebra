@@ -7,7 +7,7 @@ import { LiveRefresh } from "@/components/hub/live";
 import { Stagger, StaggerItem } from "@/components/hub/motion";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { Chip, Empty, PageTitle, ServerDown, StateBadge } from "@/components/hub/ui";
-import { ago, atLeast, type CheckRun, duration, HubError, hub, repoPath } from "@/lib/hub";
+import { ago, atLeast, type CheckRun, duration, fresh, HubError, hub, repoPath } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +87,10 @@ export default async function ChecksPage({ params }: Params) {
                 </div>
                 <ul>
                   {list.map((r) => (
-                    <li key={r.id} className="border-line border-b last:border-b-0">
+                    <li
+                      key={r.id}
+                      className={`border-line border-b last:border-b-0 ${fresh(r.finished_at ?? r.started_at ?? r.created_at)}`}
+                    >
                       <Link
                         href={`/hub/${full}/checks/${r.id}`}
                         className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"

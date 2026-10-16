@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 import { AGENTS, type AgentId, AgentLogo } from "@/components/agent-logo";
 import { CopyCommand } from "@/components/copy-command";
 import { ProductShot } from "@/components/landing/product-shot";
+import { SceneGate } from "@/components/landing/scene-gate";
+import { SpotlightGrid } from "@/components/landing/spotlight-grid";
 import { Term } from "@/components/landing/term";
+import { TypedTerm } from "@/components/landing/typed-term";
+import { Words } from "@/components/landing/words";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SmartLink } from "@/components/smart-link";
@@ -197,20 +201,23 @@ export default function Home() {
             >
               <span className="size-1.5 rounded-full bg-accent" />
               Early preview · open source
-              <span aria-hidden="true" className="text-ink-3">
+              <span aria-hidden="true" className="nudge text-ink-3">
                 →
               </span>
             </SmartLink>
-            <h1 className="rise mx-auto mt-6 max-w-[16ch] text-balance font-semibold text-[42px] leading-[1.02] tracking-[-0.045em] [animation-delay:60ms] sm:text-[64px] lg:text-[76px]">
-              Version control for people and agents
+            <h1 className="mx-auto mt-6 max-w-[16ch] text-balance font-semibold text-[42px] leading-[1.02] tracking-[-0.045em] sm:text-[64px] lg:text-[76px]">
+              <Words text="Version control for people and agents" start={80} step={55} />
             </h1>
-            <p className="rise mx-auto mt-6 max-w-[58ch] text-pretty text-[16.5px] text-ink-2 leading-relaxed [animation-delay:120ms] sm:text-[18px]">
+            <p className="rise mx-auto mt-6 max-w-[58ch] text-pretty text-[16.5px] text-ink-2 leading-relaxed [animation-delay:420ms] sm:text-[18px]">
               Hebra gives every coding agent its own workspace, warns when two of them touch the same file, and records
               who asked for each change. People review and merge. Self-host it for free or use Hebra Cloud.
             </p>
-            <div className="rise mt-9 flex flex-wrap items-center justify-center gap-3 [animation-delay:180ms]">
+            <div className="rise mt-9 flex flex-wrap items-center justify-center gap-3 [animation-delay:520ms]">
               <SmartLink href="#start" className={button({ variant: "primary", size: "lg" })}>
                 Get started
+                <span aria-hidden="true" className="nudge">
+                  →
+                </span>
               </SmartLink>
               <SmartLink href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
                 Self-host or Cloud
@@ -218,11 +225,14 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="rise relative mx-auto max-w-[1080px] px-4 pb-20 [animation-delay:260ms] sm:px-6">
-            <div aria-hidden="true" className="signal-glow pointer-events-none absolute inset-x-10 -top-10 bottom-10" />
-            <div className="relative">
+          <div className="relative mx-auto max-w-[1080px] px-4 pb-20 sm:px-6">
+            <div
+              aria-hidden="true"
+              className="rise signal-glow pointer-events-none absolute inset-x-10 -top-10 bottom-10 [animation-delay:500ms] [animation-duration:1600ms]"
+            />
+            <SceneGate className="shot-in relative">
               <ProductShot />
-            </div>
+            </SceneGate>
           </div>
 
           <div className="relative border-line border-y bg-surface/40">
@@ -248,7 +258,7 @@ export default function Home() {
               intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
             />
             <ol className="mt-14 grid gap-5 lg:grid-cols-3">
-              {STEPS.map((s) => (
+              {STEPS.map((s, i) => (
                 <li key={s.n} className="reveal flex flex-col rounded-xl border border-line bg-surface p-5">
                   <div className="flex items-center gap-3">
                     <span className="grid size-6 place-items-center rounded-full border border-line font-mono text-[11.5px] text-ink-2">
@@ -257,7 +267,7 @@ export default function Home() {
                     <h3 className="font-medium text-[15px]">{s.title}</h3>
                   </div>
                   <p className="mt-3 text-[14px] text-ink-2 leading-relaxed">{s.body}</p>
-                  <Term className="mt-5" lines={s.term} />
+                  <TypedTerm className="mt-5" lines={s.term} order={i} />
                 </li>
               ))}
             </ol>
@@ -272,9 +282,9 @@ export default function Home() {
               title="Everything a team of agents needs, and nothing that gets in their way"
               intro="The core runs on your machine. The server adds collaboration: reviews, tasks, checks, and an audit trail you can verify yourself."
             />
-            <div className="mt-14 grid overflow-hidden rounded-xl border border-line bg-line [gap:1px] sm:grid-cols-2 lg:grid-cols-3">
+            <SpotlightGrid className="reveal mt-14 grid overflow-hidden rounded-xl border border-line bg-line [gap:1px] sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map((f) => (
-                <div key={f.title} className="bg-bg p-6">
+                <div key={f.title} className="spot bg-bg p-6">
                   <div className="flex items-center justify-between">
                     <FeatureIcon d={f.icon} />
                     {f.cloud ? (
@@ -287,7 +297,7 @@ export default function Home() {
                   <p className="mt-1.5 text-[13.5px] text-ink-3 leading-relaxed">{f.body}</p>
                 </div>
               ))}
-            </div>
+            </SpotlightGrid>
           </div>
         </section>
 

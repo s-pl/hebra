@@ -142,9 +142,17 @@ export function List({ children }: { children: ReactNode }) {
   return <ul className="divide-y divide-[var(--border)]">{children}</ul>;
 }
 
-export function ListLink({ href, children }: { href: string; children: ReactNode }) {
+export function ListLink({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <li>
+    <li className={className}>
       <Link
         href={href}
         prefetch={false}

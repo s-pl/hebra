@@ -116,7 +116,7 @@ export function SiteHeader() {
         </div>
       </nav>
       {open ? (
-        <div id="site-menu" className="border-line border-t px-4 pt-2 pb-4 md:hidden">
+        <div id="site-menu" className="unroll border-line border-t px-4 pt-2 pb-4 md:hidden">
           <ul className="grid">
             {LINKS.map((l) => (
               <li key={l.href}>

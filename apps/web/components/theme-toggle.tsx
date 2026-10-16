@@ -14,9 +14,15 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
 
   function toggle() {
     const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    if (next === "light") document.documentElement.dataset.theme = "light";
-    else delete document.documentElement.dataset.theme;
+    const apply = () => {
+      setTheme(next);
+      if (next === "light") document.documentElement.dataset.theme = "light";
+      else delete document.documentElement.dataset.theme;
+    };
+    // Crossfade the whole page (View Transitions) instead of a hard flash.
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduced && "startViewTransition" in document) document.startViewTransition(apply);
+    else apply();
     try {
       localStorage.setItem("hebra-theme", next);
     } catch {

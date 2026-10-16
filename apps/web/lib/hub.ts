@@ -371,6 +371,16 @@ export function ago(timestamp: string | number): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+/**
+ * Happened in the last few seconds: a live update just brought it in, so
+ * its row gets the `fresh` highlight (CSS, played once when inserted).
+ */
+export function fresh(timestamp: string | null | undefined, seconds = 20): string {
+  if (!timestamp) return "";
+  const ms = Date.parse(timestamp);
+  return !Number.isNaN(ms) && Date.now() - ms < seconds * 1000 ? "fresh" : "";
+}
+
 /** `in 3h`, `in 12m`, or `expired`. */
 export function until(timestamp: string): string {
   const s = Math.round((Date.parse(timestamp) - Date.now()) / 1000);

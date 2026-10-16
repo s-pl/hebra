@@ -15,6 +15,7 @@ import {
   type CheckRun,
   type CommitSummary,
   firstLine,
+  fresh,
   type HubEvent,
   hub,
   type Review,
@@ -244,7 +245,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
               <div className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
                 <List>
                   {reviews.reviews.slice(0, 5).map((r) => (
-                    <ListLink key={`r${r.id}`} href={`/hub/${full}/reviews/${r.id}`}>
+                    <ListLink key={`r${r.id}`} href={`/hub/${full}/reviews/${r.id}`} className={fresh(r.updated_at)}>
                       <ActorAvatar actor={actorFromLabel(r.author)} size={22} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13.5px]">{r.title}</span>
@@ -256,7 +257,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
                     </ListLink>
                   ))}
                   {inProgress.slice(0, 5).map((t) => (
-                    <ListLink key={`t${t.id}`} href={`/hub/${full}/tasks/${t.id}`}>
+                    <ListLink key={`t${t.id}`} href={`/hub/${full}/tasks/${t.id}`} className={fresh(t.updated_at)}>
                       <ActorAvatar actor={actorFromLabel(t.claimed_by ?? "?")} size={22} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13.5px]">{t.title}</span>
@@ -341,7 +342,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
                 {commits.map((c, i) => {
                   const row = graph[i];
                   return (
-                    <li key={c.commit_id} className="border-line border-b last:border-b-0">
+                    <li key={c.commit_id} className={`border-line border-b last:border-b-0 ${fresh(c.timestamp)}`}>
                       <Link
                         href={`/hub/${full}/c/${c.commit_id}`}
                         prefetch={false}
@@ -407,7 +408,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
                   const d = describeEvent(e);
                   return (
                     // biome-ignore lint/suspicious/noArrayIndexKey: events can share a timestamp; the list is replaced, not reordered
-                    <li key={`${e.at}-${i}`} className="flex gap-2.5">
+                    <li key={`${e.at}-${i}`} className={`-mx-2 flex gap-2.5 rounded-md px-2 py-1 ${fresh(e.at)}`}>
                       <ActorAvatar actor={actorFromLabel(e.actor)} size={18} />
                       <div className="min-w-0 text-[12.5px] leading-snug">
                         <p className="text-ink-2">

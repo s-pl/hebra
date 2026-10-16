@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense } from "react";
+import { NavProgress } from "@/components/hub/nav-progress";
 import { SITE } from "@/lib/site";
 import "./globals.css";
 
@@ -49,6 +50,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           Skip to content
         </a>
         {children}
+        {/* In the root layout so it lives across navigations. */}
+        <Suspense>
+          <NavProgress />
+        </Suspense>
       </body>
     </html>
   );

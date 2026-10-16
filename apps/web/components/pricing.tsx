@@ -55,6 +55,8 @@ function features(p: Plan): string[] {
 
 export function PlanCards({ plans }: { plans: Plan[] }) {
   const [period, setPeriod] = useState<Period>("month");
+  // Prices animate only when the reader switches the period, never on load.
+  const [switched, setSwitched] = useState(false);
   const shown = plans.filter((p) => !p.contact);
   const enterprise = plans.find((p) => p.contact);
   return (
@@ -77,7 +79,10 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
                 name="period"
                 value={p}
                 checked={period === p}
-                onChange={() => setPeriod(p)}
+                onChange={() => {
+                  setPeriod(p);
+                  setSwitched(true);
+                }}
                 className="sr-only"
               />
               {p === "month" ? "Monthly" : "Yearly · 2 months free"}
@@ -108,16 +113,22 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
               <p className="mt-1 min-h-10 text-[13.5px] text-ink-2 leading-snug">{BLURB[p.id] ?? ""}</p>
               <p className="mt-5 flex items-baseline gap-1.5">
                 <span className="font-semibold text-[40px] tabular-nums leading-none tracking-[-0.03em]">
-                  {dollars(price)}
+                  {/* Keyed by value: a price that changes settles in; one that stays ($0) does not move. */}
+                  <span key={price} className={switched ? "value-in" : undefined}>
+                    {dollars(price)}
+                  </span>
                 </span>
                 <span className="text-[13px] text-ink-3">
                   {p.price_cents === 0 ? "forever" : p.per_person ? "/ person / month" : "/ month"}
                 </span>
               </p>
               <p className="mt-1 h-5 text-[12px] text-ink-3">
-                {period === "year" && p.price_cents > 0
-                  ? `${dollars(p.price_cents * 10)}${p.per_person ? " per person" : ""} billed yearly`
-                  : ""}
+                {period === "year" && p.price_cents > 0 ? (
+                  <span className="value-in">
+                    {dollars(p.price_cents * 10)}
+                    {p.per_person ? " per person" : ""} billed yearly
+                  </span>
+                ) : null}
               </p>
               <SmartLink
                 href={`/login?plan=${p.id}&period=${period}`}

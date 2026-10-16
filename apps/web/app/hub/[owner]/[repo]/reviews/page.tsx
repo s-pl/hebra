@@ -4,7 +4,7 @@ import { LiveRefresh } from "@/components/hub/live";
 import { Stagger, StaggerItem } from "@/components/hub/motion";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { ActorAvatar, Empty, PageTitle, ServerDown, StateBadge, Tabs } from "@/components/hub/ui";
-import { actorFromLabel, ago, HubError, hub, type Review, repoPath } from "@/lib/hub";
+import { actorFromLabel, ago, fresh, HubError, hub, type Review, repoPath } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +79,7 @@ export default async function ReviewsPage({ params, searchParams }: Params) {
       ) : (
         <Stagger as="ol" className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
           {shown.map((r) => (
-            <StaggerItem key={r.id} className="border-line border-b last:border-b-0">
+            <StaggerItem key={r.id} className={`border-line border-b last:border-b-0 ${fresh(r.updated_at)}`}>
               <Link
                 href={`/hub/${full}/reviews/${r.id}`}
                 className="flex items-center gap-4 px-4 py-3.5 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"

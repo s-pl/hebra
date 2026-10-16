@@ -39,7 +39,7 @@ export function Popover({
       </summary>
       <div
         className={`pop absolute z-40 mt-1.5 max-w-[calc(100vw-2rem)] rounded-lg bg-surface p-4 shadow-pop ${align === "right" ? "right-0" : "left-0"}`}
-        style={{ width }}
+        style={{ width, ["--origin" as string]: align === "right" ? "top right" : "top left" }}
       >
         {children}
       </div>
