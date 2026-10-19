@@ -42,7 +42,7 @@ export default async function QueuePage({ params }: Params) {
       />
 
       <section className="mt-8">
-        <h2 className="font-semibold text-[15px]">Waiting · {queued.length}</h2>
+        <h2 className="lbl">01 · Waiting · {queued.length}</h2>
         {queued.length === 0 ? (
           <div className="mt-3">
             <Empty title="The queue is empty">
@@ -52,13 +52,15 @@ export default async function QueuePage({ params }: Params) {
           </div>
         ) : (
           <Stagger as="ol" className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
+            {/* The line: one thread, each review a numbered key on it, first in line at the top. */}
             {queued.map((r, i) => (
-              <StaggerItem key={r.id} className="border-line border-b last:border-b-0">
+              <StaggerItem key={r.id} className="relative border-line border-b last:border-b-0">
+                <span aria-hidden="true" className="absolute top-0 bottom-0 left-6 w-0.5 bg-line-strong" />
                 <Link
                   href={`/hub/${full}/reviews/${r.id}`}
-                  className="flex items-center gap-4 px-4 py-3 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
+                  className="flex items-center gap-4 px-4 py-3 transition-colors duration-100 hover:bg-surface-2"
                 >
-                  <span className="w-6 font-mono text-[12px] text-ink-3">{i + 1}</span>
+                  <span className="cap relative z-10 bg-surface-3">{i + 1}</span>
                   <ActorAvatar actor={actorFromLabel(r.author)} size={24} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-[14px]">{r.title}</span>
@@ -76,7 +78,7 @@ export default async function QueuePage({ params }: Params) {
       </section>
 
       <section className="mt-10">
-        <h2 className="font-semibold text-[15px]">Recent batches</h2>
+        <h2 className="lbl">02 · Recent batches</h2>
         {batches.length === 0 ? (
           <p className="mt-3 text-[13.5px] text-ink-3">No batches yet.</p>
         ) : (
@@ -97,11 +99,15 @@ export default async function QueuePage({ params }: Params) {
                     <Link
                       key={n}
                       href={`/hub/${full}/reviews/${n}`}
-                      className="font-mono text-[12.5px] text-ink-2 hover:text-ink"
+                      className="key inline-flex h-7 items-center rounded-[4px] px-2 font-mono text-[12px]"
                     >
                       #{n}
                     </Link>
                   ))}
+                  <span aria-hidden="true" className="px-1 text-ink-3">
+                    →
+                  </span>
+                  <Chip>{b.target}</Chip>
                   <span className="text-ink-3">·</span>
                   <Link
                     href={`/hub/${full}/c/${b.batch_commit}`}

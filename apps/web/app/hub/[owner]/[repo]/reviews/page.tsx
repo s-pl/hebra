@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Readout } from "@/components/hub/console";
 import { LiveRefresh } from "@/components/hub/live";
 import { Stagger, StaggerItem } from "@/components/hub/motion";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
-import { ActorAvatar, Empty, PageTitle, ServerDown, StateBadge, Tabs } from "@/components/hub/ui";
+import { ActorAvatar, Empty, PageTitle, ServerDown, StateBadge } from "@/components/hub/ui";
 import { actorFromLabel, ago, fresh, HubError, hub, type Review, repoPath } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
@@ -68,9 +69,21 @@ export default async function ReviewsPage({ params, searchParams }: Params) {
           </>
         }
       />
-      <div className="mt-6">
-        <Tabs tabs={tabs} current={state} />
-      </div>
+      {/* The counters are the filter: the current state's readout is lit. */}
+      <nav
+        aria-label="Review states"
+        className="mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(0,1fr))]"
+      >
+        {tabs.map((t) => (
+          <Readout
+            key={t.key}
+            label={t.label}
+            value={t.count}
+            href={t.href}
+            tone={t.key === state ? "accent" : undefined}
+          />
+        ))}
+      </nav>
 
       {shown.length === 0 ? (
         <div className="mt-6">
@@ -82,7 +95,7 @@ export default async function ReviewsPage({ params, searchParams }: Params) {
             <StaggerItem key={r.id} className={`border-line border-b last:border-b-0 ${fresh(r.updated_at)}`}>
               <Link
                 href={`/hub/${full}/reviews/${r.id}`}
-                className="flex items-center gap-4 px-4 py-3.5 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
+                className="flex items-center gap-4 px-4 py-3.5 transition-colors duration-100 hover:bg-surface-2"
               >
                 <ActorAvatar actor={actorFromLabel(r.author)} size={30} />
                 <span className="min-w-0 flex-1">
@@ -91,8 +104,10 @@ export default async function ReviewsPage({ params, searchParams }: Params) {
                     <StateBadge state={r.state} />
                   </span>
                   <span className="mt-0.5 block truncate text-[12.5px] text-ink-3">
-                    #{r.id} · <span className="font-mono">{r.source}</span> →{" "}
-                    <span className="font-mono">{r.target}</span> · {r.author} · {ago(r.updated_at)}
+                    <span className="font-mono">#{r.id}</span> ·{" "}
+                    <span className="font-mono text-ink-2">{r.source}</span> <span aria-hidden="true">→</span>{" "}
+                    <span className="font-mono text-ink-2">{r.target}</span> · {r.author.replace(/ (.*)$/, "")} ·{" "}
+                    {ago(r.updated_at)}
                   </span>
                 </span>
                 <span aria-hidden="true" className="text-ink-3">

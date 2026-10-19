@@ -18,6 +18,17 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title: `Checks · ${owner}/${repo} · Hebra` };
 }
 
+/* One pixel per run in the commit's strip, coloured by how it went. */
+const CELL: Record<string, string> = {
+  success: "bg-ok",
+  failure: "bg-err",
+  error: "bg-err",
+  running: "bg-signal",
+  queued: "bg-line-strong",
+  waiting: "bg-warn",
+  skipped: "bg-line",
+};
+
 export default async function ChecksPage({ params }: Params) {
   const { owner, repo: name } = await params;
   const loaded = await loadRepo(owner, name);
@@ -71,13 +82,25 @@ export default async function ChecksPage({ params }: Params) {
             const waiting = list.some((r) => r.state === "waiting");
             return (
               <StaggerItem key={commit} className="overflow-hidden rounded-lg border border-line bg-surface">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_60%,var(--surface))] px-4 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-surface-2 px-4 py-2.5">
                   <span className="flex min-w-0 items-center gap-2 text-[13px]">
                     <Link href={`/hub/${full}/c/${commit}`} className="font-mono text-ink-2 hover:text-ink">
                       {commit.slice(0, 12)}
                     </Link>
                     {bookmarkOf.get(commit) ? <Chip tone="accent">{bookmarkOf.get(commit)}</Chip> : null}
                     <span className="text-ink-3">· {list[0]?.cause}</span>
+                  </span>
+                  <span
+                    role="img"
+                    aria-label={`${list.filter((r) => r.state === "success").length} of ${list.length} passed`}
+                    className="flex gap-0.5"
+                  >
+                    {list.map((r) => (
+                      <span
+                        key={r.id}
+                        className={`size-2.5 ${CELL[r.state] ?? "bg-line-strong"} ${r.state === "running" ? "led-live" : ""}`}
+                      />
+                    ))}
                   </span>
                   {waiting && canMaintain ? (
                     <ActionButton size="sm" tone="primary" run={approveChecks.bind(null, full, commit)}>
@@ -93,7 +116,7 @@ export default async function ChecksPage({ params }: Params) {
                     >
                       <Link
                         href={`/hub/${full}/checks/${r.id}`}
-                        className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
+                        className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-surface-2"
                       >
                         <StateBadge state={r.state} />
                         <span className="min-w-0 flex-1">
