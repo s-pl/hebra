@@ -38,8 +38,8 @@ const COLUMNS = [
 export function SiteFooter({ pixel = false }: { pixel?: boolean }) {
   return (
     <footer className="border-line border-t">
-      <div className="mx-auto grid max-w-[1376px] border-line border-x md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div className="border-line px-6 py-10 max-md:border-b md:border-r">
+      <div className="mx-auto grid max-w-[1376px] grid-cols-2 border-line border-x md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="col-span-2 border-line border-b px-6 py-10 md:col-span-1 md:border-r md:border-b-0">
           <Logo />
           <p className="mt-3 max-w-xs text-[13px] text-ink-3 leading-relaxed">
             Version control for people and agents. Open source, built in the open.
@@ -49,7 +49,7 @@ export function SiteFooter({ pixel = false }: { pixel?: boolean }) {
           <nav
             key={c.title}
             aria-label={c.title}
-            className="border-line px-6 py-10 max-md:border-b md:border-r md:last:border-r-0"
+            className="border-line px-6 py-8 max-md:border-b max-md:odd:border-l md:border-r md:py-10 md:last:border-r-0"
           >
             <p className="lbl">{c.title}</p>
             <ul className="mt-3 grid gap-2">

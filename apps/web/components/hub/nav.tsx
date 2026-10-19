@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 export type Tab = { href: string; label: string; key: string; match?: "exact" | "prefix"; count?: number };
 
@@ -19,6 +19,13 @@ function isActive(pathname: string, tab: Tab) {
 export function KeyTabs({ tabs, label }: { tabs: Tab[]; label: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const current = useRef<HTMLAnchorElement>(null);
+
+  // On a narrow screen the row scrolls; keep the current section in view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the page changes
+  useEffect(() => {
+    current.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,6 +48,7 @@ export function KeyTabs({ tabs, label }: { tabs: Tab[]; label: string }) {
         return (
           <Link
             key={t.href}
+            ref={active ? current : undefined}
             href={t.href}
             aria-current={active ? "page" : undefined}
             aria-keyshortcuts={t.key}

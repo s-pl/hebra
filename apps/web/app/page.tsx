@@ -243,7 +243,7 @@ export default function Home() {
                   <span className="size-1 bg-[#E0507F]" />
                   <span className="size-1 bg-[#22AE93]" />
                 </span>
-                v0.1 early preview · open source
+                v0.1 early preview<span className="max-[379px]:hidden"> · open source</span>
                 <span aria-hidden="true" className="nudge">
                   →
                 </span>
@@ -273,7 +273,7 @@ export default function Home() {
 
         {/* The hub, as a console */}
         <Section label="The hub">
-          <div className="grid gap-8 px-4 py-10 sm:px-8 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-8 px-4 py-10 sm:px-8 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
             <div className="lg:pt-2">
               <p className="lbl">The hub</p>
               <p className="mt-3 text-balance font-semibold text-[24px] leading-tight tracking-[-0.02em]">
@@ -292,18 +292,22 @@ export default function Home() {
 
         {/* Works with */}
         <Section label="Works with">
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]">
-            <div className="lbl flex items-center border-line border-r px-6 py-6">Works with</div>
+          <div className="-mb-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))]">
+            <div className="lbl col-span-2 flex items-center border-line border-b px-6 py-5 sm:col-span-1 sm:border-r sm:py-6">
+              Works with
+            </div>
             {AGENT_LIST.map((a) => (
               <div
                 key={a}
-                className="flex items-center gap-2.5 border-line border-r px-6 py-6 font-medium text-[14.5px] text-ink-2"
+                className="flex items-center gap-2.5 border-line border-r border-b px-6 py-5 font-medium text-[14.5px] text-ink-2 even:border-r-0 sm:py-6 sm:even:border-r"
               >
                 <AgentLogo agent={a} size={18} />
                 {AGENTS[a].title}
               </div>
             ))}
-            <div className="flex items-center px-6 py-6 font-mono text-[12.5px] text-ink-3">any MCP client</div>
+            <div className="flex items-center border-line border-b px-6 py-5 font-mono text-[12.5px] text-ink-3 sm:py-6">
+              any MCP client
+            </div>
           </div>
         </Section>
 
@@ -316,7 +320,7 @@ export default function Home() {
             intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
           />
           <div className="flex flex-wrap border-line border-t">
-            <nav aria-label="How it works" className="flex-[1_1_220px] p-6 sm:p-8">
+            <nav aria-label="How it works" className="hidden flex-[1_1_220px] p-8 lg:block">
               <div className="sticky top-20 grid overflow-hidden rounded-md border border-line bg-surface font-medium text-[14px]">
                 {ROWS.map((r, i) => (
                   <a
@@ -330,7 +334,7 @@ export default function Home() {
                 ))}
               </div>
             </nav>
-            <div className="min-w-0 flex-[999_1_760px] border-line border-l">
+            <div className="min-w-0 flex-[999_1_760px] border-line lg:border-l">
               {ROWS.map((r, i) => (
                 <div
                   key={r.id}
@@ -359,7 +363,7 @@ export default function Home() {
             title="Built for agents to drive."
             intro="Nothing in hb waits for a keypress. Agents get structured answers, their own credentials and work they can pick up and hand back."
           />
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] border-line border-t">
+          <div className="grid grid-cols-1 border-line border-t md:grid-cols-2 xl:grid-cols-3">
             {FEATURES.map((f) => (
               <div key={f.title} className="-mr-px -mb-px flex gap-4 border-line border-r border-b px-6 py-7 sm:px-8">
                 <Sticker name={f.sticker} width={48} className="shrink-0 self-start" />
@@ -383,7 +387,21 @@ export default function Home() {
             title="Keep Git where it fits. Use Hebra where agents work."
             intro="Hebra imports Git history and exports back to Git, so GitHub and your CI keep working while agents work in Hebra."
           />
-          <div className="overflow-x-auto border-line border-t">
+          {/* Phones: one card per row instead of a table to scroll sideways. */}
+          <dl className="grid border-line border-t sm:hidden">
+            {VERSUS.map(([what, git, hebra]) => (
+              <div key={what} className="grid gap-1.5 border-line border-b px-6 py-4 last:border-b-0">
+                <dt className="font-medium text-[14px]">{what}</dt>
+                <dd className="grid grid-cols-[48px_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13.5px]">
+                  <span className="lbl self-center">Git</span>
+                  <span className="text-ink-3">{git}</span>
+                  <span className="lbl self-center text-ink">Hebra</span>
+                  <span>{hebra}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <div className="hidden overflow-x-auto border-line border-t sm:block">
             <table className="w-full min-w-[640px] text-left text-[14px]">
               <thead>
                 <tr className="border-line border-b bg-surface-2">
@@ -488,11 +506,7 @@ export default function Home() {
                   </SmartLink>
                   <SmartLink
                     href="/pricing"
-                    className={button({
-                      variant: "ghost",
-                      size: "sm",
-                      className: "text-bg/80 hover:bg-bg/10 hover:text-bg",
-                    })}
+                    className="inline-flex h-8 items-center rounded-[5px] px-3 font-medium text-[13px] text-bg/80 transition-colors hover:bg-bg/10 hover:text-bg"
                   >
                     Pricing
                   </SmartLink>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Module } from "@/components/hub/console";
 import { DiffFile, DiffStat, fileAnchor } from "@/components/hub/diff";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { ActorAvatar, Chip, ServerDown, StateBadge } from "@/components/hub/ui";
@@ -80,38 +81,44 @@ export default async function ChangePage({ params }: Params) {
             </Link>
           ))}
         </div>
-        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[22px] leading-tight tracking-[-0.02em]">
+        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[26px] leading-tight tracking-[-0.025em]">
           {firstLine(c.description)}
         </h1>
         {rest ? <p className="mt-3 max-w-3xl whitespace-pre-wrap text-[15px] text-ink-2">{rest}</p> : null}
 
         {/* Provenance */}
-        <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
-          <div className="flex items-center gap-3 bg-surface p-4">
-            <ActorAvatar actor={c.author} size={38} />
-            <div className="min-w-0 leading-tight">
-              <p className="truncate font-semibold">{c.author.name}</p>
-              <p className="truncate text-[12.5px] text-ink-3">
-                {agent ? `agent${c.author.on_behalf_of ? ` working for ${c.author.on_behalf_of}` : ""}` : "person"}
-              </p>
+        <Module n={1} label="Provenance" className="mt-6">
+          <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+            <div className="flex items-center gap-3 bg-surface p-4">
+              <ActorAvatar actor={c.author} size={38} />
+              <div className="min-w-0 leading-tight">
+                <p className="truncate font-semibold">{c.author.name}</p>
+                <p className="truncate text-[12.5px] text-ink-3">
+                  {agent ? `agent${c.author.on_behalf_of ? ` working for ${c.author.on_behalf_of}` : ""}` : "person"}
+                </p>
+              </div>
             </div>
+            <Field label="When" value={ago(c.timestamp)} hint={c.timestamp} />
+            <Field label="Task" value={c.provenance.task ?? "—"} />
+            <Field label="Session" value={c.provenance.session ?? "—"} mono />
+            {c.provenance.prompt ? (
+              <div className="bg-surface p-4 sm:col-span-2 xl:col-span-4">
+                <p className="lbl">Prompt</p>
+                <p className="mt-2 rounded-[4px] bg-term px-3 py-2.5 font-mono text-[13px] text-term-text">
+                  <span className="select-none text-signal">&gt; </span>
+                  {c.provenance.prompt}
+                </p>
+              </div>
+            ) : null}
           </div>
-          <Field label="When" value={ago(c.timestamp)} hint={c.timestamp} />
-          <Field label="Task" value={c.provenance.task ?? "—"} />
-          <Field label="Session" value={c.provenance.session ?? "—"} mono />
-          {c.provenance.prompt ? (
-            <div className="bg-surface p-4 sm:col-span-2 xl:col-span-4">
-              <p className="font-mono text-[10.5px] text-ink-3 uppercase tracking-[0.12em]">Prompt</p>
-              <p className="mt-1.5 border-accent border-l-2 pl-3 text-[15px] text-ink-2 italic">
-                “{c.provenance.prompt}”
-              </p>
-            </div>
-          ) : null}
-        </div>
+        </Module>
 
         {c.conflicts.length > 0 ? (
-          <div className="mt-4 rounded-lg border border-[color-mix(in_oklch,var(--term-warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--term-warn)_10%,var(--surface))] px-5 py-4">
-            <p className="font-medium">Conflicts are recorded in this change</p>
+          <div className="mt-4 rounded-lg border border-err bg-[color-mix(in_oklch,var(--err)_8%,var(--surface))] px-5 py-4">
+            <p className="flex items-center gap-2 font-medium">
+              <span className="led-live size-2 bg-err" aria-hidden="true" />
+              Conflicts are recorded in this change
+            </p>
             <p className="mt-0.5 text-[13px] text-ink-2">Work continues; they clear when the markers are removed.</p>
             <ul className="mt-2 grid gap-1 font-mono text-[13px]">
               {c.conflicts.map((x) => (
@@ -127,8 +134,8 @@ export default async function ChangePage({ params }: Params) {
         <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="lg:sticky lg:top-16">
             <div className="flex items-center justify-between px-1">
-              <p className="font-semibold text-[14px]">
-                {c.files.length} file{c.files.length === 1 ? "" : "s"}
+              <p className="lbl">
+                02 · {c.files.length} file{c.files.length === 1 ? "" : "s"}
               </p>
               <DiffStat additions={added} deletions={removed} />
             </div>
@@ -154,9 +161,7 @@ export default async function ChangePage({ params }: Params) {
             </ul>
             {c.parents.length > 0 ? (
               <div className="mt-6 border-line border-t pt-4">
-                <p className="px-1 font-mono text-[10.5px] text-ink-3 uppercase tracking-[0.12em]">
-                  Parent{c.parents.length > 1 ? "s" : ""}
-                </p>
+                <p className="lbl px-1">Parent{c.parents.length > 1 ? "s" : ""}</p>
                 {c.parents.map((p) => (
                   <Link
                     key={p}
@@ -187,7 +192,7 @@ export default async function ChangePage({ params }: Params) {
 function Field({ label, value, hint, mono = false }: { label: string; value: string; hint?: string; mono?: boolean }) {
   return (
     <div className="bg-surface p-4" title={hint}>
-      <p className="font-mono text-[10.5px] text-ink-3 uppercase tracking-[0.12em]">{label}</p>
+      <p className="lbl">{label}</p>
       <p className={`mt-1.5 truncate ${mono ? "font-mono text-[13px]" : "text-[14.5px]"}`}>{value}</p>
     </div>
   );

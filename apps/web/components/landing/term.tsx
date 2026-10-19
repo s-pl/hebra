@@ -31,7 +31,9 @@ export function TermFrame({
           {title ?? "terminal"}
         </span>
       </div>
-      <pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-[1.75]">{children}</pre>
+      <pre className="whitespace-pre-wrap break-words px-3.5 py-3 font-mono text-[11px] leading-[1.75] sm:px-4 sm:text-[12px]">
+        {children}
+      </pre>
     </div>
   );
 }

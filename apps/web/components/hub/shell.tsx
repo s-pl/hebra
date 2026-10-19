@@ -252,13 +252,14 @@ export function HubShell({
           </div>
           <div className="mx-auto flex max-w-[1360px] flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-2.5 sm:px-6">
             {repo ? <BookmarkMenu repo={repo} /> : null}
-            <div className="min-w-0 flex-1">
+            {/* Phones: the section keys get a row of their own, scrolling sideways. */}
+            <div className="min-w-0 flex-1 max-sm:order-last max-sm:basis-full">
               <Suspense>
                 <KeyTabs tabs={tabs} label={repo ? repo.full : "Hub"} />
               </Suspense>
             </div>
             {repo ? <WorkingNow repo={repo} /> : null}
-            {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
+            {actions ? <div className="flex shrink-0 items-center gap-1.5 max-sm:ml-auto">{actions}</div> : null}
           </div>
         </header>
         <main id="main" className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:py-8">
