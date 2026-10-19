@@ -11,7 +11,7 @@ import { Words } from "@/components/landing/words";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SmartLink } from "@/components/smart-link";
-import { SITE } from "@/lib/site";
+import { BASE_PATH, SITE } from "@/lib/site";
 import { button } from "@/lib/ui";
 
 /* -------------------------------------------------------------- content */
@@ -194,7 +194,7 @@ function SectionHead({
 function Sticker({ name, width, className = "" }: { name: string; width: number; className?: string }) {
   return (
     <Image
-      src={`/stickers/${name}.png`}
+      src={`${BASE_PATH}/stickers/${name}.png`}
       alt=""
       width={width}
       height={width}
