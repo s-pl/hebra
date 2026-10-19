@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CopyCommand } from "@/components/copy-command";
+import { DotNumber } from "@/components/hub/console";
 import { LiveRefresh } from "@/components/hub/live";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { Card, Chip, Empty, PageTitle, ServerDown } from "@/components/hub/ui";
@@ -66,6 +67,9 @@ export default async function TransparencyPage({ params }: Params) {
   // The chain's links are checked here; hashes and the signature need BLAKE3
   // and Ed25519, which `hb verify-log` does on the reader's own machine.
   const broken = t.entries.findIndex((e, i) => e.prev_hash !== (i === 0 ? GENESIS : t.entries[i - 1]?.hash));
+  const brokenSeq = new Set(
+    t.entries.filter((e, i) => e.prev_hash !== (i === 0 ? GENESIS : t.entries[i - 1]?.hash)).map((e) => e.seq),
+  );
   const entries = [...t.entries].reverse();
   const publicUrl = ctx.caps?.public_url ?? "";
 
@@ -77,23 +81,25 @@ export default async function TransparencyPage({ params }: Params) {
       />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card title="Signed head">
+        <Card title="01 · Signed head">
           {t.head ? (
             <dl className="grid gap-2 text-[13px]">
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-3">Entries</dt>
-                <dd className="font-mono">{t.head.seq}</dd>
+              <div className="flex items-end justify-between gap-4 rounded-md border border-line bg-surface-3 p-3">
+                <dt className="lbl">Entries</dt>
+                <dd>
+                  <DotNumber value={t.head.seq} dot={4} label={`${t.head.seq} entries`} />
+                </dd>
               </div>
               <div className="grid gap-1">
-                <dt className="text-ink-3">Hash</dt>
+                <dt className="lbl">Hash</dt>
                 <dd className="break-all font-mono text-[12px]">{t.head.hash}</dd>
               </div>
               <div className="grid gap-1">
-                <dt className="text-ink-3">Signature (Ed25519)</dt>
+                <dt className="lbl">Signature (Ed25519)</dt>
                 <dd className="break-all font-mono text-[11.5px] text-ink-2">{t.head.signature}</dd>
               </div>
               <div className="grid gap-1">
-                <dt className="text-ink-3">Server key</dt>
+                <dt className="lbl">Server key</dt>
                 <dd className="break-all font-mono text-[11.5px] text-ink-2">{t.public_key}</dd>
               </div>
             </dl>
@@ -102,7 +108,7 @@ export default async function TransparencyPage({ params }: Params) {
           )}
         </Card>
         <Card
-          title="Verify it yourself"
+          title="02 · Verify it yourself"
           sub="Checks every hash and the signature, and remembers the key so a swapped key is caught."
         >
           <div className="grid gap-2 [&>*]:min-w-0">
@@ -115,12 +121,12 @@ export default async function TransparencyPage({ params }: Params) {
           <p className="mt-3 flex items-center gap-2 text-[13px]">
             {t.entries.length === 0 ? null : broken === -1 ? (
               <>
-                <span className="grid size-4 place-items-center rounded-full bg-ok text-[10px] text-white">✓</span>
+                <span className="size-2 bg-ok" aria-hidden="true" />
                 <span className="text-ink-2">All {t.entries.length} links in this page connect.</span>
               </>
             ) : (
               <>
-                <span className="grid size-4 place-items-center rounded-full bg-err text-[10px] text-white">!</span>
+                <span className="led-live size-2 bg-err" aria-hidden="true" />
                 <span className="text-err">The chain breaks at entry {t.entries[broken]?.seq}.</span>
               </>
             )}
@@ -129,21 +135,29 @@ export default async function TransparencyPage({ params }: Params) {
       </div>
 
       <section className="mt-8">
-        <h2 className="font-semibold text-[15px]">Entries</h2>
+        <h2 className="lbl">03 · The chain, newest first</h2>
         {entries.length === 0 ? (
           <div className="mt-3">
             <Empty title="No entries yet">The first push to a bookmark starts the log.</Empty>
           </div>
         ) : (
           <ol className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
+            {/* Each entry is a link on one thread: a square node, rose where the link to the previous entry breaks. */}
             {entries.map((e) => {
               const d = describe(e);
               return (
                 <li
                   key={e.seq}
-                  className="grid grid-cols-[48px_minmax(0,1fr)] gap-3 border-line border-b px-4 py-3 last:border-b-0 sm:grid-cols-[56px_minmax(0,1fr)_auto]"
+                  className="relative grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-line border-b px-4 py-3 last:border-b-0 sm:grid-cols-[72px_minmax(0,1fr)_auto]"
                 >
-                  <span className="font-mono text-[12px] text-ink-3">{e.seq}</span>
+                  <span aria-hidden="true" className="absolute top-0 bottom-0 left-5 w-0.5 bg-line-strong" />
+                  <span className="relative flex items-center gap-2.5 font-mono text-[12px] text-ink-3">
+                    <span
+                      className={`size-2.5 shrink-0 ring-4 ring-surface ${brokenSeq.has(e.seq) ? "led-live bg-err" : "bg-ink"}`}
+                      title={brokenSeq.has(e.seq) ? "Does not link to the previous entry" : undefined}
+                    />
+                    {e.seq}
+                  </span>
                   <span className="min-w-0">
                     <span className="flex flex-wrap items-center gap-2 text-[13.5px]">
                       <Chip>{e.kind}</Chip>

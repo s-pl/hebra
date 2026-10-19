@@ -4,9 +4,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 
-export type Tab = { href: string; label: string; key: string; match?: "exact" | "prefix"; count?: number };
+export type Tab = {
+  href: string;
+  label: string;
+  key: string;
+  match?: "exact" | "prefix";
+  /** Marks the tab current under this path instead of its own href (Files: any tree). */
+  section?: string;
+  count?: number;
+};
 
 function isActive(pathname: string, tab: Tab) {
+  if (tab.section) return pathname.startsWith(tab.section);
   const path = tab.href.split("?")[0] ?? tab.href;
   return tab.match === "prefix" ? pathname.startsWith(path) : pathname === path;
 }

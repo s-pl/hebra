@@ -45,7 +45,7 @@ function Folder({
     <li>
       <details open={open} className="group/dir">
         <summary
-          className={`flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-md pr-2 text-[13px] hover:bg-[color-mix(in_oklch,var(--text)_5%,transparent)] ${
+          className={`flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-[4px] pr-2 text-[13px] hover:bg-surface ${
             current === path ? "text-ink" : "text-ink-2"
           }`}
           style={{ paddingLeft: 8 + depth * 12 }}
@@ -103,10 +103,8 @@ function Entries({
               href={href(base, path)}
               prefetch={false}
               aria-current={active ? "page" : undefined}
-              className={`flex h-7 items-center gap-1.5 rounded-md pr-2 text-[13px] ${
-                active
-                  ? "bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] font-medium text-ink"
-                  : "text-ink-2 hover:bg-[color-mix(in_oklch,var(--text)_5%,transparent)] hover:text-ink"
+              className={`flex h-7 items-center gap-1.5 rounded-[4px] pr-2 text-[13px] ${
+                active ? "bg-ink font-medium text-bg" : "text-ink-2 hover:bg-surface hover:text-ink"
               }`}
               style={{ paddingLeft: 8 + depth * 12 + 16 }}
             >

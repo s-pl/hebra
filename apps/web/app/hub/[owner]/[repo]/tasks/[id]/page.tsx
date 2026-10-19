@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { taskAction } from "@/app/hub/actions";
 import { CopyCommand } from "@/components/copy-command";
+import { DotNumber } from "@/components/hub/console";
 import { ActionButton } from "@/components/hub/forms";
 import { LiveRefresh } from "@/components/hub/live";
 import { Reveal } from "@/components/hub/motion";
@@ -43,6 +44,9 @@ export default async function TaskPage({ params }: Params) {
   const canTriage = atLeast(ctx.info.role, "triage");
   const run = (a: Parameters<typeof taskAction>[2]) => taskAction.bind(null, full, t.id, a);
   const badge = t.state === "open" && !t.ready ? "waiting" : t.state === "open" ? "ready" : t.state;
+  // Minutes left on a claim, shown as a readout; past an hour the text says it.
+  const leaseLeft = t.state === "claimed" && t.lease_until ? (Date.parse(t.lease_until) - Date.now()) / 60000 : null;
+  const leaseMinutes = leaseLeft !== null && leaseLeft > 0 && leaseLeft < 60 ? Math.ceil(leaseLeft) : null;
 
   return (
     <RepoFrame
@@ -61,7 +65,7 @@ export default async function TaskPage({ params }: Params) {
             <Chip key={l}>{l}</Chip>
           ))}
         </div>
-        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[22px] leading-tight tracking-[-0.02em]">
+        <h1 className="mt-3 max-w-4xl text-balance font-semibold text-[26px] leading-tight tracking-[-0.025em]">
           {t.title}
         </h1>
         <p className="mt-2 text-[13px] text-ink-3">
@@ -71,7 +75,7 @@ export default async function TaskPage({ params }: Params) {
 
       <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
-          <Card title="Description">
+          <Card title="01 · Description">
             {t.body ? (
               <p className="whitespace-pre-wrap text-[14.5px] text-ink-2 leading-relaxed">{t.body}</p>
             ) : (
@@ -79,7 +83,7 @@ export default async function TaskPage({ params }: Params) {
             )}
           </Card>
           <Card
-            title="Acceptance criteria"
+            title="02 · Acceptance criteria"
             sub="What “done” means. Agent verification checks the work against this list."
           >
             {t.acceptance.length === 0 ? (
@@ -88,9 +92,7 @@ export default async function TaskPage({ params }: Params) {
               <ol className="grid gap-2">
                 {t.acceptance.map((a, i) => (
                   <li key={a} className="flex gap-3 text-[14px]">
-                    <span className="grid size-5 shrink-0 place-items-center rounded-full border border-line font-mono text-[10.5px] text-ink-3">
-                      {i + 1}
-                    </span>
+                    <span className="cap mt-px shrink-0">{i + 1}</span>
                     <span>{a}</span>
                   </li>
                 ))}
@@ -98,7 +100,7 @@ export default async function TaskPage({ params }: Params) {
             )}
           </Card>
           {deps.length > 0 ? (
-            <Card title="Depends on">
+            <Card title="03 · Depends on">
               <ul className="grid gap-2">
                 {deps.map((d) => (
                   <li key={d.id}>
@@ -118,17 +120,30 @@ export default async function TaskPage({ params }: Params) {
         </div>
 
         <aside className="grid gap-4 lg:sticky lg:top-16">
-          <Card title="Who is on it">
+          <Card title="On it">
             {t.state === "claimed" && t.claimed_by ? (
-              <div className="flex items-center gap-3">
-                <ActorAvatar actor={actorFromLabel(t.claimed_by)} size={32} />
-                <div className="min-w-0 leading-tight">
-                  <p className="truncate font-medium text-[14px]">{t.claimed_by}</p>
-                  {t.lease_until ? (
-                    <p className="text-[12.5px] text-ink-3">claim expires {until(t.lease_until)}</p>
-                  ) : null}
+              <>
+                <div className="flex items-center gap-3">
+                  <ActorAvatar actor={actorFromLabel(t.claimed_by)} size={32} />
+                  <div className="min-w-0 leading-tight">
+                    <p className="truncate font-medium text-[14px]">{t.claimed_by}</p>
+                    {t.lease_until ? (
+                      <p className="text-[12.5px] text-ink-3">claim expires {until(t.lease_until)}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+                {leaseMinutes !== null ? (
+                  <div className="mt-4 flex items-end justify-between gap-3 rounded-md border border-line bg-surface-3 p-3">
+                    <span className="lbl">Lease, minutes left</span>
+                    <DotNumber
+                      value={leaseMinutes}
+                      dot={4}
+                      label={`${leaseMinutes} minutes left on the claim`}
+                      color={leaseMinutes < 5 ? "var(--err)" : "var(--text)"}
+                    />
+                  </div>
+                ) : null}
+              </>
             ) : t.state === "done" || t.state === "cancelled" ? (
               <p className="text-[13.5px] text-ink-2">
                 {t.state === "done" ? "Done" : "Cancelled"} by{" "}

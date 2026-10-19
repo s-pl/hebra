@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CopyCommand } from "@/components/copy-command";
 import { FileTree, treeHref } from "@/components/hub/file-tree";
+import { threadColor } from "@/components/hub/glyph";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { ServerDown } from "@/components/hub/ui";
 import { highlight, languageFor } from "@/lib/highlight";
-import { HubError, hub, repoPath } from "@/lib/hub";
+import { actorFromLabel, HubError, hub, repoPath } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,17 @@ export default async function CodePage({ params }: Params) {
     }
   }
 
+  // Hebras working now that have changes in this file (or under this folder).
+  const busy = ctx.shell.presence.flatMap((p) =>
+    p.workspaces
+      .filter((w) =>
+        w.changes.some(
+          (c) => c === rel || (rel !== "" && c.startsWith(`${rel}/`)) || (rel === "" && node.kind === "dir"),
+        ),
+      )
+      .map((w) => actorFromLabel(w.actor)),
+  );
+
   const crumbs = [
     { href: base, label: ref },
     ...path.map((p, i) => ({
@@ -94,14 +106,14 @@ export default async function CodePage({ params }: Params) {
       palette={files.map((f) => ({ group: "Files", label: f, href: treeHref(base, f) }))}
     >
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="hidden lg:sticky lg:top-16 lg:block">
-          <div className="flex items-center justify-between px-2 pb-2">
-            <Link href={base} className="font-mono text-[12px] text-ink-2 hover:text-ink">
-              {ref}
+        <aside className="hidden rounded-lg border border-line bg-surface-2 p-2 lg:sticky lg:top-32 lg:block">
+          <div className="flex items-center justify-between px-2 pt-1 pb-2">
+            <Link href={base} className="lbl min-w-0 truncate hover:text-ink" title={ref}>
+              01 · Files
             </Link>
-            <span className="font-mono text-[11px] text-ink-3">{files.length} files</span>
+            <span className="lbl shrink-0">{files.length}</span>
           </div>
-          <nav aria-label="Files" className="max-h-[calc(100dvh-7rem)] overflow-y-auto pb-6">
+          <nav aria-label="Files" className="max-h-[calc(100dvh-12rem)] overflow-y-auto pb-1">
             <FileTree files={files} base={base} current={rel} />
           </nav>
         </aside>
@@ -110,16 +122,16 @@ export default async function CodePage({ params }: Params) {
           {node.kind === "dir" ? (
             <>
               <div className="overflow-hidden rounded-lg border border-line bg-surface">
-                <div className="flex items-center justify-between border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5">
+                <div className="flex items-center justify-between border-line border-b bg-surface-2 px-4 py-2.5">
                   <span className="font-mono text-[13px]">{rel || repo}</span>
-                  <span className="font-mono text-[11.5px] text-ink-3">{node.entries.length} entries</span>
+                  <span className="lbl">{node.entries.length} entries</span>
                 </div>
                 <ul>
                   {rel ? (
                     <li className="border-line border-b">
                       <Link
                         href={treeHref(base, rel.split("/").slice(0, -1).join("/"))}
-                        className="block px-4 py-2 font-mono text-[13px] text-ink-3 hover:bg-[color-mix(in_oklch,var(--text)_4%,transparent)]"
+                        className="block px-4 py-2 font-mono text-[13px] text-ink-3 hover:bg-surface-2"
                       >
                         ..
                       </Link>
@@ -130,7 +142,7 @@ export default async function CodePage({ params }: Params) {
                       <Link
                         href={treeHref(base, rel ? `${rel}/${e.name}` : e.name)}
                         prefetch={false}
-                        className="flex items-center gap-3 px-4 py-2 text-[13.5px] transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_4%,transparent)]"
+                        className="flex items-center gap-3 px-4 py-2 text-[13.5px] transition-colors duration-100 hover:bg-surface-2"
                       >
                         {e.kind === "dir" ? (
                           <svg
@@ -161,7 +173,7 @@ export default async function CodePage({ params }: Params) {
               </div>
               {readme ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
-                  <div className="border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5 font-mono text-[13px]">
+                  <div className="border-line border-b bg-surface-2 px-4 py-2.5 font-mono text-[13px]">
                     {readme.path}
                   </div>
                   {readme.html ? (
@@ -175,14 +187,28 @@ export default async function CodePage({ params }: Params) {
             </>
           ) : (
             <div className="overflow-hidden rounded-lg border border-line bg-surface">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-[color-mix(in_oklch,var(--surface-2)_70%,var(--surface))] px-4 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-surface-2 px-4 py-2.5">
                 <span className="min-w-0 truncate font-mono text-[13px]">{node.path}</span>
-                <span className="flex items-center gap-3 font-mono text-[11.5px] text-ink-3">
+                <span className="lbl flex flex-wrap items-center gap-3">
                   <span>{languageFor(node.path)}</span>
                   {node.content !== null ? <span>{node.content.split("\n").length} lines</span> : null}
                   <span>{size(node.size)}</span>
                 </span>
               </div>
+              {busy.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-line border-b px-4 py-2 text-[12.5px] text-ink-2">
+                  {busy.map((b) => (
+                    <span key={b.name} className="flex items-center gap-2">
+                      <span
+                        className="led-live size-2"
+                        style={{ background: threadColor(b.name, b.kind) }}
+                        aria-hidden="true"
+                      />
+                      <span className="font-mono text-ink">{b.name}</span> has changes here, not merged yet
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {node.binary || node.content === null ? (
                 <p className="px-4 py-10 text-center text-ink-3 text-sm">Binary file, {size(node.size)}.</p>
               ) : html ? (

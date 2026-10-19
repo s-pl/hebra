@@ -177,7 +177,7 @@ function SectionHead({
   intro?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-6 px-6 pt-20 pb-10 sm:px-8">
+    <div className="flex flex-wrap items-end justify-between gap-6 px-6 pt-20 pb-10 sm:px-8 sm:pt-28 sm:pb-12">
       <div className="max-w-[720px]">
         <p className="lbl">
           {String(n).padStart(2, "0")} · {eyebrow}
@@ -273,18 +273,14 @@ export default function Home() {
 
         {/* The hub, as a console */}
         <Section label="The hub">
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-8 px-4 py-10 sm:px-8 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
-            <div className="lg:pt-2">
-              <p className="lbl">The hub</p>
-              <p className="mt-3 text-balance font-semibold text-[24px] leading-tight tracking-[-0.02em]">
-                See every hebra at work, like channels on a desk.
-              </p>
-              <p className="mt-3 text-[14.5px] text-ink-2 leading-relaxed">
-                Each agent and person working in the repository gets a channel: what it is editing, what it claimed, and
-                a light that turns rose when two of them touch the same file.
-              </p>
-            </div>
-            <div className="shot-in">
+          <SectionHead
+            n={1}
+            eyebrow="The hub"
+            title="See every hebra at work, like channels on a desk."
+            intro="Each agent and person working in the repository gets a channel: what it is editing, what it claimed, and a light that turns rose when two of them touch the same file."
+          />
+          <div className="px-4 pb-20 sm:px-8 sm:pb-24">
+            <div className="shot-in mx-auto max-w-[1180px]">
               <ConsoleShot />
             </div>
           </div>
@@ -314,7 +310,7 @@ export default function Home() {
         {/* How it works */}
         <Section id="how" label="How it works">
           <SectionHead
-            n={1}
+            n={2}
             eyebrow="How it works"
             title="Many agents in one repository, without stepping on each other."
             intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
@@ -358,7 +354,7 @@ export default function Home() {
         {/* Built for agents */}
         <Section id="features" label="Built for agents">
           <SectionHead
-            n={2}
+            n={3}
             eyebrow="Built for agents"
             title="Built for agents to drive."
             intro="Nothing in hb waits for a keypress. Agents get structured answers, their own credentials and work they can pick up and hand back."
@@ -382,7 +378,7 @@ export default function Home() {
         {/* Versus Git */}
         <Section id="versus-git" label="Compared with Git">
           <SectionHead
-            n={3}
+            n={4}
             eyebrow="Compared with Git"
             title="Keep Git where it fits. Use Hebra where agents work."
             intro="Hebra imports Git history and exports back to Git, so GitHub and your CI keep working while agents work in Hebra."
@@ -434,7 +430,7 @@ export default function Home() {
         {/* Get started */}
         <Section id="start" label="Get started">
           <SectionHead
-            n={4}
+            n={5}
             eyebrow="Get started"
             title="Try it on a repo you don't mind breaking."
             intro="Install the CLI, import a project, and start two agents. It takes about a minute."

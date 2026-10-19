@@ -4,6 +4,7 @@ import { Stagger, StaggerItem } from "@/components/hub/motion";
 import { RepoCard } from "@/components/hub/repo-card";
 import { HubShell } from "@/components/hub/shell";
 import { ActorAvatar, Chip, Empty, ServerDown } from "@/components/hub/ui";
+import { Mark } from "@/components/logo";
 import { type Account, ago, HubError, hub, loadShell, type RepoSummary } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
@@ -68,8 +69,15 @@ export default async function OwnerPage({ params }: Params) {
               alt=""
               width={64}
               height={64}
-              className="size-16 rounded-full border border-line"
+              className="size-16 rounded-[6px] border border-line"
             />
+          ) : account.kind === "org" ? (
+            <span
+              className="grid size-16 place-items-center rounded-[6px] border border-line bg-surface-3"
+              aria-hidden="true"
+            >
+              <Mark size={34} />
+            </span>
           ) : (
             <ActorAvatar
               actor={{ name: account.handle, kind: account.kind === "agent" ? "agent" : "human" }}
@@ -77,7 +85,7 @@ export default async function OwnerPage({ params }: Params) {
             />
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="flex flex-wrap items-center gap-2 font-semibold text-[22px] tracking-[-0.02em]">
+            <h1 className="flex flex-wrap items-center gap-2 font-semibold text-[26px] tracking-[-0.025em]">
               {account.name}
               <Chip>{kind}</Chip>
             </h1>

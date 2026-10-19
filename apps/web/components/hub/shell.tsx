@@ -170,7 +170,7 @@ export function HubShell({
   const tabs: Tab[] = repo
     ? [
         { key: "O", label: "Overview", href: base },
-        ...(codeRef ? [{ key: "F", label: "Files", href: `${base}/tree/${codeRef}`, match: "prefix" as const }] : []),
+        ...(codeRef ? [{ key: "F", label: "Files", href: `${base}/tree/${codeRef}`, section: `${base}/tree/` }] : []),
         { key: "V", label: "Reviews", href: `${base}/reviews`, match: "prefix", count: repo.openReviews },
         { key: "T", label: "Tasks", href: `${base}/tasks`, match: "prefix" },
         { key: "K", label: "Checks", href: `${base}/checks`, match: "prefix" },
