@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { forkRepository } from "@/app/hub/actions";
 import { CopyCommand } from "@/components/copy-command";
+import { Channel, Module, Readout } from "@/components/hub/console";
 import { ActionForm, Select, SubmitButton } from "@/components/hub/forms";
 import { GraphCell, graphWidth } from "@/components/hub/graph-cell";
 import { LiveRefresh } from "@/components/hub/live";
 import { Popover } from "@/components/hub/popover";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
-import { ActorAvatar, Card, Chip, Empty, List, ListLink, StateBadge } from "@/components/hub/ui";
+import { ActorAvatar, Chip, Empty, List, ListLink, StateBadge } from "@/components/hub/ui";
 import { layoutGraph } from "@/lib/graph";
 import {
   actorFromLabel,
@@ -55,38 +56,6 @@ function describeEvent(e: HubEvent): { verb: string; target: string; href?: (ful
   return { verb, target: e.detail.name ?? "", href: (f) => `/hub/${f}?rev=${encodeURIComponent(e.detail.name ?? "")}` };
 }
 
-function Stat({
-  label,
-  value,
-  href,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  href: string;
-  tone?: "accent" | "warn" | "ok" | "err";
-}) {
-  const color =
-    tone === "accent"
-      ? "text-accent"
-      : tone === "warn"
-        ? "text-warn"
-        : tone === "ok"
-          ? "text-ok"
-          : tone === "err"
-            ? "text-err"
-            : "text-ink";
-  return (
-    <Link
-      href={href}
-      className="group rounded-lg border border-line bg-surface px-4 py-3 transition-colors duration-150 hover:border-line-strong"
-    >
-      <p className="text-[12px] text-ink-3">{label}</p>
-      <p className={`tnum mt-1 font-semibold text-[20px] tracking-[-0.02em] ${color}`}>{value}</p>
-    </Link>
-  );
-}
-
 export default async function RepoPage({ params, searchParams }: Params) {
   const { owner, repo } = await params;
   const { rev: wanted } = await searchParams;
@@ -129,16 +98,6 @@ export default async function RepoPage({ params, searchParams }: Params) {
   const ready = tasks.tasks.filter((t) => t.state === "open" && t.ready);
   const inProgress = tasks.tasks.filter((t) => t.state === "claimed");
   const failing = checks.checks.filter((c) => c.state === "failure" || c.state === "error");
-  const pending = checks.checks.filter((c) => c.state === "queued" || c.state === "running" || c.state === "waiting");
-  const checkValue =
-    checks.checks.length === 0
-      ? "—"
-      : failing.length
-        ? `${failing.length} failing`
-        : pending.length
-          ? "running"
-          : "passing";
-  const checkTone = failing.length ? "err" : pending.length ? "warn" : checks.checks.length ? "ok" : undefined;
   const publicUrl = ctx.caps?.public_url ?? "";
   const remoteUrl = `${publicUrl}/${full}`;
 
@@ -194,14 +153,14 @@ export default async function RepoPage({ params, searchParams }: Params) {
       }
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="flex flex-wrap items-center gap-2.5 font-semibold text-[22px] tracking-[-0.02em]">
+          <h1 className="flex flex-wrap items-center gap-2.5 font-semibold text-[24px] tracking-[-0.025em]">
             {full}
             <Chip>{info.repo.public ? "public" : "private"}</Chip>
             {info.repo.open_contributions ? <Chip tone="accent">open to contributions</Chip> : null}
           </h1>
-          <p className="mt-1 text-[13px] text-ink-3">
+          <p className="mt-1 text-[13.5px] text-ink-3">
             {info.repo.description ? <span className="text-ink-2">{info.repo.description} · </span> : null}
             {info.repo.forked_from ? (
               <>
@@ -219,30 +178,132 @@ export default async function RepoPage({ params, searchParams }: Params) {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          label="Open reviews"
-          value={reviews.reviews.length}
-          href={`/hub/${full}/reviews`}
-          tone={reviews.reviews.length ? "accent" : undefined}
+      <div className="mt-6 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <Readout label="Open reviews" value={reviews.reviews.length} href={`/hub/${full}/reviews`} />
+        <Readout label="Tasks ready" value={ready.length} href={`/hub/${full}/tasks?state=ready`} />
+        <Readout
+          label={failing.length ? `Failing on ${rev ?? "main"}` : `Checks on ${rev ?? "main"}`}
+          value={checks.checks.length ? failing.length || checks.checks.length : null}
+          href={`/hub/${full}/checks`}
+          tone={failing.length ? "err" : undefined}
         />
-        <Stat label="Tasks ready" value={ready.length} href={`/hub/${full}/tasks?state=ready`} />
-        <Stat label={`Checks on ${rev ?? "main"}`} value={checkValue} href={`/hub/${full}/checks`} tone={checkTone} />
-        <Stat
-          label="Working now"
-          value={working.length}
+        <Readout
+          label="Files in two places"
+          value={overlaps.length}
           href={`/hub/${full}`}
-          tone={overlaps.length ? "warn" : undefined}
+          tone={overlaps.length ? "err" : undefined}
         />
       </div>
 
-      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8">
-          {/* Needs attention */}
-          {reviews.reviews.length > 0 || inProgress.length > 0 ? (
-            <section>
-              <h2 className="font-medium text-[13.5px]">Open work</h2>
-              <div className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
+      {/* Channels: who is working now */}
+      <Module
+        n={1}
+        label="Channels"
+        className="mt-4"
+        action={<span className="lbl">{working.length ? `${working.length} working now` : "live"}</span>}
+      >
+        {working.length === 0 ? (
+          <p className="rounded-md border border-line border-dashed bg-surface px-4 py-5 text-[13px] text-ink-3 leading-relaxed">
+            Nobody is working right now. Workspaces show up here, live, when someone runs{" "}
+            <code className="font-mono text-ink-2">hb status</code> or{" "}
+            <code className="font-mono text-ink-2">hb watch</code> with this repository as origin.
+          </p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(230px,100%),1fr))] gap-2.5">
+            {working.map((w, i) => {
+              const who = actorFromLabel(w.actor);
+              const clashes = w.changes.filter((p) => overlaps.includes(p));
+              return (
+                <Channel
+                  key={`${w.machine}-${w.name}-${w.actor}`}
+                  ch={i + 1}
+                  name={who.name}
+                  kind={who.kind}
+                  state={clashes.length ? "overlap" : w.changes.length ? "working" : "idle"}
+                  live={w.changes.length > 0}
+                  files={w.changes}
+                  clashes={clashes}
+                  facts={[
+                    ...(w.changes[0] ? [{ k: "file", v: w.changes[0], warn: clashes.includes(w.changes[0]) }] : []),
+                    ...(w.claims.length ? [{ k: "claim", v: w.claims.join(", ") }] : []),
+                    ...(w.task ? [{ k: "task", v: w.task }] : []),
+                    { k: "where", v: `${w.name} · ${ago(w.at)}` },
+                  ]}
+                />
+              );
+            })}
+          </div>
+        )}
+      </Module>
+
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        {/* Tape: the history of this bookmark */}
+        <Module n={2} label={`Tape · ${rev ?? "main"}`}>
+          {commits.length === 0 ? (
+            <Empty title="Nothing pushed yet">
+              <p>From a repository on your machine:</p>
+              <div className="mx-auto mt-3 grid max-w-md gap-2 text-left [&>*]:min-w-0">
+                <CopyCommand command={`hb remote add origin ${remoteUrl}`} />
+                <CopyCommand command="hb push --bookmark main -r @-" />
+              </div>
+            </Empty>
+          ) : (
+            <ol className="overflow-hidden rounded-md border border-line bg-surface">
+              {commits.map((c, i) => {
+                const row = graph[i];
+                return (
+                  <li key={c.commit_id} className={`border-line border-b last:border-b-0 ${fresh(c.timestamp)}`}>
+                    <Link
+                      href={`/hub/${full}/c/${c.commit_id}`}
+                      prefetch={false}
+                      className="flex items-stretch transition-colors duration-100 hover:bg-surface-3"
+                      style={{ height: ROW }}
+                    >
+                      {row ? (
+                        <GraphCell row={row} width={gWidth} height={ROW} agent={c.author.kind === "agent"} />
+                      ) : null}
+                      <span className="flex min-w-0 flex-1 items-center gap-3 pr-4">
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-[13.5px]">{firstLine(c.description)}</span>
+                            {c.bookmarks?.map((b) => (
+                              <Chip key={b} tone="accent">
+                                {b}
+                              </Chip>
+                            ))}
+                            {c.conflicts.length > 0 ? <Chip tone="err">{c.conflicts.length} conflict</Chip> : null}
+                          </span>
+                          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-ink-3">
+                            <ActorAvatar actor={c.author} size={12} />
+                            <span className="truncate">
+                              <span className="font-mono text-ink-2">{c.author.name}</span>
+                              {c.author.kind === "agent" && c.author.on_behalf_of
+                                ? ` for ${c.author.on_behalf_of}`
+                                : ""}
+                              {c.provenance.task ? ` · ${c.provenance.task}` : ""}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="hidden shrink-0 text-right font-mono sm:block">
+                          <span className="block text-[11.5px] text-ink-2">{c.change_id.slice(0, 8)}</span>
+                          <span className="block text-[11px] text-ink-3">{ago(c.timestamp)}</span>
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </Module>
+
+        <div className="grid gap-4">
+          {/* Needs you */}
+          <Module n={3} label="Open work">
+            {reviews.reviews.length === 0 && inProgress.length === 0 ? (
+              <p className="text-[13px] text-ink-3">No open reviews and no tasks in progress.</p>
+            ) : (
+              <div className="overflow-hidden rounded-md border border-line bg-surface">
                 <List>
                   {reviews.reviews.slice(0, 5).map((r) => (
                     <ListLink key={`r${r.id}`} href={`/hub/${full}/reviews/${r.id}`} className={fresh(r.updated_at)}>
@@ -265,174 +326,49 @@ export default async function RepoPage({ params, searchParams }: Params) {
                           #{t.id} · {t.claimed_by?.replace(/ \(.*\)$/, "")} is on it
                         </span>
                       </span>
-                      <StateBadge state="claimed" label="in progress" />
+                      <StateBadge state="claimed" label="on it" />
                     </ListLink>
                   ))}
                 </List>
               </div>
-            </section>
-          ) : null}
-
-          {/* Working now */}
-          {working.length > 0 ? (
-            <section>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="flex items-center gap-2 font-medium text-[13.5px]">
-                  <span className="live-dot size-1.5 rounded-full bg-ok text-ok" />
-                  Working now
-                </h2>
-                {overlaps.length > 0 ? (
-                  <span className="rounded-full border border-[color-mix(in_oklch,var(--warn)_40%,transparent)] bg-[color-mix(in_oklch,var(--warn)_10%,transparent)] px-2 py-0.5 text-[11.5px] text-warn">
-                    ▲ {overlaps.length} file{overlaps.length === 1 ? "" : "s"} touched by more than one workspace
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {working.map((w) => {
-                  const clash = w.changes.some((p) => overlaps.includes(p));
-                  return (
-                    <div
-                      key={`${w.machine}-${w.name}-${w.actor}`}
-                      className={`rounded-lg border bg-surface p-3 ${clash ? "border-[color-mix(in_oklch,var(--warn)_45%,var(--border))]" : "border-line"}`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <ActorAvatar actor={actorFromLabel(w.actor)} size={24} />
-                        <div className="min-w-0 leading-tight">
-                          <p className="truncate font-medium text-[13px]">{w.actor.replace(/ \(.*\)$/, "")}</p>
-                          <p className="truncate text-[11.5px] text-ink-3">
-                            {w.name} · {w.machine} · {ago(w.at)}
-                          </p>
-                        </div>
-                      </div>
-                      {w.task ? <p className="mt-2 truncate text-[12.5px] text-ink-2">{w.task}</p> : null}
-                      <ul className="mt-2 grid gap-0.5 font-mono text-[11.5px]">
-                        {w.changes.slice(0, 4).map((p) => (
-                          <li
-                            key={p}
-                            className={`flex items-center gap-1.5 ${overlaps.includes(p) ? "text-warn" : "text-ink-3"}`}
-                          >
-                            {overlaps.includes(p) ? "▲" : "●"} <span className="truncate">{p}</span>
-                          </li>
-                        ))}
-                        {w.changes.length === 0 ? <li className="text-ink-3">no changes yet</li> : null}
-                        {w.changes.length > 4 ? <li className="text-ink-3">+{w.changes.length - 4} more</li> : null}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
-
-          {/* History */}
-          <section>
-            <h2 className="font-medium text-[13.5px]">History</h2>
-            {commits.length === 0 ? (
-              <div className="mt-3">
-                <Empty title="Nothing pushed yet">
-                  <p>From a repository on your machine:</p>
-                  <div className="mx-auto mt-3 grid max-w-md gap-2 text-left [&>*]:min-w-0">
-                    <CopyCommand command={`hb remote add origin ${remoteUrl}`} />
-                    <CopyCommand command="hb push --bookmark main -r @-" />
-                  </div>
-                </Empty>
-              </div>
-            ) : (
-              <ol className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
-                {commits.map((c, i) => {
-                  const row = graph[i];
-                  return (
-                    <li key={c.commit_id} className={`border-line border-b last:border-b-0 ${fresh(c.timestamp)}`}>
-                      <Link
-                        href={`/hub/${full}/c/${c.commit_id}`}
-                        prefetch={false}
-                        className="flex items-stretch transition-colors duration-100 hover:bg-[color-mix(in_oklch,var(--text)_3.5%,transparent)]"
-                        style={{ height: ROW }}
-                      >
-                        {row ? (
-                          <GraphCell row={row} width={gWidth} height={ROW} agent={c.author.kind === "agent"} />
-                        ) : null}
-                        <span className="flex min-w-0 flex-1 items-center gap-3 pr-4">
-                          <span className="min-w-0 flex-1">
-                            <span className="flex min-w-0 items-center gap-2">
-                              <span className="truncate text-[13.5px]">{firstLine(c.description)}</span>
-                              {c.bookmarks?.map((b) => (
-                                <Chip key={b} tone="accent">
-                                  {b}
-                                </Chip>
-                              ))}
-                              {c.conflicts.length > 0 ? <Chip tone="warn">{c.conflicts.length} conflict</Chip> : null}
-                            </span>
-                            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-ink-3">
-                              <ActorAvatar actor={c.author} size={14} />
-                              <span className="truncate">
-                                {c.author.name}
-                                {c.author.kind === "agent" && c.author.on_behalf_of
-                                  ? ` for ${c.author.on_behalf_of}`
-                                  : ""}
-                                {c.provenance.task ? ` · ${c.provenance.task}` : ""}
-                              </span>
-                            </span>
-                          </span>
-                          <span className="hidden shrink-0 text-right sm:block">
-                            <span className="block font-mono text-[11.5px] text-ink-2">{c.change_id.slice(0, 8)}</span>
-                            <span className="block text-[11.5px] text-ink-3">{ago(c.timestamp)}</span>
-                          </span>
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ol>
             )}
-          </section>
-        </div>
+          </Module>
 
-        {/* Side */}
-        <aside className="grid gap-6">
-          {working.length === 0 ? (
-            <Card title="Nobody is working right now">
-              <p className="text-[12.5px] text-ink-3 leading-relaxed">
-                Workspaces show up here, live, when someone runs <code className="font-mono text-ink-2">hb status</code>{" "}
-                or <code className="font-mono text-ink-2">hb watch</code> with this repository as origin.
-              </p>
-            </Card>
-          ) : null}
-          <section>
-            <h2 className="font-medium text-[13.5px]">Activity</h2>
+          {/* Activity */}
+          <Module n={4} label="Activity">
             {events.events.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">Nothing yet.</p>
+              <p className="text-[13px] text-ink-3">Nothing yet.</p>
             ) : (
-              <ol className="mt-3 grid gap-3.5">
-                {events.events.map((e, i) => {
+              <ol className="grid font-mono text-[12px]">
+                {events.events.map((e) => {
                   const d = describeEvent(e);
+                  const who = actorFromLabel(e.actor);
                   return (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: events can share a timestamp; the list is replaced, not reordered
-                    <li key={`${e.at}-${i}`} className={`-mx-2 flex gap-2.5 rounded-md px-2 py-1 ${fresh(e.at)}`}>
-                      <ActorAvatar actor={actorFromLabel(e.actor)} size={18} />
-                      <div className="min-w-0 text-[12.5px] leading-snug">
-                        <p className="text-ink-2">
-                          <span className="font-medium text-ink">{e.actor.replace(/ \(.*\)$/, "")}</span> {d.verb}{" "}
-                          {d.href ? (
-                            <Link
-                              href={d.href(full)}
-                              className="break-all font-mono text-[11.5px] text-ink-2 hover:text-ink"
-                            >
-                              {d.target}
-                            </Link>
-                          ) : (
-                            <span className="break-all font-mono text-[11.5px]">{d.target}</span>
-                          )}
-                        </p>
-                        <p className="mt-0.5 text-[11.5px] text-ink-3">{ago(e.at)}</p>
-                      </div>
+                    <li
+                      key={`${e.at}-${e.actor}-${e.kind}-${d.target}`}
+                      className={`flex items-start gap-2 border-line border-t py-2 first:border-t-0 ${fresh(e.at)}`}
+                    >
+                      <span className="mt-[3px]">
+                        <ActorAvatar actor={who} size={12} />
+                      </span>
+                      <span className="min-w-0 flex-1 leading-snug">
+                        <span className="text-ink">{who.name}</span> <span className="text-ink-3">{d.verb}</span>{" "}
+                        {d.href ? (
+                          <Link href={d.href(full)} className="break-all text-ink-2 underline-offset-2 hover:underline">
+                            {d.target}
+                          </Link>
+                        ) : (
+                          <span className="break-all text-ink-2">{d.target}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-ink-3">{ago(e.at)}</span>
                     </li>
                   );
                 })}
               </ol>
             )}
-          </section>
-        </aside>
+          </Module>
+        </div>
       </div>
     </RepoFrame>
   );

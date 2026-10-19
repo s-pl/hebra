@@ -4,19 +4,19 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
-/** Switches between the dark default and the light theme; remembers it. */
+/** Switches between the light default and the dark theme; remembers it. */
 export function ThemeToggle({ className = "" }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
   }, []);
 
   function toggle() {
     const next: Theme = theme === "dark" ? "light" : "dark";
     const apply = () => {
       setTheme(next);
-      if (next === "light") document.documentElement.dataset.theme = "light";
+      if (next === "dark") document.documentElement.dataset.theme = "dark";
       else delete document.documentElement.dataset.theme;
     };
     // Crossfade the whole page (View Transitions) instead of a hard flash.

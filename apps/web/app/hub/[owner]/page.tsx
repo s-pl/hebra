@@ -30,7 +30,7 @@ export default async function OwnerPage({ params }: Params) {
     const missing = e instanceof HubError && e.status === 404;
     return (
       <HubShell repos={[]} crumbs={[{ label: owner }]}>
-        <div className="mx-auto max-w-[1080px]">
+        <div className="w-full">
           {missing ? (
             <Empty title={`No account named ${owner}`} />
           ) : (
@@ -59,7 +59,7 @@ export default async function OwnerPage({ params }: Params) {
 
   return (
     <HubShell repos={shell.repos.map((r) => r.full_name)} me={me} caps={shell.caps} crumbs={[{ label: owner }]}>
-      <div className="mx-auto max-w-[1080px]">
+      <div className="w-full">
         <div className="flex flex-wrap items-center gap-5">
           {account.avatar_url ? (
             // biome-ignore lint/performance/noImgElement: avatars come from the identity provider; no optimizer needed

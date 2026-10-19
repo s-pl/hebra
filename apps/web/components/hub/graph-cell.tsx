@@ -5,7 +5,9 @@ const PAD = 12;
 
 /**
  * One row of the history graph. Every row has the same height, so lines
- * drawn to the top and bottom edges join up into continuous threads.
+ * drawn to the top and bottom edges join up into continuous threads. Each
+ * change is a square stitch: filled in the lane colour for agents, neutral
+ * for people, hollow for merges.
  */
 export function GraphCell({
   row,
@@ -57,23 +59,28 @@ export function GraphCell({
   return (
     <svg width={width} height={height} className="shrink-0" aria-hidden="true">
       {paths.map((p) => (
-        <path key={p.key} d={p.d} stroke={p.color} strokeWidth={2} fill="none" strokeLinecap="round" />
+        <path key={p.key} d={p.d} stroke={p.color} strokeWidth={2} fill="none" strokeLinecap="square" />
       ))}
       {merge ? (
-        <circle cx={x(row.lane)} cy={mid} r={5.5} fill="var(--bg)" stroke={color} strokeWidth={2.5} />
-      ) : agent ? (
         <rect
-          x={x(row.lane) - 5}
-          y={mid - 5}
-          width={10}
-          height={10}
-          rx={3}
-          fill={color}
-          stroke="var(--bg)"
-          strokeWidth={2}
+          x={x(row.lane) - 5.5}
+          y={mid - 5.5}
+          width={11}
+          height={11}
+          fill="var(--surface)"
+          stroke={color}
+          strokeWidth={2.5}
         />
       ) : (
-        <circle cx={x(row.lane)} cy={mid} r={5} fill={color} stroke="var(--bg)" strokeWidth={2} />
+        <rect
+          x={x(row.lane) - (agent ? 5 : 4)}
+          y={mid - (agent ? 5 : 4)}
+          width={agent ? 10 : 8}
+          height={agent ? 10 : 8}
+          fill={agent ? color : "var(--person)"}
+          stroke="var(--surface)"
+          strokeWidth={2}
+        />
       )}
     </svg>
   );

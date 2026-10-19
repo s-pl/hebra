@@ -49,7 +49,7 @@ export async function loadRepo(
     return {
       error: (
         <HubShell repos={[]} crumbs={repoCrumbs(full)}>
-          <div className="mx-auto max-w-[1080px]">
+          <div className="w-full">
             {status === 404 ? (
               <Empty title={`No repository ${full}`}>
                 It does not exist, or it is private and you are not signed in with access.
@@ -90,7 +90,7 @@ export function RepoFrame({
       actions={actions}
       palette={palette}
     >
-      <div className="mx-auto max-w-[1080px]">{children}</div>
+      {children}
     </HubShell>
   );
 }

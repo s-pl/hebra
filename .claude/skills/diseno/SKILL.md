@@ -5,30 +5,31 @@ description: Sistema de diseño de la marca, la landing y la web (dirección vis
 
 # Sistema de diseño
 
-> Estado: **decidido** (2026-10-16). Cambios de dirección, siempre con el autor.
+> Estado: **decidido** (2026-10-19). Cambios de dirección, siempre con el autor.
 
-## Referencia histórica
-- **entire.io**, sobre todo el hero. Sirve de inspiración, **no se copia**: se toma el nivel de calidad, el ritmo y la sensación, no la maquetación literal, los textos ni los recursos gráficos.
-- Antes de diseñar una sección, analiza la referencia (estructura, jerarquía tipográfica, espacio, movimiento) y anota aquí qué se toma y qué se cambia.
+## Historia
+- 2026-10-16: «herramienta de precisión» (Linear/Vercel). Descartada.
+- 2026-10-17: landing pixel (lienzo «Hebra redesign», artboard `Pixel.dc.html`). Gustó la landing; el hub no.
+- 2026-10-19: el autor eligió la dirección **B «Console»** para toda la web y pidió combinar la landing pixel con ella.
 
-## Dirección visual (decidida por el autor, 2026-10-16)
-**Herramienta de precisión**, en la línea de Linear y Vercel. Sustituye a la dirección editorial cálida anterior (serif, papel, hilos de colores), que el autor descartó por genérica, confusa y poco pulida.
+## Dirección visual: un instrumento (2026-10-19)
+- **Tema claro por defecto** (panel cálido `#e6e5df`, tinta `#141414`); oscuro con `data-theme="dark"` (guardado en `localStorage` como `hebra-theme`).
+- **Teclas**: los botones son teclas (`.key`, `.key-ink`, `.key-accent`, `.key-danger`) con un borde inferior que se hunde al pulsar. Los atajos van en una tecla pequeña `.cap`.
+- **Etiquetas impresas**: `.lbl` (mono, 11px, mayúsculas, tracking). Los módulos se numeran: `01 CHANNELS`.
+- **Cada hebra tiene su color** (`--thread-1..4`); las personas son neutras (`--person`); el rosa (`--err`) es solo para conflictos y fallos. `--signal` (azafrán) es la única luz: LEDs, cursor, prompt `hb ▸`.
+- **Glifos pixel 5×5** para agentes (cara de robot) y personas (`components/hub/glyph.tsx`). El logo es un tejido 4×4 (`components/logo.tsx`).
+- **Tipografía**: Hanken Grotesk y JetBrains Mono (sin ligaduras en código).
+- **Piezas de consola** en `components/hub/console.tsx`: `Module`, `DotNumber` (matriz de puntos), `Readout`, `Channel` (tira de canal por hebra).
+- **Hub**: sin barra lateral. Barra superior con migas en mono y una fila de pestañas-tecla con atajo de una letra (O, F, V, T, K, Q, L, S). Repositorios y bookmarks en menús y en ⌘K.
 
-- **Tema oscuro por defecto**, claro opcional (`data-theme="light"`, guardado en `localStorage`).
-- **Neutros grafito** con un tinte frío (hue 260) y **un único color de señal: cian** (`--accent`) para foco, acción principal de la landing y elementos activos. Nada más usa acento.
-- **Colores semánticos**: `--ok` (verde), `--warn` (ámbar), `--err` (rojo), `--info` (azul) y `--agent` (violeta). Los agentes son violeta y cuadrados redondeados en avatares; las personas son círculos neutros.
-- **Tipografía**: solo Geist y Geist Mono. Nada de serif. Mono para datos (ids, bookmarks, comandos, contadores).
-- **Forma**: radios contenidos (`rounded-md` en controles, `rounded-lg` en tarjetas), bordes de 1px, casi sin sombras (solo `shadow-pop` en popovers y paleta).
-- **Densidad**: app a 13–14px, filas de 44px, títulos de página a 22px. La landing usa titulares grandes (hasta 76px) y aire.
-- **Movimiento**: solo de respuesta (pulsar, drawer, popover, 140–250 ms, `--ease-out`). Las páginas y listas de la app **no** entran animadas; la paleta ⌘K abre sin animación. La landing usa `.rise` al cargar y `.reveal` al hacer scroll (CSS, sin JS).
-- **Recetas compartidas** en `apps/web/lib/ui.ts` (`button()`, `control`, `TONE_BADGE`) y componentes en `components/hub/ui.tsx` y `components/hub/forms.tsx`. Usarlos siempre en vez de clases sueltas.
-
-## Landing (estructura actual)
-1. Hero centrado: píldora, titular «Version control for people and agents», párrafo que dice qué hace y para quién, dos CTA (Get started y Self-host or Cloud) y una **captura del producto hecha en HTML** (`components/landing/product-shot.tsx`), no una ilustración.
-2. Franja «Works with» con los agentes compatibles.
-3. How it works: tres pasos con terminales cuya salida coincide con la CLI real.
-4. Features: rejilla de 12 con icono, título y una frase; las de Cloud se marcan.
-5. For agents, comparación con Git, Get started (comandos copiables y las dos ediciones) y Known gaps.
+## Landing (pixel + consola)
+- Marco con líneas: todas las secciones dentro de una columna de 1376px con hairlines a los lados; cabecera y pie en celdas.
+- Hero: titular y el **escenario** (`components/landing/cast.tsx`): robots y personas pixel sobre parches tejidos y la banda con la lanzadera. Al pulsar un agente reclama `src/auth.rs`; si lo pulsa otro, los dos se avisan en rosa. Sin terminal en el hero (el autor la quitó).
+- La captura del hub está hecha con las piezas reales de la consola (`console-shot.tsx`).
+- How it works: navegación lateral y filas con terminales sobre baldosas pixel del color de cada tema.
+- Built for agents: celdas de features, cada una con su sticker (`public/stickers/*.png`, hechos en ChatGPT). Sin pared de stickers (el autor la quitó).
+- Pie: palabra «hebra» en píxeles, un robot que camina y la banda tejida.
+- Movimiento pixel en `globals.css` (`.px-*`): `steps()` para fotogramas, transform/opacity/clip-path, todo apagado con `prefers-reduced-motion`.
 
 ## Voz y texto (para que no suene a IA)
 El autor pidió expresamente quitar el "tono de IA". Reglas:
@@ -46,7 +47,7 @@ El autor pidió expresamente quitar el "tono de IA". Reglas:
 5. **El movimiento tiene propósito** y respeta `prefers-reduced-motion`.
 
 ## Tokens
-Definidos en `apps/web/app/globals.css` (`:root` oscuro y `:root[data-theme="light"]`) y expuestos a Tailwind con `@theme inline`: `bg`, `surface`, `surface-2`, `surface-3`, `line`, `line-strong`, `ink`, `ink-2`, `ink-3`, `accent`, `ok`, `warn`, `err`, `info`, `agent` y `term-*` (la terminal siempre es oscura).
+Definidos en `apps/web/app/globals.css` (`:root` claro y `:root[data-theme="dark"]`) y expuestos a Tailwind con `@theme inline`: `bg`, `surface`, `surface-2`, `surface-3`, `line`, `line-strong`, `ink`, `ink-2`, `ink-3`, `accent`, `ok`, `warn`, `err`, `info`, `agent`, `signal`, `person`, `thread-1..5` y `term-*` (la terminal siempre es oscura).
 
 ## Skills globales que conviene usar
 - `emil-design-eng` y `apple-design`: pulido de interfaz y detalles.

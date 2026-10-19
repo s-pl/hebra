@@ -6,20 +6,21 @@
 export type Variant = "primary" | "secondary" | "ghost" | "danger" | "success" | "accent";
 export type Size = "xs" | "sm" | "md" | "lg";
 
+/* Buttons are keys (see `.key` in globals.css); ghost ones are flat. */
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-ink text-bg hover:bg-[color-mix(in_oklch,var(--text)_88%,var(--bg))]",
-  accent: "bg-accent text-on-accent hover:bg-accent-strong",
-  secondary: "border border-line bg-surface text-ink hover:border-line-strong hover:bg-surface-2",
+  primary: "key key-ink",
+  accent: "key key-accent",
+  secondary: "key",
   ghost: "text-ink-2 hover:bg-surface-2 hover:text-ink",
-  danger: "bg-err text-white hover:bg-[color-mix(in_oklch,var(--err)_88%,black)]",
-  success: "bg-ok text-[oklch(0.18_0.03_152)] hover:bg-[color-mix(in_oklch,var(--ok)_88%,white)]",
+  danger: "key key-danger",
+  success: "key key-accent",
 };
 
 const SIZES: Record<Size, string> = {
-  xs: "h-7 gap-1.5 rounded-md px-2.5 text-[12.5px]",
-  sm: "h-8 gap-1.5 rounded-md px-3 text-[13px]",
-  md: "h-9 gap-2 rounded-md px-3.5 text-[13.5px]",
-  lg: "h-11 gap-2 rounded-lg px-5 text-[14.5px]",
+  xs: "h-7 gap-1.5 rounded-[4px] px-2.5 text-[12.5px]",
+  sm: "h-8 gap-1.5 rounded-[5px] px-3 text-[13px]",
+  md: "h-9 gap-2 rounded-[5px] px-3.5 text-[13.5px]",
+  lg: "h-11 gap-2 rounded-[6px] px-5 text-[14.5px]",
 };
 
 export function button({
@@ -31,12 +32,12 @@ export function button({
   size?: Size;
   className?: string;
 } = {}) {
-  return `pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap font-medium disabled:pointer-events-none disabled:opacity-50 ${VARIANTS[variant]} ${SIZES[size]} ${className}`;
+  return `${variant === "ghost" ? "pressable " : ""}inline-flex shrink-0 items-center justify-center whitespace-nowrap font-medium disabled:pointer-events-none disabled:opacity-50 ${VARIANTS[variant]} ${SIZES[size]} ${className}`;
 }
 
 /** A text field, select or text area. */
 export const control =
-  "w-full rounded-md border border-line bg-bg px-3 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-line-strong focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60";
+  "w-full rounded-[5px] border border-line-strong bg-surface-3 px-3 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-ink-3 focus:border-ink focus:shadow-[0_0_0_1px_var(--text)] disabled:opacity-60";
 
 export type Tone = "neutral" | "accent" | "ok" | "warn" | "err" | "info" | "agent";
 
@@ -51,7 +52,7 @@ export const TONE_TEXT: Record<Tone, string> = {
 };
 
 export const TONE_BADGE: Record<Tone, string> = {
-  neutral: "border-line bg-surface-2 text-ink-2",
+  neutral: "border-line-strong bg-surface-3 text-ink-2",
   accent: "border-[color-mix(in_oklch,var(--accent)_35%,transparent)] bg-accent-soft text-accent",
   ok: "border-[color-mix(in_oklch,var(--ok)_30%,transparent)] bg-[color-mix(in_oklch,var(--ok)_10%,transparent)] text-ok",
   warn: "border-[color-mix(in_oklch,var(--warn)_30%,transparent)] bg-[color-mix(in_oklch,var(--warn)_10%,transparent)] text-warn",

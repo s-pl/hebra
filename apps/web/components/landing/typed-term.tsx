@@ -111,7 +111,7 @@ export function TypedTerm({
         })}
         {/* A resting prompt once it is done; its space is kept throughout. */}
         <div style={done && !typing ? undefined : { visibility: "hidden" }}>
-          <span className="select-none text-term-dim">$ </span>
+          <span className="select-none text-signal">$ </span>
           <span className="caret text-term-text/50" />
         </div>
       </TermFrame>

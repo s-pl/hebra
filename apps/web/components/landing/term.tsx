@@ -10,10 +10,10 @@ export const TERM_TONES = {
   ok: "text-term-ok",
   warn: "text-term-warn",
   err: "text-term-err",
-  accent: "text-[oklch(0.82_0.12_210)]",
+  accent: "text-signal",
 };
 
-/** The window chrome of a terminal. Always dark. */
+/** The window chrome of a terminal: a printed label and a lit LED. Always dark. */
 export function TermFrame({
   title,
   className = "",
@@ -25,11 +25,11 @@ export function TermFrame({
 }) {
   return (
     <div className={`overflow-hidden rounded-lg border border-term-line bg-term text-term-text ${className}`}>
-      <div className="flex h-7 items-center gap-1.5 border-term-line border-b px-3">
-        <span className="size-2 rounded-full bg-term-line" />
-        <span className="size-2 rounded-full bg-term-line" />
-        <span className="size-2 rounded-full bg-term-line" />
-        {title ? <span className="ml-2 truncate font-mono text-[10.5px] text-term-dim">{title}</span> : null}
+      <div className="flex h-8 items-center gap-2 border-term-line border-b px-3">
+        <span className="size-1.5 bg-signal" />
+        <span className="truncate font-mono text-[10.5px] text-term-dim uppercase tracking-[0.08em]">
+          {title ?? "terminal"}
+        </span>
       </div>
       <pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-[1.75]">{children}</pre>
     </div>
@@ -51,7 +51,7 @@ export function TermRow({
   if ("cmd" in line)
     return (
       <div style={style}>
-        <span className="select-none text-term-dim">$ </span>
+        <span className="select-none text-signal">$ </span>
         {children ?? line.cmd}
       </div>
     );

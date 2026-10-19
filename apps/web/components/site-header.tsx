@@ -16,21 +16,13 @@ const LINKS = [
 ];
 
 /**
- * The site's top bar. Transparent over the hero, then a hairline and a
- * blurred background once the page scrolls. On phones the links fold into a
- * panel under the bar.
+ * The site's top bar, ruled into cells like the page frame under it: the
+ * mark, the links, and the actions each sit between hairlines. On phones the
+ * links fold into a panel under the bar.
  */
 export function SiteHeader() {
-  const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: close the menu when the route changes
   useEffect(() => setOpen(false), [pathname]);
@@ -43,28 +35,22 @@ export function SiteHeader() {
   }, [open]);
 
   return (
-    <header
-      className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color] duration-200 ${
-        scrolled || open
-          ? "border-line bg-[color-mix(in_oklch,var(--bg)_82%,transparent)] backdrop-blur-md"
-          : "border-transparent"
-      }`}
-    >
+    <header className="fixed inset-x-0 top-0 z-50 border-line border-b bg-bg">
       <nav
         aria-label="Main"
-        className="mx-auto flex h-14 max-w-[1200px] items-center justify-between gap-6 px-4 sm:px-6"
+        className="mx-auto flex h-14 max-w-[1376px] items-stretch justify-between border-line border-x"
       >
-        <div className="flex items-center gap-8">
-          <SmartLink href="/" aria-label="Hebra home" className="flex h-8 items-center">
+        <div className="flex items-stretch">
+          <SmartLink href="/" aria-label="Hebra home" className="flex items-center border-line border-r px-5">
             <Logo />
           </SmartLink>
-          <ul className="hidden items-center gap-1 md:flex">
+          <ul className="hidden items-stretch md:flex">
             {LINKS.map((l) => (
               <li key={l.href}>
                 <SmartLink
                   href={l.href}
                   aria-current={pathname === l.href ? "page" : undefined}
-                  className={`flex h-8 items-center rounded-md px-2.5 text-[13.5px] transition-colors duration-150 ${
+                  className={`flex h-full items-center border-line border-r px-4 font-medium text-[13.5px] transition-colors duration-150 hover:bg-surface-2 ${
                     pathname === l.href ? "text-ink" : "text-ink-2 hover:text-ink"
                   }`}
                 >
@@ -74,7 +60,7 @@ export function SiteHeader() {
             ))}
           </ul>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 border-line px-3 md:border-l">
           <SmartLink
             href={SITE.repo}
             className="hidden h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-ink-2 hover:text-ink sm:flex"

@@ -1,25 +1,38 @@
 /**
- * The Hebra mark: two strands (an agent and a person) meet at a knot and
- * leave as one. Drawn on a 20-unit grid with round caps so it holds from
- * 16px (favicon) to app-icon sizes; the knot is the only colour.
+ * The Hebra mark: a 4×4 weave. Lit cells are threads (one colour per hebra),
+ * the others are the cloth they cross; the pattern alternates like a plain
+ * weave. Square cells with 1-unit gaps keep it crisp from 16px up.
  */
+const WEAVE = [
+  ["var(--thread-1)", null, "var(--thread-2)", null],
+  [null, "var(--thread-3)", null, "var(--err)"],
+  ["var(--thread-1)", null, "var(--thread-2)", null],
+  [null, "var(--thread-3)", null, "var(--err)"],
+];
+
 export function Mark({ size = 20, className = "" }: { size?: number; className?: string }) {
   return (
     <svg
-      viewBox="0 0 20 20"
+      viewBox="0 0 23 23"
       width={size}
       height={size}
+      shapeRendering="crispEdges"
       className={`shrink-0 ${className}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
       aria-hidden="true"
     >
-      <path d="M2.5 4.5c4.5 0 5 5.5 8 5.5" />
-      <path d="M2.5 15.5c4.5 0 5-5.5 8-5.5" opacity="0.55" />
-      <path d="M10.5 10h7" />
-      <circle cx="10.5" cy="10" r="2.25" fill="var(--accent)" stroke="var(--bg)" strokeWidth="1.5" />
+      {WEAVE.flatMap((row, y) =>
+        row.map((fill, x) => (
+          <rect
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed pattern, never reordered
+            key={`${x}-${y}`}
+            x={x * 6}
+            y={y * 6}
+            width={5}
+            height={5}
+            fill={fill ?? "var(--border-strong)"}
+          />
+        )),
+      )}
     </svg>
   );
 }

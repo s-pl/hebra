@@ -1,3 +1,4 @@
+import { PixelWord, ROBOT_A, ROBOT_CLASSES, ROBOT_WALK, robotColors, Sprite, Weave } from "@/components/landing/pixel";
 import { Logo } from "@/components/logo";
 import { SmartLink } from "@/components/smart-link";
 import { SITE } from "@/lib/site";
@@ -30,20 +31,27 @@ const COLUMNS = [
   },
 ];
 
-/** The site footer. */
-export function SiteFooter() {
+/**
+ * The site footer. On the landing (`pixel`) it ends in the pixel wordmark,
+ * a robot walking back and forth, and a band of the woven cloth.
+ */
+export function SiteFooter({ pixel = false }: { pixel?: boolean }) {
   return (
     <footer className="border-line border-t">
-      <div className="mx-auto grid max-w-[1200px] gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div>
+      <div className="mx-auto grid max-w-[1376px] border-line border-x md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="border-line px-6 py-10 max-md:border-b md:border-r">
           <Logo />
           <p className="mt-3 max-w-xs text-[13px] text-ink-3 leading-relaxed">
             Version control for people and agents. Open source, built in the open.
           </p>
         </div>
         {COLUMNS.map((c) => (
-          <nav key={c.title} aria-label={c.title}>
-            <p className="font-medium text-[12.5px] text-ink">{c.title}</p>
+          <nav
+            key={c.title}
+            aria-label={c.title}
+            className="border-line px-6 py-10 max-md:border-b md:border-r md:last:border-r-0"
+          >
+            <p className="lbl">{c.title}</p>
             <ul className="mt-3 grid gap-2">
               {c.links.map((l) => (
                 <li key={l.href}>
@@ -60,10 +68,28 @@ export function SiteFooter() {
         ))}
       </div>
       <div className="border-line border-t">
-        <p className="mx-auto max-w-[1200px] px-4 py-5 font-mono text-[11.5px] text-ink-3 sm:px-6">
+        <p className="mx-auto max-w-[1376px] border-line border-x px-6 py-5 font-mono text-[11.5px] text-ink-3">
           hebra v0.1 · early preview
         </p>
       </div>
+      {pixel ? (
+        <div aria-hidden="true">
+          <div className="flex justify-center px-4 pt-16">
+            <PixelWord className="w-[min(464px,80%)]" />
+          </div>
+          <div className="relative mt-2 h-[75px] overflow-hidden [container-type:inline-size]">
+            <div className="px-walk absolute bottom-0 left-0">
+              <div className="px-f1">
+                <Sprite rows={ROBOT_A} colors={robotColors("teal")} classes={ROBOT_CLASSES} px={4} />
+              </div>
+              <div className="px-f2 absolute inset-0">
+                <Sprite rows={ROBOT_WALK} colors={robotColors("teal")} classes={ROBOT_CLASSES} px={4} />
+              </div>
+            </div>
+          </div>
+          <Weave cols={90} rows={8} hues={["indigo", "teal", "rose", "saffron"]} />
+        </div>
+      ) : null}
     </footer>
   );
 }

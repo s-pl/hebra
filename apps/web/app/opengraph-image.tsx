@@ -1,10 +1,16 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Hebra: version control for many agents at once";
+export const alt = "Hebra: version control for people and agents";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const THREADS = ["#e0533a", "#2f9a9e", "#e3a93b", "#7a4fc4", "#3f74c9"];
+/* The woven mark (see components/logo.tsx), with the light theme's colours. */
+const WEAVE = [
+  ["#de961f", null, "#178f78", null],
+  [null, "#4351c9", null, "#c53468"],
+  ["#de961f", null, "#178f78", null],
+  [null, "#4351c9", null, "#c53468"],
+];
 
 export default function OpengraphImage() {
   return new ImageResponse(
@@ -16,34 +22,48 @@ export default function OpengraphImage() {
         flexDirection: "column",
         justifyContent: "space-between",
         padding: 72,
-        background: "#faf8f3",
-        color: "#24201c",
+        background: "#e6e5df",
+        color: "#141414",
       }}
     >
       <div
-        style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 40, fontWeight: 600, letterSpacing: -1.4 }}
+        style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 40, fontWeight: 600, letterSpacing: -1.2 }}
       >
-        <svg width="56" height="56" viewBox="0 0 32 32" fill="none" strokeLinecap="round" aria-hidden="true">
-          <rect width="32" height="32" rx="9" fill="#24201c" />
-          <path d="M7.5 10c4.8 0 5.6 6 9.5 6" stroke="#2f9a9e" strokeWidth="2.6" />
-          <path d="M7.5 22c4.8 0 5.6-6 9.5-6" stroke="#e3a93b" strokeWidth="2.6" />
-          <path d="M17 16h7.5" stroke="#faf8f3" strokeWidth="2.6" />
-          <circle cx="17" cy="16" r="2.6" fill="#e0533a" stroke="#24201c" strokeWidth="1.2" />
-        </svg>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {WEAVE.map((row, y) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed pattern
+            <div key={y} style={{ display: "flex", gap: 4 }}>
+              {row.map((fill, x) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a fixed pattern
+                <div key={x} style={{ display: "flex", width: 11, height: 11, background: fill ?? "#b9b6ac" }} />
+              ))}
+            </div>
+          ))}
+        </div>
         hebra
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ display: "flex", fontSize: 78, fontWeight: 600, letterSpacing: -3, lineHeight: 1.02 }}>
-          Every agent gets its own thread.
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ display: "flex", fontSize: 22, letterSpacing: 2.5, color: "#5c5b57" }}>
+          HEBRA · VERSION CONTROL · V0.1
         </div>
-        <div style={{ display: "flex", fontSize: 30, color: "#6b625a" }}>
-          Version control built for humans and agents working together.
+        <div style={{ display: "flex", fontSize: 84, fontWeight: 600, letterSpacing: -3.5, lineHeight: 1 }}>
+          Version control for people and agents
         </div>
       </div>
-      <div style={{ display: "flex", gap: 14 }}>
-        {THREADS.map((c) => (
-          <div key={c} style={{ display: "flex", width: 180, height: 8, borderRadius: 4, background: c }} />
-        ))}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          padding: "18px 24px",
+          borderRadius: 10,
+          background: "#141414",
+          color: "#f2f1ec",
+          fontSize: 28,
+        }}
+      >
+        <span style={{ color: "#f2ae3e" }}>hb &gt;</span>
+        start &quot;add OAuth login&quot; --agent claude-code
       </div>
     </div>,
     size,

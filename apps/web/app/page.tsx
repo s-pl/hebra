@@ -1,10 +1,11 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { AGENTS, type AgentId, AgentLogo } from "@/components/agent-logo";
 import { CopyCommand } from "@/components/copy-command";
-import { ProductShot } from "@/components/landing/product-shot";
-import { SceneGate } from "@/components/landing/scene-gate";
-import { SpotlightGrid } from "@/components/landing/spotlight-grid";
-import { Term } from "@/components/landing/term";
+import { Cast } from "@/components/landing/cast";
+import { ConsoleShot } from "@/components/landing/console-shot";
+import { type Hue, Tiles } from "@/components/landing/pixel";
+import type { TermLine } from "@/components/landing/term";
 import { TypedTerm } from "@/components/landing/typed-term";
 import { Words } from "@/components/landing/words";
 import { SiteFooter } from "@/components/site-footer";
@@ -15,109 +16,119 @@ import { button } from "@/lib/ui";
 
 /* -------------------------------------------------------------- content */
 
-const STEPS = [
+type Row = { id: string; nav: string; title: string; body: string; hue: Hue; term: TermLine[] };
+
+const ROWS: Row[] = [
   {
-    n: "1",
-    title: "Each agent gets its own workspace",
-    body: "One command makes an isolated copy of the repository with a fresh change. Agents edit there; nothing they do touches your files or each other's.",
+    id: "workspaces",
+    nav: "Workspaces",
+    title: "Every agent gets its own room.",
+    body: "hb start makes an isolated copy of the repository with a fresh change. Agents work there. Nothing they do touches your files or each other's.",
+    hue: "indigo",
     term: [
       { cmd: 'hb start "add OAuth login" --agent claude-code' },
-      { out: "Started workspace add-oauth-login for: add OAuth login", tone: "ok" as const },
-      { out: "  change: rysttrtz   base: a6d6307d777f", tone: "dim" as const },
+      { out: "Started workspace add-oauth-login for: add OAuth login", tone: "ok" },
+      { out: "  change: rysttrtz   base: a6d6307d777f", tone: "dim" },
       { cmd: 'hb start "rate limit login" --agent codex' },
-      { out: "Started workspace rate-limit-login for: rate limit login", tone: "ok" as const },
+      { out: "Started workspace rate-limit-login for: rate limit login", tone: "ok" },
     ],
   },
   {
-    n: "2",
-    title: "Collisions show up before the merge",
-    body: "Agents claim files they are about to change. When two of them touch the same file, both are told right away, in the CLI, over MCP, and live in the hub.",
+    id: "claims",
+    nav: "Claims",
+    title: "Collisions show up before the merge.",
+    body: "Agents claim the files they are about to change. When two reach for the same one, both hear about it right away. In the CLI, over MCP and live in the hub.",
+    hue: "teal",
     term: [
       { cmd: "hb status" },
-      { out: "Changes:", tone: "dim" as const },
+      { out: "Changes:", tone: "dim" },
       { out: "  M src/auth.rs" },
-      { out: "Coordination warnings:", tone: "warn" as const },
-      { out: "  src/auth.rs is claimed by claude-code in add-oauth-login", tone: "warn" as const },
-      { out: "  (adding OAuth)", tone: "dim" as const },
+      { out: "Coordination warnings:", tone: "warn" },
+      { out: "  src/auth.rs is claimed by claude-code in add-oauth-login", tone: "warn" },
+      { out: "  (adding OAuth)", tone: "dim" },
     ],
   },
   {
-    n: "3",
-    title: "People review, then it lands",
-    body: "Agents open a review. Checks run on your own machines, an optional verifier reads the change against the task, and a person approves the merge.",
+    id: "conflicts",
+    nav: "Conflicts",
+    title: "A conflict never stops the loom.",
+    body: "A merge always finishes. Conflicts are saved inside the change and resolved when someone is ready, by a person or by another agent.",
+    hue: "rose",
     term: [
-      { cmd: "hb push --bookmark agents/claude-code/oauth -r @-" },
-      { cmd: 'hb review open agents/claude-code/oauth -t "Add OAuth login"' },
-      { out: "Opened review #12 into main", tone: "ok" as const },
-      { out: "  checks: test ✓  lint ✓   approvals: 0 of 1", tone: "dim" as const },
+      { cmd: "hb merge agents/codex/rate-limit" },
+      { out: "Merged into main.", tone: "ok" },
+      { out: "1 conflict saved in the change:", tone: "err" },
+      { out: "  src/auth.rs" },
+      { out: "Work continues. Resolve it later:", tone: "dim" },
+      { cmd: "hb resolve src/auth.rs" },
+    ],
+  },
+  {
+    id: "provenance",
+    nav: "Provenance",
+    title: "Every change knows who pulled the thread.",
+    body: "Person, agent, task, session and prompt. Kept in history, and carried into Git as trailers when you export.",
+    hue: "saffron",
+    term: [
+      { cmd: "hb show rysttrtz" },
+      { out: "author     claude-code (agent for samuel)" },
+      { out: "task       #31 add OAuth login" },
+      { out: "session    s_9f2c41", tone: "dim" },
+      { out: 'prompt     "Add GitHub OAuth to /login"', tone: "dim" },
     ],
   },
 ];
 
-type Feature = { title: string; body: string; icon: string; cloud?: boolean };
+type Feature = { title: string; body: string; sticker: string; cloud?: boolean };
 
 const FEATURES: Feature[] = [
   {
-    title: "Workspaces per agent",
-    body: "hb start gives each agent an isolated working copy in milliseconds. No worktrees, no stash.",
-    icon: "M2.5 3.5h11v9h-11zM2.5 6.5h11",
+    title: "JSON on every command",
+    body: "--json everywhere and stable error codes. Nothing ever waits for a keypress.",
+    sticker: "terminal",
   },
   {
-    title: "Claims and overlap warnings",
-    body: "Agents reserve files for a while; anyone touching them is warned before the work collides.",
-    icon: "M8 2.5v5l3 2M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z",
-  },
-  {
-    title: "Conflicts never block",
-    body: "A merge always finishes. Conflicts are stored in the change and resolved when someone is ready.",
-    icon: "M4 2.5v11M12 2.5v4a4 4 0 0 1-4 4H4",
-  },
-  {
-    title: "Provenance on every change",
-    body: "Who made it, for whom, under which task, from which session and prompt. Kept in history and in Git exports.",
-    icon: "M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4M8 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
+    title: "An MCP server",
+    body: "hb mcp exposes 32 tools, so any MCP client can drive a repository.",
+    sticker: "robot",
   },
   {
     title: "Mandates instead of tokens",
-    body: "Hand an agent a credential narrowed to one repo, a few operations and its own bookmarks. It expires, and revoking yours revokes it.",
-    icon: "M5.5 7V5a2.5 2.5 0 0 1 5 0v2M4 7h8v6.5H4z",
+    body: "A credential narrowed to one repo, a few operations and its own bookmarks. It expires, and revoking yours revokes it.",
+    sticker: "key",
   },
   {
     title: "Tasks with leases",
-    body: "Write tasks with acceptance criteria and dependencies. Agents claim one; if they stop, the claim runs out and someone else takes it.",
-    icon: "M2.5 4.5 4 6l2.5-2.5M2.5 10.5 4 12l2.5-2.5M9 5h4.5M9 11h4.5",
+    body: "An agent claims a task. If it stops, the lease runs out and someone else picks it up.",
+    sticker: "hourglass",
   },
   {
     title: "Checks on your machines",
     body: "Connect any computer as a runner. It pulls work over an outbound connection, so nothing is exposed. Always free.",
-    icon: "M2.5 3.5h11v7h-11zM5.5 13.5h5M8 10.5v3",
+    sticker: "checklist",
+  },
+  {
+    title: "Git in and out",
+    body: "Import a Git repository with its history. Export to Git deterministically, provenance included as trailers.",
+    sticker: "scissors",
   },
   {
     title: "Agent verification",
-    body: "A verifier agent reads the change against the task's contract and reports what is missing. Capped per run.",
-    icon: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM5.8 8.2l1.5 1.5 3-3.2",
+    body: "A verifier reads the change against the task's contract and reports what is missing. Capped per run.",
+    sticker: "shield",
     cloud: true,
   },
   {
     title: "Merge queue",
     body: "Approved reviews are merged together and tested once. A failing batch is split until the culprit is found.",
-    icon: "M2.5 4h11M2.5 8h11M2.5 12h6",
+    sticker: "spool",
     cloud: true,
   },
   {
     title: "Signed transparency log",
-    body: "Every bookmark move is hash-chained and the head is signed. hb verify-log catches a rewritten history, even by the server.",
-    icon: "M4 2.5h6l2.5 2.5v8.5h-8.5zM6 7h4M6 9.5h4",
-  },
-  {
-    title: "Built for agents to drive",
-    body: "--json on every command, stable error codes, an MCP server with 32 tools, nothing interactive.",
-    icon: "M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4",
-  },
-  {
-    title: "Git in and out",
-    body: "Import a Git repository with its history. Export to Git deterministically, provenance included as trailers.",
-    icon: "M4.5 5.6v4.8M11.5 10.4V7a2 2 0 0 0-2-2H7.5M4.5 2.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Zm0 8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Zm7 0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Z",
+    body: "Every bookmark move is hash-chained and signed. hb verify-log catches a rewritten history, even by the server.",
+    sticker: "scroll",
+    cloud: true,
   },
 ];
 
@@ -139,50 +150,78 @@ const GAPS = [
   "Cloud runners are not available yet",
 ];
 
+const AGENT_LIST: AgentId[] = ["claude-code", "codex", "cursor", "gemini-cli", "copilot"];
+
 /* ---------------------------------------------------------------- parts */
 
+/** The ruled frame every section sits in: a column with hairlines on both sides. */
+const FRAME = "mx-auto max-w-[1376px] border-line border-x";
+
+function Section({ id, label, children }: { id?: string; label: string; children: ReactNode }) {
+  return (
+    <section id={id} aria-label={label} className="scroll-mt-14 border-line border-b">
+      <div className={FRAME}>{children}</div>
+    </section>
+  );
+}
+
 function SectionHead({
+  n,
   eyebrow,
   title,
   intro,
-  center = false,
 }: {
+  n: number;
   eyebrow: string;
   title: ReactNode;
   intro?: ReactNode;
-  center?: boolean;
 }) {
   return (
-    <div className={center ? "mx-auto max-w-2xl text-center" : "max-w-2xl"}>
-      <p className="font-mono text-[12px] text-accent">{eyebrow}</p>
-      <h2 className="mt-3 text-balance font-semibold text-[30px] leading-[1.1] tracking-[-0.03em] sm:text-[38px]">
-        {title}
-      </h2>
-      {intro ? <p className="mt-4 text-pretty text-[16px] text-ink-2 leading-relaxed">{intro}</p> : null}
+    <div className="flex flex-wrap items-end justify-between gap-6 px-6 pt-20 pb-10 sm:px-8">
+      <div className="max-w-[720px]">
+        <p className="lbl">
+          {String(n).padStart(2, "0")} · {eyebrow}
+        </p>
+        <h2 className="mt-3 text-balance font-semibold text-[34px] leading-[1.05] tracking-[-0.035em] sm:text-[50px]">
+          {title}
+        </h2>
+      </div>
+      {intro ? <p className="max-w-[440px] text-pretty text-[16.5px] text-ink-2 leading-relaxed">{intro}</p> : null}
     </div>
   );
 }
 
-function FeatureIcon({ d }: { d: string }) {
+function Sticker({ name, width, className = "" }: { name: string; width: number; className?: string }) {
   return (
-    <span className="grid size-8 place-items-center rounded-md border border-line bg-surface-2 text-ink-2">
-      <svg
-        viewBox="0 0 16 16"
-        className="size-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d={d} />
-      </svg>
-    </span>
+    <Image
+      src={`/stickers/${name}.png`}
+      alt=""
+      width={width}
+      height={width}
+      unoptimized
+      className={`px-sticker h-auto ${className}`}
+      style={{ width }}
+    />
   );
 }
 
-const AGENT_LIST: AgentId[] = ["claude-code", "codex", "cursor", "gemini-cli", "copilot"];
+/** A terminal on a field of pixel tiles in the row's hue; it types when it scrolls into view. */
+function Picture({ row, order }: { row: Row; order: number }) {
+  return (
+    <div className="px-tiles-in relative min-h-[300px] min-w-0 flex-[2_1_480px] overflow-hidden rounded-[4px]">
+      <div className="absolute inset-0">
+        <Tiles hue={row.hue} />
+      </div>
+      <div className="relative flex min-h-[300px] items-center justify-center p-6">
+        <TypedTerm
+          className="w-full max-w-[560px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.5)]"
+          lines={row.term}
+          order={order}
+        />
+      </div>
+    </div>
+  );
+}
 
 /* ----------------------------------------------------------------- page */
 
@@ -190,297 +229,293 @@ export default function Home() {
   return (
     <>
       <SiteHeader />
-      <main id="main">
+      <main id="main" className="pt-14">
         {/* Hero */}
-        <section className="relative overflow-hidden pt-14">
-          <div aria-hidden="true" className="grid-backdrop pointer-events-none absolute inset-0" />
-          <div className="relative mx-auto max-w-[1200px] px-4 pt-20 pb-10 text-center sm:px-6 sm:pt-28">
-            <SmartLink
-              href={SITE.repo}
-              className="rise inline-flex h-7 items-center gap-2 rounded-full border border-line bg-surface px-3 text-[12.5px] text-ink-2 hover:border-line-strong hover:text-ink"
-            >
-              <span className="size-1.5 rounded-full bg-accent" />
-              Early preview · open source
-              <span aria-hidden="true" className="nudge text-ink-3">
-                →
-              </span>
-            </SmartLink>
-            <h1 className="mx-auto mt-6 max-w-[16ch] text-balance font-semibold text-[42px] leading-[1.02] tracking-[-0.045em] sm:text-[64px] lg:text-[76px]">
-              <Words text="Version control for people and agents" start={80} step={55} />
-            </h1>
-            <p className="rise mx-auto mt-6 max-w-[58ch] text-pretty text-[16.5px] text-ink-2 leading-relaxed [animation-delay:420ms] sm:text-[18px]">
-              Hebra gives every coding agent its own workspace, warns when two of them touch the same file, and records
-              who asked for each change. People review and merge. Self-host it for free or use Hebra Cloud.
-            </p>
-            <div className="rise mt-9 flex flex-wrap items-center justify-center gap-3 [animation-delay:520ms]">
-              <SmartLink href="#start" className={button({ variant: "primary", size: "lg" })}>
-                Get started
+        <section aria-label="Introduction" className="border-line border-b">
+          <div className={FRAME}>
+            <div className="flex flex-col items-center gap-7 px-6 pt-20 text-center sm:pt-28">
+              <SmartLink
+                href={SITE.repo}
+                className="rise inline-flex h-7 items-center gap-2 rounded-[4px] border border-line-strong bg-surface-3 px-2.5 font-mono text-[11px] text-ink-2 uppercase tracking-[0.06em] hover:text-ink"
+              >
+                <span aria-hidden="true" className="flex gap-px">
+                  <span className="size-1 bg-[#F2AE3E]" />
+                  <span className="size-1 bg-[#E0507F]" />
+                  <span className="size-1 bg-[#22AE93]" />
+                </span>
+                v0.1 early preview · open source
                 <span aria-hidden="true" className="nudge">
                   →
                 </span>
               </SmartLink>
-              <SmartLink href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
-                Self-host or Cloud
-              </SmartLink>
+              <h1 className="max-w-[15ch] text-balance font-semibold text-[46px] leading-[0.98] tracking-[-0.05em] sm:text-[72px] lg:text-[88px]">
+                <Words text="Version control for people and agents" start={80} step={55} />
+              </h1>
+              <p className="rise max-w-[58ch] text-pretty text-[17px] text-ink-2 leading-relaxed [animation-delay:420ms] sm:text-[18.5px]">
+                Hebra gives every coding agent its own workspace, warns when two of them touch the same file, and
+                records who asked for each change. People review and merge. Self-host it for free or use Hebra Cloud.
+              </p>
+              <div className="rise flex flex-wrap items-center justify-center gap-2.5 [animation-delay:520ms]">
+                <SmartLink href="#start" className={button({ variant: "primary", size: "lg" })}>
+                  Get started
+                  <span aria-hidden="true" className="nudge">
+                    →
+                  </span>
+                </SmartLink>
+                <SmartLink href="/pricing" className={button({ variant: "secondary", size: "lg" })}>
+                  Self-host or Cloud
+                </SmartLink>
+              </div>
             </div>
-          </div>
-
-          <div className="relative mx-auto max-w-[1080px] px-4 pb-20 sm:px-6">
-            <div
-              aria-hidden="true"
-              className="rise signal-glow pointer-events-none absolute inset-x-10 -top-10 bottom-10 [animation-delay:500ms] [animation-duration:1600ms]"
-            />
-            <SceneGate className="shot-in relative">
-              <ProductShot />
-            </SceneGate>
-          </div>
-
-          <div className="relative border-line border-y bg-surface/40">
-            <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-center gap-x-8 gap-y-4 px-4 py-6 sm:px-6">
-              <span className="text-[12.5px] text-ink-3">Works with</span>
-              {AGENT_LIST.map((a) => (
-                <span key={a} className="flex items-center gap-2 text-[13.5px] text-ink-2">
-                  <AgentLogo agent={a} size={18} />
-                  {AGENTS[a].title}
-                </span>
-              ))}
-              <span className="font-mono text-[12.5px] text-ink-3">any shell via --json</span>
-            </div>
+            <Cast />
           </div>
         </section>
+
+        {/* The hub, as a console */}
+        <Section label="The hub">
+          <div className="grid gap-8 px-4 py-10 sm:px-8 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
+            <div className="lg:pt-2">
+              <p className="lbl">The hub</p>
+              <p className="mt-3 text-balance font-semibold text-[24px] leading-tight tracking-[-0.02em]">
+                See every hebra at work, like channels on a desk.
+              </p>
+              <p className="mt-3 text-[14.5px] text-ink-2 leading-relaxed">
+                Each agent and person working in the repository gets a channel: what it is editing, what it claimed, and
+                a light that turns rose when two of them touch the same file.
+              </p>
+            </div>
+            <div className="shot-in">
+              <ConsoleShot />
+            </div>
+          </div>
+        </Section>
+
+        {/* Works with */}
+        <Section label="Works with">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]">
+            <div className="lbl flex items-center border-line border-r px-6 py-6">Works with</div>
+            {AGENT_LIST.map((a) => (
+              <div
+                key={a}
+                className="flex items-center gap-2.5 border-line border-r px-6 py-6 font-medium text-[14.5px] text-ink-2"
+              >
+                <AgentLogo agent={a} size={18} />
+                {AGENTS[a].title}
+              </div>
+            ))}
+            <div className="flex items-center px-6 py-6 font-mono text-[12.5px] text-ink-3">any MCP client</div>
+          </div>
+        </Section>
 
         {/* How it works */}
-        <section id="how" className="scroll-mt-14">
-          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
-            <SectionHead
-              eyebrow="How it works"
-              title="Many agents in one repository, without stepping on each other"
-              intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
-            />
-            <ol className="mt-14 grid gap-5 lg:grid-cols-3">
-              {STEPS.map((s, i) => (
-                <li key={s.n} className="reveal flex flex-col rounded-xl border border-line bg-surface p-5">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-6 place-items-center rounded-full border border-line font-mono text-[11.5px] text-ink-2">
-                      {s.n}
-                    </span>
-                    <h3 className="font-medium text-[15px]">{s.title}</h3>
+        <Section id="how" label="How it works">
+          <SectionHead
+            n={1}
+            eyebrow="How it works"
+            title="Many agents in one repository, without stepping on each other."
+            intro="Git was built for people taking turns. Agents don't take turns. Hebra keeps them apart while they work and brings their work together under review."
+          />
+          <div className="flex flex-wrap border-line border-t">
+            <nav aria-label="How it works" className="flex-[1_1_220px] p-6 sm:p-8">
+              <div className="sticky top-20 grid overflow-hidden rounded-md border border-line bg-surface font-medium text-[14px]">
+                {ROWS.map((r, i) => (
+                  <a
+                    key={r.id}
+                    href={`#${r.id}`}
+                    className={`flex min-h-11 items-center gap-2.5 px-3.5 text-ink-2 hover:bg-surface-2 hover:text-ink ${i > 0 ? "border-line border-t" : ""}`}
+                  >
+                    <span className="cap">{i + 1}</span>
+                    {r.nav}
+                  </a>
+                ))}
+              </div>
+            </nav>
+            <div className="min-w-0 flex-[999_1_760px] border-line border-l">
+              {ROWS.map((r, i) => (
+                <div
+                  key={r.id}
+                  id={r.id}
+                  className={`flex scroll-mt-20 gap-8 border-line p-6 sm:p-8 ${i % 2 ? "flex-wrap-reverse" : "flex-wrap"} ${i < ROWS.length - 1 ? "border-b" : ""}`}
+                >
+                  {i % 2 ? <Picture row={r} order={i} /> : null}
+                  <div className="flex flex-[1_1_280px] flex-col gap-3.5">
+                    <h3 className="text-balance font-semibold text-[28px] leading-[1.12] tracking-[-0.02em]">
+                      {r.title}
+                    </h3>
+                    <p className="text-[15px] text-ink-2 leading-relaxed">{r.body}</p>
                   </div>
-                  <p className="mt-3 text-[14px] text-ink-2 leading-relaxed">{s.body}</p>
-                  <TypedTerm className="mt-5" lines={s.term} order={i} />
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* Features */}
-        <section id="features" className="scroll-mt-14 border-line border-t">
-          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
-            <SectionHead
-              eyebrow="Features"
-              title="Everything a team of agents needs, and nothing that gets in their way"
-              intro="The core runs on your machine. The server adds collaboration: reviews, tasks, checks, and an audit trail you can verify yourself."
-            />
-            <SpotlightGrid className="reveal mt-14 grid overflow-hidden rounded-xl border border-line bg-line [gap:1px] sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map((f) => (
-                <div key={f.title} className="spot bg-bg p-6">
-                  <div className="flex items-center justify-between">
-                    <FeatureIcon d={f.icon} />
-                    {f.cloud ? (
-                      <span className="rounded border border-line px-1.5 font-mono text-[10.5px] text-ink-3">
-                        cloud
-                      </span>
-                    ) : null}
-                  </div>
-                  <h3 className="mt-4 font-medium text-[14.5px]">{f.title}</h3>
-                  <p className="mt-1.5 text-[13.5px] text-ink-3 leading-relaxed">{f.body}</p>
+                  {i % 2 ? null : <Picture row={r} order={i} />}
                 </div>
               ))}
-            </SpotlightGrid>
+            </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Agents */}
-        <section id="agents" className="scroll-mt-14 border-line border-t">
-          <div className="mx-auto grid max-w-[1200px] items-center gap-12 px-4 py-24 sm:px-6 lg:grid-cols-2">
-            <div>
-              <SectionHead
-                eyebrow="For agents"
-                title="Agents are users, not an afterthought"
-                intro="Everything a person can do from the CLI, an agent can do over MCP or with --json, and every action is recorded as the agent, on behalf of the person who sent it."
-              />
-              <ul className="mt-8 grid gap-3 text-[14px] text-ink-2">
-                {[
-                  "Nothing interactive: no prompts, no pagers, no editors",
-                  "Errors carry stable codes agents can branch on",
-                  "Identity from the environment: HB_ACTOR, HB_TASK, HB_PROMPT",
-                  "Claude Code is detected automatically",
-                ].map((t) => (
-                  <li key={t} className="flex gap-3">
-                    <span className="mt-[9px] size-1 shrink-0 rounded-full bg-accent" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="grid gap-4">
-              <Term
-                title="claude code"
-                lines={[
-                  { cmd: "claude mcp add hebra -- hb mcp" },
-                  { out: "Added stdio MCP server hebra", tone: "ok" },
-                  { gap: true },
-                  { cmd: "hb mandate grant --agent claude-code --repo acme/web --ttl 8h" },
-                  { out: "hbm_…", tone: "accent" },
-                  { out: "For claude-code until 18:42: read, push, review, task on acme/web,", tone: "dim" },
-                  { out: "bookmarks agents/claude-code/*. Give it to the agent as HB_TOKEN.", tone: "dim" },
-                ]}
-              />
-              <Term
-                title="--json"
-                lines={[
-                  { cmd: "hb status --json" },
-                  { out: '{ "changes": [{ "path": "src/auth.rs", "status": "modified" }],', tone: "dim" },
-                  { out: '  "warnings": { "claimed_by_others": [{ "claim": {', tone: "warn" },
-                  { out: '    "actor": { "kind": "agent", "name": "claude-code" },', tone: "warn" },
-                  { out: '    "path": "src/auth.rs", "note": "adding OAuth" } }] } }', tone: "warn" },
-                ]}
-              />
-            </div>
+        {/* Built for agents */}
+        <Section id="features" label="Built for agents">
+          <SectionHead
+            n={2}
+            eyebrow="Built for agents"
+            title="Built for agents to drive."
+            intro="Nothing in hb waits for a keypress. Agents get structured answers, their own credentials and work they can pick up and hand back."
+          />
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] border-line border-t">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="-mr-px -mb-px flex gap-4 border-line border-r border-b px-6 py-7 sm:px-8">
+                <Sticker name={f.sticker} width={48} className="shrink-0 self-start" />
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <h3 className="flex flex-wrap items-center gap-2 font-semibold text-[16.5px]">
+                    {f.title}
+                    {f.cloud ? <span className="cap">cloud</span> : null}
+                  </h3>
+                  <p className="text-[14.5px] text-ink-2 leading-relaxed">{f.body}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        </section>
+        </Section>
 
         {/* Versus Git */}
-        <section id="versus-git" className="scroll-mt-14 border-line border-t">
-          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
-            <SectionHead
-              eyebrow="Compared with Git"
-              title="Keep Git where it fits. Use Hebra where agents work."
-              intro="Hebra imports Git history and exports back to Git, so GitHub and your CI keep working while agents work in Hebra."
-            />
-            <div className="mt-12 overflow-x-auto rounded-xl border border-line">
-              <table className="w-full min-w-[640px] text-left text-[13.5px]">
-                <thead>
-                  <tr className="border-line border-b bg-surface">
-                    <th scope="col" className="w-1/3 px-5 py-3 font-medium text-ink-3">
-                      {" "}
+        <Section id="versus-git" label="Compared with Git">
+          <SectionHead
+            n={3}
+            eyebrow="Compared with Git"
+            title="Keep Git where it fits. Use Hebra where agents work."
+            intro="Hebra imports Git history and exports back to Git, so GitHub and your CI keep working while agents work in Hebra."
+          />
+          <div className="overflow-x-auto border-line border-t">
+            <table className="w-full min-w-[640px] text-left text-[14px]">
+              <thead>
+                <tr className="border-line border-b bg-surface-2">
+                  <th scope="col" className="w-1/3 px-6 py-3 sm:px-8">
+                    <span className="sr-only">What</span>
+                  </th>
+                  <th scope="col" className="lbl border-line border-l px-6 py-3 font-medium">
+                    Git
+                  </th>
+                  <th scope="col" className="lbl border-line border-l px-6 py-3 font-medium text-ink">
+                    Hebra
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {VERSUS.map(([what, git, hebra]) => (
+                  <tr key={what} className="border-line border-b last:border-b-0">
+                    <th scope="row" className="px-6 py-3.5 font-normal text-ink-2 sm:px-8">
+                      {what}
                     </th>
-                    <th scope="col" className="px-5 py-3 font-medium text-ink-3">
-                      Git
-                    </th>
-                    <th scope="col" className="px-5 py-3 font-medium">
-                      Hebra
-                    </th>
+                    <td className="border-line border-l px-6 py-3.5 text-ink-3">{git}</td>
+                    <td className="border-line border-l px-6 py-3.5 font-medium">{hebra}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {VERSUS.map(([what, git, hebra]) => (
-                    <tr key={what} className="border-line border-b last:border-b-0">
-                      <th scope="row" className="px-5 py-3 font-normal text-ink-2">
-                        {what}
-                      </th>
-                      <td className="px-5 py-3 text-ink-3">{git}</td>
-                      <td className="px-5 py-3">{hebra}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </section>
+        </Section>
 
         {/* Get started */}
-        <section id="start" className="scroll-mt-14 border-line border-t">
-          <div className="mx-auto max-w-[1200px] px-4 py-24 sm:px-6">
-            <SectionHead
-              eyebrow="Get started"
-              title="Try it on a repository you don't mind breaking"
-              intro="Install the CLI, import a project, and start two agents. It takes about a minute."
-            />
-            <div className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-              <div className="rounded-xl border border-line bg-surface p-6">
-                <h3 className="font-medium text-[15px]">On your machine</h3>
-                <ol className="mt-5 grid gap-5">
-                  {(
-                    [
-                      ["Install hb", "cargo install --locked --git https://github.com/s-pl/hebra hebra-cli"],
-                      ["Import a project (it honours .gitignore)", "cd my-app && hb init"],
-                      ["Start a workspace for an agent", 'hb start "add OAuth login" --agent claude-code'],
-                      ["Let your agent use it", "claude mcp add hebra -- hb mcp"],
-                    ] as [string, string][]
-                  ).map(([label, cmd], i) => (
-                    <li key={cmd} className="grid gap-2">
-                      <p className="text-[13px] text-ink-2">
-                        <span className="mr-2 font-mono text-ink-3">{i + 1}</span>
-                        {label}
-                      </p>
-                      <div className="grid [&>*]:min-w-0">
-                        <CopyCommand command={cmd} />
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-                <p className="mt-6 text-[12.5px] text-ink-3">
-                  Prefer a binary? Download hb for macOS, Linux or Windows from the{" "}
-                  <SmartLink
-                    href={`${SITE.repo}/releases`}
-                    className="text-ink-2 underline underline-offset-4 hover:text-ink"
-                  >
-                    releases page
-                  </SmartLink>
-                  , with checksums and signed provenance.
-                </p>
-              </div>
-              <div className="grid gap-5">
-                <div className="flex flex-col rounded-xl border border-line bg-surface p-6">
-                  <p className="font-mono text-[11.5px] text-ink-3">Self-hosted</p>
-                  <h3 className="mt-1 font-medium text-[15px]">Hebra Community</h3>
-                  <p className="mt-2 text-[13.5px] text-ink-2 leading-relaxed">
-                    The whole server on your hardware, free forever. One binary, or Kubernetes with Postgres, S3 and
-                    NATS.
-                  </p>
-                  <SmartLink
-                    href={`${SITE.repo}/tree/main/deploy`}
-                    className={button({ variant: "secondary", size: "sm", className: "mt-5 self-start" })}
-                  >
-                    Deployment guide
-                  </SmartLink>
-                </div>
-                <div className="flex flex-col rounded-xl border border-[color-mix(in_oklch,var(--accent)_35%,var(--border))] bg-surface p-6">
-                  <p className="font-mono text-[11.5px] text-accent">Hosted</p>
-                  <h3 className="mt-1 font-medium text-[15px]">Hebra Cloud</h3>
-                  <p className="mt-2 text-[13.5px] text-ink-2 leading-relaxed">
-                    We run it for you, with agent verification and a merge queue. Free to start; agents never count as
-                    seats.
-                  </p>
-                  <div className="mt-5 flex gap-2">
-                    <SmartLink href="/login" className={button({ variant: "accent", size: "sm" })}>
-                      Start free
-                    </SmartLink>
-                    <SmartLink href="/pricing" className={button({ variant: "ghost", size: "sm" })}>
-                      Pricing
-                    </SmartLink>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-10 rounded-xl border border-line border-dashed p-6">
-              <p className="font-medium text-[13.5px]">Known gaps in v0.1</p>
-              <ul className="mt-3 grid gap-x-8 gap-y-1.5 text-[13.5px] text-ink-3 sm:grid-cols-2">
-                {GAPS.map((g) => (
-                  <li key={g} className="flex gap-2.5">
-                    <span aria-hidden="true">–</span>
-                    {g}
+        <Section id="start" label="Get started">
+          <SectionHead
+            n={4}
+            eyebrow="Get started"
+            title="Try it on a repo you don't mind breaking."
+            intro="Install the CLI, import a project, and start two agents. It takes about a minute."
+          />
+          <div className="grid border-line border-t lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+            <div className="px-6 py-8 sm:px-8">
+              <p className="lbl">On your machine</p>
+              <ol className="mt-5 grid gap-4">
+                {(
+                  [
+                    ["Install hb", "cargo install --locked --git https://github.com/s-pl/hebra hebra-cli"],
+                    ["Import a project (it honours .gitignore)", "cd my-app && hb init"],
+                    ["Start a workspace for an agent", 'hb start "add OAuth login" --agent claude-code'],
+                    ["Let your agent use it", "claude mcp add hebra -- hb mcp"],
+                  ] as [string, string][]
+                ).map(([label, cmd], i) => (
+                  <li key={cmd} className="grid gap-2">
+                    <p className="flex items-center gap-2.5 text-[13.5px] text-ink-2">
+                      <span className="cap">{i + 1}</span>
+                      {label}
+                    </p>
+                    <div className="grid [&>*]:min-w-0">
+                      <CopyCommand command={cmd} />
+                    </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
+              <p className="mt-6 text-[12.5px] text-ink-3">
+                Prefer a binary? Download hb for macOS, Linux or Windows from the{" "}
+                <SmartLink
+                  href={`${SITE.repo}/releases`}
+                  className="text-ink-2 underline underline-offset-4 hover:text-ink"
+                >
+                  releases page
+                </SmartLink>
+                , with checksums and signed provenance.
+              </p>
+            </div>
+            <div className="grid border-line max-lg:border-t lg:border-l">
+              <div className="flex flex-col border-line border-b px-6 py-8 sm:px-8">
+                <div className="flex items-center justify-between">
+                  <p className="lbl">Self-hosted</p>
+                  <Sticker name="flag" width={36} />
+                </div>
+                <h3 className="mt-2 font-semibold text-[17px]">Hebra Community</h3>
+                <p className="mt-2 text-[14px] text-ink-2 leading-relaxed">
+                  The whole server on your hardware, free forever. One binary, or Kubernetes with Postgres, S3 and NATS.
+                </p>
+                <SmartLink
+                  href={`${SITE.repo}/tree/main/deploy`}
+                  className={button({ variant: "secondary", size: "sm", className: "mt-5 self-start" })}
+                >
+                  Deployment guide
+                </SmartLink>
+              </div>
+              <div className="flex flex-col bg-ink px-6 py-8 text-bg sm:px-8">
+                <div className="flex items-center justify-between">
+                  <p className="lbl text-bg/60">Hosted</p>
+                  <Sticker name="shuttle" width={44} />
+                </div>
+                <h3 className="mt-2 font-semibold text-[17px]">Hebra Cloud</h3>
+                <p className="mt-2 text-[14px] text-bg/75 leading-relaxed">
+                  We run it for you, with agent verification and a merge queue. Free to start; agents never count as
+                  seats.
+                </p>
+                <div className="mt-5 flex gap-2">
+                  <SmartLink href="/login" className={button({ variant: "secondary", size: "sm" })}>
+                    Start free
+                  </SmartLink>
+                  <SmartLink
+                    href="/pricing"
+                    className={button({
+                      variant: "ghost",
+                      size: "sm",
+                      className: "text-bg/80 hover:bg-bg/10 hover:text-bg",
+                    })}
+                  >
+                    Pricing
+                  </SmartLink>
+                </div>
+              </div>
             </div>
           </div>
-        </section>
+          <div className="border-line border-t px-6 py-6 sm:px-8">
+            <p className="lbl">Known gaps in v0.1</p>
+            <ul className="mt-3 grid gap-x-8 gap-y-1.5 text-[13.5px] text-ink-2 sm:grid-cols-2">
+              {GAPS.map((g) => (
+                <li key={g} className="flex gap-2.5">
+                  <span aria-hidden="true" className="text-ink-3">
+                    –
+                  </span>
+                  {g}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Section>
       </main>
-      <SiteFooter />
+      <SiteFooter pixel />
     </>
   );
 }
