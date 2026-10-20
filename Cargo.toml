@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -11,9 +11,9 @@ repository = "https://github.com/s-pl/hebra"
 homepage = "https://hebra.dev"
 
 [workspace.dependencies]
-hebra-core = { path = "crates/core", version = "0.1.0" }
-hebra-server = { path = "crates/server", version = "0.1.0" }
-hebra-mandate = { path = "crates/mandate", version = "0.1.0" }
+hebra-core = { path = "crates/core", version = "0.2.0" }
+hebra-server = { path = "crates/server", version = "0.2.0" }
+hebra-mandate = { path = "crates/mandate", version = "0.2.0" }
 anyhow = "1.0.104"
 async-nats = { version = "0.50.0", default-features = false, features = ["ring", "jetstream", "nkeys"] }
 axum = "0.8.9"

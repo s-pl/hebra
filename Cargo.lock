@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "hebra-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1398,7 +1398,7 @@ dependencies = [
 
 [[package]]
 name = "hebra-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "hebra-load"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "hebra-mandate"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "biscuit-auth",
  "ed25519-dalek",
@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "hebra-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1470,6 +1470,7 @@ dependencies = [
  "object_store",
  "rand 0.10.3",
  "reqwest",
+ "rusqlite",
  "rustls",
  "serde",
  "serde_json",

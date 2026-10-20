@@ -2,7 +2,7 @@
 
 **Version control built for the agent era.** Hundreds of agents and people work in the same repository at once — isolated, coordinated, and never blocked by a merge.
 
-> Status: early preview (v0.1). The local core, the `hb` CLI, the `hebra-server` and the web hub work today.
+> Status: early preview (v0.2). The local core, the `hb` CLI, the `hebra-server` and the web hub work today. Website and demo hub: https://hebra.samuelponceluna.workers.dev
 
 **Docs:** [guide](docs/guide.md) · [agents](docs/agents.md) · [coming from Git](docs/migrating-from-git.md) · [self-hosting](docs/self-hosting.md)
 
@@ -97,14 +97,14 @@ Every commit's tree survives the round trip Git → Hebra → Git byte for byte,
 
 ```
 repo                      commits    files    import    export    git st     hb st result
-s-pl/hebra                     21      242    1903ms     354ms      62ms      78ms identical
-sharkdp/hyperfine            1213       75   12215ms    1341ms      58ms      66ms identical
-BurntSushi/ripgrep           2287      237   36285ms    8303ms      86ms     109ms identical
-sharkdp/fd                   2052       60   21475ms    2534ms      65ms      88ms identical
-tokio-rs/axum                2023      505   61203ms   17551ms      79ms     100ms identical
+s-pl/hebra                     30      251     213ms     377ms      67ms      86ms identical
+sharkdp/hyperfine            1213       75     725ms    1015ms      53ms      73ms identical
+BurntSushi/ripgrep           2287      237    2734ms    4388ms      60ms      82ms identical
+sharkdp/fd                   2052       60    1008ms    1884ms      49ms      73ms identical
+tokio-rs/axum                2023      505    5729ms    3939ms      81ms     111ms identical
 ```
 
-(Windows 11, release build. Submodules come along as pinned commits, like a fresh Git clone.)
+(Windows 11, release build, pack files. Submodules come along as pinned commits, like a fresh Git clone.)
 
 ## Sharing work: the Hebra server
 
@@ -196,9 +196,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the heavier checks, and [SECURITY.md]
 
 ## Roadmap
 
-- **Now (v0.1):** BLAKE3 content-addressed store with Merkle trees, operation log with undo, one workspace per agent, claims and overlap warnings, three-way merge with conflicts as data, provenance on every change, symlinks and executable bits on every OS, MCP server, `--json`, exact Git import/export, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, checks and runners, live events, web hub.
-- **Next:** structural (syntax-tree) merge, pack files for faster imports, undo that rebases later changes.
-- **Later:** semantic history search, lazy fetch for huge monorepos, hosted Hebra.
+- **Now (v0.2):** BLAKE3 content-addressed store with Merkle trees and pack files, operation log with undo that keeps later work, one workspace per agent, claims and overlap warnings, three-way merge with conflicts as data and structural merge for Rust, TypeScript, JavaScript, Python, Go and Java, provenance on every change, symlinks, submodules and executable bits on every OS, MCP server, `--json`, exact Git import/export, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, checks and runners, live events, web hub.
+- **Next:** hosted Hebra (server on a VPS behind Cloudflare), structural merge for more languages, lazy fetch for large repositories.
+- **Later:** semantic history search, SDKs generated from the API.
 
 ## License
 
