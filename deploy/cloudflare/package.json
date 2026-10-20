@@ -1,0 +1,10 @@
+{
+  "name": "hebra-site",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "cf": "1.0.0-beta.20",
+    "wrangler": "4.151.3"
+  },
+  "description": "The Hebra website on Cloudflare Workers: static assets only (free plan)."
+}

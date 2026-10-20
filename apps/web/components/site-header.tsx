@@ -12,7 +12,7 @@ const LINKS = [
   { href: "/#how", label: "How it works" },
   { href: "/#features", label: "Features" },
   { href: "/pricing", label: "Pricing" },
-  { href: `${SITE.repo}#readme`, label: "Docs" },
+  { href: `${SITE.repo}/blob/main/docs/README.md`, label: "Docs" },
 ];
 
 /**

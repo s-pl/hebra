@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# A local demo: a hebra-server with one repository where a person (ana) and two
-# agents (claude-code, codex) push work, merge it, and edit the same file.
+# A local demo: a hebra-server with one public repository where a person (ana)
+# and two agents (claude-code, codex) push work, open reviews, take tasks, run
+# checks on a local runner, merge, and edit the same file.
 #
 #   cargo build && scripts/demo.sh            # then open http://localhost:3000/hub
 #
@@ -23,7 +24,7 @@ export HEBRA_PUBLIC_URL="${HEBRA_PUBLIC_URL:-http://localhost:3000}"
 
 # A person (site administrator), her repository, and her mandate.
 LINK=$("$SERVER" --data "$DATA" user create ana --name Ana --admin 2>/dev/null)
-"$SERVER" --data "$DATA" repo create ana/acme >/dev/null
+"$SERVER" --data "$DATA" repo create ana/acme --public >/dev/null
 ANA=$("$SERVER" --data "$DATA" mandate issue ana --label demo 2>/dev/null)
 echo "$ANA" > "$WORK/ana.token"
 
@@ -59,13 +60,31 @@ mkdir -p src
 printf 'pub fn login(email: &str, password: &str) -> Result<Session> {\n    let user = find_user(email)?;\n    verify_password(&user, password)?;\n    Ok(Session::new(user))\n}\n' > src/auth.rs
 printf 'fn main() {\n    println!("acme");\n}\n' > src/main.rs
 printf '# acme\n\nThe acme app.\n' > README.md
+mkdir -p .hb
+printf '[[check]]\nname = "build"\nrun = "echo building acme"\non = ["review", "push:main"]\n\n[[check]]\nname = "test"\nrun = "echo 12 tests passed"\non = ["review", "push:main"]\n' > .hb/checks.toml
 "$HB" commit -m "Initial import of the acme app" >/dev/null
 "$HB" push --bookmark main -r @-
+
+echo "ana plans the work as tasks"
+"$HB" task create "Add Google sign-in" --accept "Users can sign in with a Google account" \
+  --accept "Every login is audited" >/dev/null
+"$HB" task create "Document local development" --accept "README explains how to run the app" >/dev/null
+"$HB" task create "Rate-limit logins" --accept "At most 5 failed attempts per minute" >/dev/null
+
+# A runner on this machine runs the checks (run_checks: until none is left).
+HB_TOKEN="$ANA" "$HB" runner register --owner ana --name laptop --server "http://$ADDR" >/dev/null
+run_checks() {
+  for _ in 1 2 3 4 5 6; do
+    HB_TOKEN="$ANA" timeout 20 "$HB" runner start laptop --once >/dev/null 2>&1 || break
+  done
+}
+run_checks
 
 echo "claude-code adds Google sign-in on its own bookmark"
 clone claude claude-code "$CLAUDE"
 cd "$WORK/claude"
 "$HB" pull >/dev/null && "$HB" new main >/dev/null
+agent claude-code "$HB" task claim 1 >/dev/null
 printf 'pub fn login(email: &str, password: &str) -> Result<Session> {\n    let user = find_user(email)?;\n    verify_password(&user, password)?;\n    audit::log(&user, Event::Login);\n    Ok(Session::new(user))\n}\n\npub fn login_with_google(token: &str) -> Result<Session> {\n    let claims = google::verify(token)?;\n    let user = find_or_create(&claims.email)?;\n    Ok(Session::new(user))\n}\n' > src/auth.rs
 HB_TASK="Add Google sign-in" HB_SESSION=sess_7Kq2 HB_PROMPT="Add Google sign-in to the login page" \
   agent claude-code "$HB" commit -m "Add Google sign-in" >/dev/null
@@ -84,6 +103,7 @@ HB_TASK="Document local setup" agent codex "$HB" commit -m "Document local devel
 agent codex "$HB" push --bookmark agents/codex/docs -r @-
 
 agent codex "$HB" review open agents/codex/docs --title "Document local development"
+run_checks
 
 echo "ana approves claude-code's review; the server merges it into main"
 cd "$WORK/ana"

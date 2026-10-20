@@ -9,18 +9,20 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const [origin, base, outDir, maxPages = "400"] = process.argv.slice(2);
-if (!origin || !base || !outDir) {
-  console.error("usage: static-preview.mjs <origin> <base path> <out dir> [max pages]");
+const [origin, basePath, outDir, maxPages = "400"] = process.argv.slice(2);
+if (!origin || !basePath || !outDir) {
+  console.error("usage: static-preview.mjs <origin> <base path, or / for the root> <out dir> [max pages]");
   process.exit(2);
 }
+// At the root of a domain the base is empty, so routes keep their leading slash.
+const base = basePath === "/" ? "" : basePath;
 
 // Pages that need a signed-in person or the server to act; not worth saving.
 const SKIP = [/^\/auth\//, /^\/login\/(device|invite)/, /^\/settings/, /^\/hub\/new/, /^\/hub\/api\//, /^\/hub\/login/];
 
 const pages = new Set();
 const assets = new Set();
-const queue = [base];
+const queue = [base || "/"];
 mkdirSync(outDir, { recursive: true });
 
 function local(url) {

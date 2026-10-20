@@ -439,7 +439,7 @@ export default function Home() {
               <ol className="mt-5 grid gap-4">
                 {(
                   [
-                    ["Install hb", "cargo install --locked --git https://github.com/s-pl/hebra hebra-cli"],
+                    ["Install hb", "curl -fsSL https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.sh | sh"],
                     ["Import a project (it honours .gitignore)", "cd my-app && hb init"],
                     ["Start a workspace for an agent", 'hb start "add OAuth login" --agent claude-code'],
                     ["Let your agent use it", "claude mcp add hebra -- hb mcp"],
