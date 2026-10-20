@@ -8,6 +8,7 @@ image:
   pullPolicy: Never
 
 server:
+  publicUrl: https://hebra.localtest.me
   autoscaling: { enabled: true, minReplicas: 3, maxReplicas: 6 }
   resources:
     requests: { cpu: 100m, memory: 128Mi }

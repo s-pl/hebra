@@ -9,6 +9,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Git Bash on Windows: native paths for kubectl and helm.
+if command -v cygpath >/dev/null; then
+  ROOT=$(cygpath -m "$ROOT")
+  export MSYS_NO_PATHCONV=1
+fi
 CLUSTER="${CLUSTER:-hebra}"
 
 kind get clusters | grep -qx "$CLUSTER" || kind create cluster --name "$CLUSTER" --wait 120s
@@ -35,6 +40,9 @@ for ns in hebra storage; do
 done
 kubectl -n hebra get secret hebra-encryption >/dev/null 2>&1 ||
   kubectl -n hebra create secret generic hebra-encryption --from-literal=keys="$(rand)"
+kubectl -n hebra get secret hebra-mandate >/dev/null 2>&1 ||
+  kubectl -n hebra create secret generic hebra-mandate \
+    --from-literal=key="$(docker run --rm hebra-server:dev keygen mandate)"
 
 kubectl apply -f "$ROOT/deploy/kind/prereqs.yaml"
 kubectl -n storage rollout status deploy/rustfs --timeout=300s

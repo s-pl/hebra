@@ -195,9 +195,16 @@ pub fn write_fast_import(
         }
         for (path, entry) in changes.iter().filter_map(|(p, e)| e.map(|e| (p, e))) {
             if entry.gitlink {
+                // Written into the stream as is, so it must be exactly a
+                // commit id: anything else could inject fast-import commands.
                 let commit = tx.store.read(BLOB, &entry.blob)?;
+                if commit.len() != 40 || !commit.iter().all(u8::is_ascii_hexdigit) {
+                    return Err(Error::InvalidArgument(format!(
+                        "submodule `{path}` does not point at a Git commit id"
+                    )));
+                }
                 let commit = String::from_utf8_lossy(&commit);
-                writeln!(out, "M 160000 {} {}", commit.trim(), quote_path(path)).map_err(io)?;
+                writeln!(out, "M 160000 {commit} {}", quote_path(path)).map_err(io)?;
                 continue;
             }
             let mode = match (entry.symlink, entry.executable) {

@@ -177,6 +177,22 @@ impl Db {
             let done: Vec<i64> = sqlx::query_scalar("SELECT version FROM schema_migrations")
                 .fetch_all(&mut *conn)
                 .await?;
+            // hebra-server 0.1 had one token table and no migrations; its
+            // tables would collide with the first migration.
+            if done.is_empty()
+                && sqlx::query("SELECT 1 FROM tokens LIMIT 1")
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .is_ok()
+            {
+                anyhow::bail!(
+                    "this database was created by hebra-server 0.1, whose accounts and tokens \
+                     cannot be carried over. Move it aside (for SQLite, the file \
+                     hebra-server.db in the data directory) and start again: create people \
+                     with `hebra-server user create`, repositories with `hebra-server repo \
+                     create owner/name`, and push them again from any clone"
+                );
+            }
             for m in MIGRATIONS.iter().filter(|m| !done.contains(&m.version)) {
                 let sql = match self.dialect {
                     Dialect::Postgres => m.postgres,
@@ -235,4 +251,29 @@ pub(crate) fn flag(row: &AnyRow, column: &str) -> Result<bool, sqlx::Error> {
 pub(crate) fn json_list(row: &AnyRow, column: &str) -> Result<Vec<String>, sqlx::Error> {
     let text: String = row.try_get(column)?;
     serde_json::from_str(&text).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn databases_from_hebra_0_1_get_a_clear_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hebra-server.db");
+        // The 0.1 schema, as that release created it.
+        let old = rusqlite::Connection::open(&path).unwrap();
+        old.execute_batch(
+            "CREATE TABLE repos (name TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+             CREATE TABLE tokens (hash TEXT PRIMARY KEY, name TEXT NOT NULL);",
+        )
+        .unwrap();
+        drop(old);
+        let err = Db::sqlite_in(dir.path()).await.err().unwrap().to_string();
+        assert!(err.contains("hebra-server 0.1"), "{err}");
+
+        // A fresh directory migrates normally.
+        let fresh = tempfile::tempdir().unwrap();
+        Db::sqlite_in(fresh.path()).await.unwrap();
+    }
 }
