@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use hebra_core::ObjectId;
 use hebra_core::diff;
 use hebra_core::model::{Commit, Tree};
-use hebra_core::store::{COMMIT, Store, TREE};
+use hebra_core::store::{COMMIT, Store};
 use serde_json::{Value, json};
 
 use crate::client::Client;
@@ -24,7 +24,7 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const MAX_READ: u64 = 200 * 1024;
 
 fn tree_of(store: &Store, commit: &Commit) -> Result<Tree> {
-    Ok(store.read_json(TREE, &commit.tree)?)
+    Ok(store.read_tree(&commit.tree)?)
 }
 
 /// The change under review as a unified diff (against the review's target,

@@ -176,7 +176,11 @@ pub fn write_fast_import(
         }
         writeln!(out, "deleteall").map_err(io)?;
         for (path, entry) in &tree.files {
-            let mode = if entry.executable { "100755" } else { "100644" };
+            let mode = match (entry.symlink, entry.executable) {
+                (true, _) => "120000",
+                (false, true) => "100755",
+                (false, false) => "100644",
+            };
             let mark = blob_marks[&entry.blob];
             writeln!(out, "M {mode} :{mark} {}", quote_path(path)).map_err(io)?;
         }

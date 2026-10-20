@@ -76,14 +76,18 @@ fn merge_file(
     } else {
         ours.executable
     };
-    if ours.blob == theirs.blob {
+    if ours.blob == theirs.blob && ours.symlink == theirs.symlink {
         return Ok((
             FileEntry {
-                blob: ours.blob,
                 executable,
+                ..*ours
             },
             None,
         ));
+    }
+    // Symlinks have no lines to merge: both sides changed one, keep ours.
+    if ours.symlink || theirs.symlink || base.is_some_and(|b| b.symlink) {
+        return Ok((*ours, Some(ConflictKind::Binary)));
     }
     let base_data = match base {
         Some(b) => store.read(BLOB, &b.blob)?,
@@ -93,10 +97,7 @@ fn merge_file(
     let theirs_data = store.read(BLOB, &theirs.blob)?;
     if is_binary(&base_data) || is_binary(&ours_data) || is_binary(&theirs_data) {
         return Ok((
-            FileEntry {
-                blob: ours.blob,
-                executable,
-            },
+            FileEntry::file(ours.blob, executable),
             Some(ConflictKind::Binary),
         ));
     }
@@ -105,7 +106,7 @@ fn merge_file(
         Err(with_markers) => (with_markers, Some(ConflictKind::Content)),
     };
     let blob = store.write(BLOB, &data)?;
-    Ok((FileEntry { blob, executable }, conflict))
+    Ok((FileEntry::file(blob, executable), conflict))
 }
 
 /// Whether a file still contains conflict markers.
@@ -123,13 +124,8 @@ mod tests {
         let mut tree = Tree::default();
         for (path, content) in files {
             let blob = store.write(BLOB, content.as_bytes()).unwrap();
-            tree.files.insert(
-                (*path).to_owned(),
-                FileEntry {
-                    blob,
-                    executable: false,
-                },
-            );
+            tree.files
+                .insert((*path).to_owned(), FileEntry::file(blob, false));
         }
         tree
     }

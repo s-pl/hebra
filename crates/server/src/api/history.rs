@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use hebra_core::diff;
 use hebra_core::model::{Commit, Tree};
-use hebra_core::store::{COMMIT, TREE};
+use hebra_core::store::COMMIT;
 use hebra_core::{ChangeId, ObjectId};
 
 use crate::api::blocking;
@@ -93,11 +93,11 @@ pub(crate) async fn commit(
     let store = s.store(&repo);
     blocking(move || {
         let c: Commit = store.read_json(COMMIT, &id)?;
-        let tree: Tree = store.read_json(TREE, &c.tree)?;
+        let tree: Tree = store.read_tree(&c.tree)?;
         let base = match c.parents.first() {
             Some(p) => {
                 let parent: Commit = store.read_json(COMMIT, p)?;
-                store.read_json(TREE, &parent.tree)?
+                store.read_tree(&parent.tree)?
             }
             None => Tree::default(),
         };
@@ -128,7 +128,7 @@ pub(crate) async fn tree(
     let store = s.store(&repo);
     blocking(move || {
         let c: Commit = store.read_json(COMMIT, &id)?;
-        let tree: Tree = store.read_json(TREE, &c.tree)?;
+        let tree: Tree = store.read_tree(&c.tree)?;
         if q.recursive {
             let files: Vec<&String> = tree.files.keys().collect();
             return Ok(axum::Json(json!({ "kind": "list", "files": files })));
@@ -142,6 +142,8 @@ pub(crate) async fn tree(
                 "path": path,
                 "size": bytes.len(),
                 "binary": binary,
+                "executable": entry.executable,
+                "symlink": entry.symlink,
                 "content": if binary { Value::Null } else { Value::String(String::from_utf8_lossy(&bytes).into_owned()) },
             })));
         }
@@ -151,10 +153,11 @@ pub(crate) async fn tree(
             format!("{path}/")
         };
         let mut entries: BTreeMap<String, &str> = BTreeMap::new();
-        for p in tree.files.keys() {
+        for (p, entry) in &tree.files {
             if let Some(rest) = p.strip_prefix(&prefix) {
                 match rest.split_once('/') {
                     Some((dir, _)) => entries.insert(dir.to_owned(), "dir"),
+                    None if entry.symlink => entries.insert(rest.to_owned(), "symlink"),
                     None => entries.insert(rest.to_owned(), "file"),
                 };
             }

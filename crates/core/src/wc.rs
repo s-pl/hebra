@@ -1,6 +1,6 @@
 //! The working copy: turning a directory into a [`Tree`] and back.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -34,6 +34,15 @@ struct CacheEntry {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WcCache {
     entries: BTreeMap<String, CacheEntry>,
+    /// Symlinks written as plain files holding their target, because this
+    /// system could not create the link (Windows without the privilege).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    links: BTreeSet<String>,
+    /// Executable files on systems without an executable bit (Windows), so
+    /// the mode is kept instead of silently dropped, like Git's
+    /// `core.filemode=false`.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    executables: BTreeSet<String>,
 }
 
 impl WcCache {
@@ -153,23 +162,42 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
 
     let mut tree = Tree::default();
     let mut fresh = BTreeMap::new();
+    let mut links = BTreeSet::new();
+    let mut executables = BTreeSet::new();
     for entry in walker {
         let entry = entry?;
         let Some(file_type) = entry.file_type() else {
             continue;
         };
-        // Symlinks and special files are not tracked yet.
-        if !file_type.is_file() {
-            continue;
-        }
         let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
         let Some(path) = to_tree_path(rel) else {
             continue;
         };
+        if file_type.is_symlink() {
+            let target = fs::read_link(entry.path()).at(entry.path())?;
+            let target = target.to_string_lossy().replace('\\', "/");
+            let blob = store.write(BLOB, target.as_bytes())?;
+            tree.files.insert(path, FileEntry::symlink(blob));
+            continue;
+        }
+        // Sockets, devices and other special files are not tracked.
+        if !file_type.is_file() {
+            continue;
+        }
+        if cache.links.contains(&path) {
+            let data = fs::read(entry.path()).at(entry.path())?;
+            let blob = store.write(BLOB, &data)?;
+            tree.files.insert(path.clone(), FileEntry::symlink(blob));
+            links.insert(path);
+            continue;
+        }
         let meta = entry.metadata()?;
         let size = meta.len();
         let mtime = mtime_ns(&meta);
-        let executable = is_executable(&meta);
+        let executable = is_executable(&meta) || (!cfg!(unix) && cache.executables.contains(&path));
+        if executable && !cfg!(unix) {
+            executables.insert(path.clone());
+        }
 
         let cached = cache.entries.get(&path).copied().filter(|c| {
             c.size == size
@@ -192,41 +220,136 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
                 executable,
             },
         );
-        tree.files.insert(path, FileEntry { blob, executable });
+        tree.files.insert(path, FileEntry::file(blob, executable));
     }
     cache.entries = fresh;
+    cache.links = links;
+    cache.executables = executables;
     Ok(tree)
 }
 
 /// Updates the directory from `from` to `to`, touching only files that
-/// differ. Untracked and ignored files are left alone.
+/// differ. Untracked and ignored files are left alone. Nothing is ever
+/// written through a symlink, so a tree cannot reach outside the workspace.
 pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<CheckoutStats> {
     let mut stats = CheckoutStats::default();
     for path in from.files.keys() {
         if !to.files.contains_key(path) {
             let full = safe_join(root, path)?;
-            match fs::remove_file(&full) {
-                Ok(()) => stats.removed += 1,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e).at(&full),
+            if inside_symlink(root, &full) {
+                continue;
+            }
+            if remove_entry(&full)? {
+                stats.removed += 1;
             }
             prune_empty_dirs(root, &full);
         }
     }
+    // Modes this system cannot hold on disk, remembered in the cache.
+    let mut kept_links = Vec::new();
+    let mut kept_executables = Vec::new();
     for (path, entry) in &to.files {
         if from.files.get(path) == Some(entry) {
             continue;
         }
         let full = safe_join(root, path)?;
+        if inside_symlink(root, &full) {
+            return Err(Error::InvalidPath(path.clone()));
+        }
         if let Some(parent) = full.parent() {
             fs::create_dir_all(parent).at(parent)?;
         }
         let data = store.read(BLOB, &entry.blob)?;
-        fs::write(&full, data).at(&full)?;
-        set_executable(&full, entry.executable)?;
+        // Replace links instead of writing through them.
+        if fs::symlink_metadata(&full).is_ok_and(|m| m.file_type().is_symlink()) {
+            remove_entry(&full)?;
+        }
+        if entry.symlink {
+            let target = String::from_utf8_lossy(&data).into_owned();
+            if !make_symlink(&full, &target) {
+                fs::write(&full, &data).at(&full)?;
+                kept_links.push(path.clone());
+            }
+        } else {
+            fs::write(&full, data).at(&full)?;
+            set_executable(&full, entry.executable)?;
+            if entry.executable && !cfg!(unix) {
+                kept_executables.push(path.clone());
+            }
+        }
         stats.written += 1;
     }
+    let forgotten: Vec<&String> = from
+        .files
+        .iter()
+        .filter(|(path, e)| (e.symlink || e.executable) && to.files.get(*path) != Some(*e))
+        .map(|(path, _)| path)
+        .collect();
+    let changed = !(kept_links.is_empty() && kept_executables.is_empty() && forgotten.is_empty());
+    if changed && root.join(DOT_DIR).is_dir() {
+        let mut cache = WcCache::load(root);
+        for path in forgotten {
+            cache.links.remove(path);
+            cache.executables.remove(path);
+        }
+        cache.links.extend(kept_links);
+        cache.executables.extend(kept_executables);
+        cache.save(root)?;
+    }
     Ok(stats)
+}
+
+/// Whether a directory between `root` and `full` is a symlink.
+fn inside_symlink(root: &Path, full: &Path) -> bool {
+    let mut dir = full.parent();
+    while let Some(d) = dir {
+        if d == root {
+            return false;
+        }
+        if fs::symlink_metadata(d).is_ok_and(|m| m.file_type().is_symlink()) {
+            return true;
+        }
+        dir = d.parent();
+    }
+    false
+}
+
+/// Removes a file or a symlink (to a file or a directory). Returns whether
+/// something was there.
+fn remove_entry(full: &Path) -> Result<bool> {
+    match fs::remove_file(full) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        // Windows removes directory symlinks with `remove_dir`.
+        Err(_) if fs::symlink_metadata(full).is_ok_and(|m| m.file_type().is_symlink()) => {
+            fs::remove_dir(full).at(full)?;
+            Ok(true)
+        }
+        Err(e) => Err(e).at(full),
+    }
+}
+
+#[cfg(unix)]
+fn make_symlink(full: &Path, target: &str) -> bool {
+    std::os::unix::fs::symlink(target, full).is_ok()
+}
+
+#[cfg(windows)]
+fn make_symlink(full: &Path, target: &str) -> bool {
+    let target = target.replace('/', "\\");
+    let points_to_dir = full
+        .parent()
+        .is_some_and(|parent| parent.join(&target).is_dir());
+    if points_to_dir {
+        std::os::windows::fs::symlink_dir(&target, full).is_ok()
+    } else {
+        std::os::windows::fs::symlink_file(&target, full).is_ok()
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn make_symlink(_full: &Path, _target: &str) -> bool {
+    false
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -319,5 +442,60 @@ mod tests {
         assert_eq!(fs::read_to_string(b.path().join("one.txt")).unwrap(), "1\n");
         checkout(b.path(), &store, &tree, &Tree::default()).unwrap();
         assert!(!b.path().join("dir").exists());
+    }
+
+    #[test]
+    fn symlinks_round_trip_even_without_link_support() {
+        let repo = tempfile::tempdir().unwrap();
+        let store = Store::new(repo.path().join("objects"));
+        let target = store.write(BLOB, b"real.txt").unwrap();
+        let real = store.write(BLOB, b"data\n").unwrap();
+        let mut tree = Tree::default();
+        tree.files
+            .insert("real.txt".to_owned(), FileEntry::file(real, false));
+        tree.files
+            .insert("link.txt".to_owned(), FileEntry::symlink(target));
+
+        let ws = tempfile::tempdir().unwrap();
+        fs::create_dir_all(ws.path().join(DOT_DIR)).unwrap();
+        checkout(ws.path(), &store, &Tree::default(), &tree).unwrap();
+        let mut cache = WcCache::load(ws.path());
+        assert_eq!(snapshot(ws.path(), &store, &mut cache).unwrap(), tree);
+        cache.save(ws.path()).unwrap();
+
+        // Back to a regular file: the link is replaced, never written through.
+        let mut plain = tree.clone();
+        plain
+            .files
+            .insert("link.txt".to_owned(), FileEntry::file(real, false));
+        checkout(ws.path(), &store, &tree, &plain).unwrap();
+        assert_eq!(fs::read(ws.path().join("real.txt")).unwrap(), b"data\n");
+        let mut cache = WcCache::load(ws.path());
+        assert_eq!(snapshot(ws.path(), &store, &mut cache).unwrap(), plain);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn never_writes_through_a_symlinked_directory() {
+        let repo = tempfile::tempdir().unwrap();
+        let store = Store::new(repo.path().join("objects"));
+        let outside = tempfile::tempdir().unwrap();
+        let target = store
+            .write(BLOB, outside.path().to_str().unwrap().as_bytes())
+            .unwrap();
+        let evil = store.write(BLOB, b"pwned").unwrap();
+        let mut first = Tree::default();
+        first
+            .files
+            .insert("dir".to_owned(), FileEntry::symlink(target));
+        let mut second = first.clone();
+        second
+            .files
+            .insert("dir/file".to_owned(), FileEntry::file(evil, false));
+
+        let ws = tempfile::tempdir().unwrap();
+        checkout(ws.path(), &store, &Tree::default(), &first).unwrap();
+        assert!(checkout(ws.path(), &store, &first, &second).is_err());
+        assert!(!outside.path().join("file").exists());
     }
 }

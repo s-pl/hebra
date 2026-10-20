@@ -16,14 +16,60 @@ pub struct FileEntry {
     pub blob: ObjectId,
     #[serde(default, skip_serializing_if = "is_false")]
     pub executable: bool,
+    /// A symbolic link; the blob holds its target, with `/` separators.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub symlink: bool,
+}
+
+impl FileEntry {
+    /// A regular file.
+    #[must_use]
+    pub fn file(blob: ObjectId, executable: bool) -> Self {
+        Self {
+            blob,
+            executable,
+            symlink: false,
+        }
+    }
+
+    /// A symbolic link whose target is stored in `blob`.
+    #[must_use]
+    pub fn symlink(blob: ObjectId) -> Self {
+        Self {
+            blob,
+            executable: false,
+            symlink: true,
+        }
+    }
 }
 
 /// A snapshot of files, keyed by `/`-separated path relative to the
-/// workspace root. Flat on purpose for the MVP; it will become a Merkle
-/// tree of directories once large repositories matter.
+/// workspace root. In memory it is flat; the store keeps it as a Merkle tree
+/// with one object per directory (see [`crate::store::Store::write_tree`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tree {
     pub files: BTreeMap<String, FileEntry>,
+}
+
+/// A tree object as stored. Version 0 (no `v`) is the original flat format:
+/// `files` holds full paths. Version 2 is one directory: `files` holds the
+/// names of its files and `dirs` the tree objects of its subdirectories.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredTree {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub v: u32,
+    #[serde(default)]
+    pub files: BTreeMap<String, FileEntry>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dirs: BTreeMap<String, ObjectId>,
+}
+
+/// Version of [`StoredTree`] written for directories.
+pub const TREE_VERSION: u32 = 2;
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,7 +134,7 @@ pub enum ConflictKind {
     Content,
     /// One side modified the file and the other deleted it.
     ModifyDelete,
-    /// Both sides changed a binary file; ours was kept.
+    /// Both sides changed a binary file or a symlink; ours was kept.
     Binary,
 }
 

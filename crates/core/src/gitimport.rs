@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::ids::{ChangeId, ObjectId};
 use crate::model::{Actor, ActorKind, Commit, FileEntry, Provenance, Tree};
 use crate::repo::Tx;
-use crate::store::{BLOB, TREE};
+use crate::store::BLOB;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct ImportStats {
@@ -301,16 +301,25 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                             .get(&dataref)
                             .ok_or_else(|| bad(format!("unknown blob {dataref}")))?;
                         let executable = mode.ends_with(b"755");
-                        tree.files.insert(path, FileEntry { blob, executable });
+                        tree.files.insert(path, FileEntry::file(blob, executable));
                     }
-                    // Symlinks and submodules are not tracked yet.
+                    b"120000" => {
+                        let blob = *blobs
+                            .get(&dataref)
+                            .ok_or_else(|| bad(format!("unknown blob {dataref}")))?;
+                        tree.files.insert(path, FileEntry::symlink(blob));
+                    }
+                    // Submodules are not tracked.
                     _ => stats.skipped_entries += 1,
                 }
             } else if let Some(path) = l.strip_prefix(b"D ") {
                 let path = unquote(path)?;
-                tree.files.remove(&path);
-                let prefix = format!("{path}/");
-                tree.files.retain(|p, _| !p.starts_with(&prefix));
+                // A file, or else a whole directory. Never both: Git deletes
+                // a file `x` after adding `x/…` when a file becomes a folder.
+                if tree.files.remove(&path).is_none() {
+                    let prefix = format!("{path}/");
+                    tree.files.retain(|p, _| !p.starts_with(&prefix));
+                }
             } else if l.starts_with(b"commit ")
                 || l.starts_with(b"reset ")
                 || l == b"blob"
@@ -349,7 +358,7 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
         };
         let timestamp = jiff::Timestamp::from_second(seconds)
             .map_or_else(|_| "1970-01-01T00:00:00Z".to_owned(), |t| t.to_string());
-        let tree_id = tx.store.write_json(TREE, &tree)?;
+        let tree_id = tx.store.write_tree(&tree)?;
         let id = tx.write_commit(Commit {
             change_id,
             parents,

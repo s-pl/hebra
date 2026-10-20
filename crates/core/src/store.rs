@@ -8,6 +8,7 @@
 //! ciphertext as associated data, so encrypted files cannot be swapped. The
 //! first key encrypts; every key can decrypt, which allows key rotation.
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,12 +21,15 @@ use serde::de::DeserializeOwned;
 
 use crate::error::{Error, IoContext, Result};
 use crate::ids::ObjectId;
+use crate::model::{FileEntry, StoredTree, TREE_VERSION, Tree};
 
 pub const BLOB: &str = "blob";
 pub const TREE: &str = "tree";
 pub const COMMIT: &str = "commit";
 
 const MAGIC: &[u8; 4] = b"HBE1";
+/// Deeper trees are rejected, so hostile input cannot exhaust the stack.
+const MAX_TREE_DEPTH: usize = 256;
 const KEY_ID_LEN: usize = 8;
 const NONCE_LEN: usize = 24;
 
@@ -293,6 +297,113 @@ impl Store {
     pub fn read_json<T: DeserializeOwned>(&self, kind: &str, id: &ObjectId) -> Result<T> {
         Ok(serde_json::from_slice(&self.read(kind, id)?)?)
     }
+
+    /// Stores a tree as one object per directory, so directories that did
+    /// not change are shared between versions and never sent twice. The
+    /// empty tree keeps its original encoding (the root commit points at it).
+    pub fn write_tree(&self, tree: &Tree) -> Result<ObjectId> {
+        if tree.files.is_empty() {
+            return self.write_json(TREE, &Tree::default());
+        }
+        let files = tree.files.iter().map(|(p, e)| (p.as_str(), e)).collect();
+        self.write_dir(files)
+    }
+
+    fn write_dir(&self, files: Vec<(&str, &FileEntry)>) -> Result<ObjectId> {
+        let mut dir = StoredTree {
+            v: TREE_VERSION,
+            ..StoredTree::default()
+        };
+        let mut subdirs: BTreeMap<&str, Vec<(&str, &FileEntry)>> = BTreeMap::new();
+        for (path, entry) in files {
+            match path.split_once('/') {
+                Some((name, rest)) => subdirs.entry(name).or_default().push((rest, entry)),
+                None => {
+                    dir.files.insert(path.to_owned(), *entry);
+                }
+            }
+        }
+        for (name, files) in subdirs {
+            let id = self.write_dir(files)?;
+            dir.dirs.insert(name.to_owned(), id);
+        }
+        self.write_json(TREE, &dir)
+    }
+
+    /// Reads a tree in either format (flat or one object per directory).
+    pub fn read_tree(&self, id: &ObjectId) -> Result<Tree> {
+        let mut tree = Tree::default();
+        self.read_dir(id, "", 0, &mut tree)?;
+        Ok(tree)
+    }
+
+    fn read_dir(&self, id: &ObjectId, prefix: &str, depth: usize, out: &mut Tree) -> Result<()> {
+        if depth > MAX_TREE_DEPTH {
+            return Err(Error::InvalidArgument("tree is too deep".to_owned()));
+        }
+        let dir: StoredTree = self.read_json(TREE, id)?;
+        if dir.v == 0 && depth == 0 {
+            out.files = dir.files;
+            return Ok(());
+        }
+        for (name, entry) in dir.files {
+            check_name(&name)?;
+            out.files.insert(format!("{prefix}{name}"), entry);
+        }
+        for (name, sub) in dir.dirs {
+            check_name(&name)?;
+            self.read_dir(&sub, &format!("{prefix}{name}/"), depth + 1, out)?;
+        }
+        Ok(())
+    }
+
+    /// Every object a tree needs (its directory objects and blobs), skipping
+    /// those in `seen` and adding the rest to it.
+    pub fn tree_objects(
+        &self,
+        id: &ObjectId,
+        seen: &mut HashSet<ObjectId>,
+        out: &mut Vec<ObjectId>,
+    ) -> Result<()> {
+        self.walk_dir(id, 0, seen, out)
+    }
+
+    fn walk_dir(
+        &self,
+        id: &ObjectId,
+        depth: usize,
+        seen: &mut HashSet<ObjectId>,
+        out: &mut Vec<ObjectId>,
+    ) -> Result<()> {
+        if depth > MAX_TREE_DEPTH {
+            return Err(Error::InvalidArgument("tree is too deep".to_owned()));
+        }
+        if !seen.insert(*id) {
+            return Ok(());
+        }
+        out.push(*id);
+        let dir: StoredTree = self.read_json(TREE, id)?;
+        for entry in dir.files.values() {
+            if seen.insert(entry.blob) {
+                out.push(entry.blob);
+            }
+        }
+        if dir.v == 0 && depth == 0 {
+            return Ok(());
+        }
+        for sub in dir.dirs.values() {
+            self.walk_dir(sub, depth + 1, seen, out)?;
+        }
+        Ok(())
+    }
+}
+
+/// A file or directory name inside a stored directory.
+fn check_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+        return Err(Error::InvalidPath(name.to_owned()));
+    }
+    Ok(())
 }
 
 /// Writes a file atomically: temporary file in the same directory, `fsync`,
@@ -345,6 +456,49 @@ mod tests {
         // Without the key, reading fails instead of returning garbage.
         let plain = Store::new(dir.path().to_path_buf());
         assert!(plain.read(BLOB, &id).is_err());
+    }
+
+    #[test]
+    fn trees_are_stored_per_directory_and_share_unchanged_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let blob = store.write(BLOB, b"x").unwrap();
+        let mut tree = Tree::default();
+        for path in ["README", "src/lib.rs", "src/a/b.rs", "docs/guide.md"] {
+            tree.files
+                .insert(path.to_owned(), FileEntry::file(blob, false));
+        }
+        let id = store.write_tree(&tree).unwrap();
+        assert_eq!(store.read_tree(&id).unwrap(), tree);
+
+        let mut seen = HashSet::new();
+        let mut first = Vec::new();
+        store.tree_objects(&id, &mut seen, &mut first).unwrap();
+        // root, src, src/a, docs and the one blob.
+        assert_eq!(first.len(), 5);
+
+        // Changing one file only adds the directories on its path.
+        let edited = store.write(BLOB, b"y").unwrap();
+        tree.files
+            .insert("docs/guide.md".to_owned(), FileEntry::file(edited, false));
+        let id2 = store.write_tree(&tree).unwrap();
+        let mut second = Vec::new();
+        store.tree_objects(&id2, &mut seen, &mut second).unwrap();
+        assert_eq!(second.len(), 3, "new root, new docs and its new blob");
+    }
+
+    #[test]
+    fn flat_trees_from_older_versions_still_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let blob = store.write(BLOB, b"x").unwrap();
+        let mut tree = Tree::default();
+        tree.files
+            .insert("a/b/c.txt".to_owned(), FileEntry::file(blob, true));
+        let flat = store.write_json(TREE, &tree).unwrap();
+        assert_eq!(store.read_tree(&flat).unwrap(), tree);
+        let empty = store.write_tree(&Tree::default()).unwrap();
+        assert_eq!(empty, store.write_json(TREE, &Tree::default()).unwrap());
     }
 
     #[test]

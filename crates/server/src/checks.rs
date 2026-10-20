@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use hebra_core::ObjectId;
 use hebra_core::model::{Commit, Tree};
-use hebra_core::store::{BLOB, COMMIT, TREE};
+use hebra_core::store::{BLOB, COMMIT};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -177,8 +177,8 @@ fn read_file(
     path: &str,
 ) -> ApiResult<Option<String>> {
     let c: Commit = store.read_json(COMMIT, &commit)?;
-    let tree: Tree = store.read_json(TREE, &c.tree)?;
-    let Some(entry) = tree.files.get(path) else {
+    let tree: Tree = store.read_tree(&c.tree)?;
+    let Some(entry) = tree.files.get(path).filter(|e| !e.symlink) else {
         return Ok(None);
     };
     let bytes = store.read(BLOB, &entry.blob)?;

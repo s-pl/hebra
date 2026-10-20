@@ -552,7 +552,7 @@ fn new_change(
 ) -> hebra_core::Result<(ObjectId, Commit)> {
     let parents = tx.simplify_parents(parents)?;
     let (tree, conflicts) = tx.parents_tree(&parents)?;
-    let tree_id = tx.store.write_json(hebra_core::store::TREE, &tree)?;
+    let tree_id = tx.store.write_tree(&tree)?;
     let id = tx.new_commit(parents, tree_id, message.unwrap_or_default(), conflicts)?;
     tx.switch_wc(id)?;
     let commit = tx.commit(&id)?;
@@ -1213,7 +1213,7 @@ fn git_import(
     if stats.skipped_entries > 0 {
         let _ = writeln!(
             text,
-            "  note: {} symlink or submodule entries were skipped",
+            "  note: {} submodule entries were skipped",
             stats.skipped_entries
         );
     }

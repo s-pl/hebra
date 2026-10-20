@@ -15,7 +15,7 @@ use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use hebra_core::ObjectId;
 use hebra_core::model::{Actor, ActorKind, Commit, FileEntry, Provenance, Tree};
-use hebra_core::store::{BLOB, Backend, COMMIT, Key, Store, TREE};
+use hebra_core::store::{BLOB, Backend, COMMIT, Key, Store};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -331,14 +331,9 @@ fn fixture() -> anyhow::Result<(ObjectId, ObjectId, Vec<u8>)> {
     {
         let blob = store.write(BLOB, body.repeat(40).as_bytes())?;
         let mut tree = Tree::default();
-        tree.files.insert(
-            "src/main.rs".into(),
-            FileEntry {
-                blob,
-                executable: false,
-            },
-        );
-        let tree_id = store.write_json(TREE, &tree)?;
+        tree.files
+            .insert("src/main.rs".into(), FileEntry::file(blob, false));
+        let tree_id = store.write_tree(&tree)?;
         let commit = Commit {
             change_id: hebra_core::ChangeId::random(),
             parents: parent.into_iter().collect(),

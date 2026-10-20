@@ -10,7 +10,7 @@ use std::collections::{HashSet, VecDeque};
 
 use crate::error::{Error, Result};
 use crate::ids::ObjectId;
-use crate::model::{Commit, Tree};
+use crate::model::Commit;
 use crate::store::{BLOB, COMMIT, Store, TREE};
 
 const MAGIC: &[u8] = b"HBPK1\n";
@@ -75,7 +75,8 @@ pub fn decode(pack: &[u8]) -> Result<Vec<(ObjectId, Vec<u8>)>> {
 }
 
 /// Commits reachable from `wants`, stopping at commits in `haves` (whose
-/// ancestry the other side already has), plus every tree and blob they use.
+/// ancestry the other side already has), plus every directory and blob they
+/// use. Directories shared between commits are listed once.
 pub fn closure(
     store: &Store,
     wants: &[ObjectId],
@@ -90,22 +91,14 @@ pub fn closure(
         }
         let commit: Commit = store.read_json(COMMIT, &id)?;
         objects.push(id);
-        if seen.insert(commit.tree) {
-            objects.push(commit.tree);
-            let tree: Tree = store.read_json(TREE, &commit.tree)?;
-            for entry in tree.files.values() {
-                if seen.insert(entry.blob) {
-                    objects.push(entry.blob);
-                }
-            }
-        }
+        store.tree_objects(&commit.tree, &mut seen, &mut objects)?;
         queue.extend(commit.parents);
     }
     Ok(objects)
 }
 
-/// Whether a commit and everything one level down (tree, blobs, parents) is
-/// present, which a server checks before moving a bookmark onto it.
+/// Whether a commit, its parents and its whole tree (every directory and
+/// blob) are present, which a server checks before moving a bookmark onto it.
 pub fn is_complete(store: &Store, id: &ObjectId) -> Result<bool> {
     if !store.has(id) {
         return Ok(false);
@@ -114,8 +107,15 @@ pub fn is_complete(store: &Store, id: &ObjectId) -> Result<bool> {
     if !store.has(&commit.tree) || !commit.parents.iter().all(|p| store.has(p)) {
         return Ok(false);
     }
-    let tree: Tree = store.read_json(TREE, &commit.tree)?;
-    Ok(tree.files.values().all(|e| store.has(&e.blob)))
+    let mut objects = Vec::new();
+    // A missing directory object fails the walk: the tree is incomplete.
+    if store
+        .tree_objects(&commit.tree, &mut HashSet::new(), &mut objects)
+        .is_err()
+    {
+        return Ok(false);
+    }
+    Ok(objects.iter().all(|o| store.has(o)))
 }
 
 /// Reads objects for a pack.

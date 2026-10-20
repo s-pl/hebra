@@ -8,7 +8,7 @@ use hebra_core::ObjectId;
 use hebra_core::diff;
 use hebra_core::merge::merge_trees;
 use hebra_core::model::{Actor, Commit, Provenance, Tree};
-use hebra_core::store::{COMMIT, Store, TREE};
+use hebra_core::store::{COMMIT, Store};
 use serde::Serialize;
 
 /// What merging `source` into `target` would do.
@@ -58,7 +58,7 @@ fn tree_of(store: &Store, commit: Option<ObjectId>) -> hebra_core::Result<Tree> 
     match commit {
         Some(id) => {
             let c: Commit = store.read_json(COMMIT, &id)?;
-            store.read_json(TREE, &c.tree)
+            store.read_tree(&c.tree)
         }
         None => Ok(Tree::default()),
     }
@@ -160,7 +160,7 @@ pub fn write_merge(
     target_name: &str,
     approver: &Actor,
 ) -> hebra_core::Result<ObjectId> {
-    let tree_id = store.write_json(TREE, tree)?;
+    let tree_id = store.write_tree(tree)?;
     let commit = Commit {
         change_id: hebra_core::ChangeId::random(),
         parents: vec![target, source],

@@ -16,10 +16,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use hebra_core::model::{Commit, Tree};
-use hebra_core::store::{BLOB, COMMIT, Store, TREE};
-use hebra_core::{ObjectId, transport};
+use hebra_core::store::{COMMIT, Store};
+use hebra_core::{ObjectId, transport, wc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -169,21 +169,6 @@ pub fn start(name: &str, once: bool) -> Result<Output> {
     }
 }
 
-/// Paths in trees are relative and never leave the checkout.
-fn safe_path(root: &Path, path: &str) -> Result<PathBuf> {
-    if path.is_empty()
-        || path.starts_with('/')
-        || path.contains('\\')
-        || path
-            .split('/')
-            .any(|p| p.is_empty() || p == "." || p == "..")
-        || path.contains(':')
-    {
-        bail!("refusing unsafe path `{path}` in the commit");
-    }
-    Ok(root.join(path))
-}
-
 /// Downloads `commit` and writes its files into `dir`. Returns the store
 /// (for diffs) and the commit.
 fn checkout(
@@ -204,21 +189,11 @@ fn checkout(
     transport::store_all(&store, &objects)?;
     let id = ObjectId::parse(commit)?;
     let c: Commit = store.read_json(COMMIT, &id)?;
-    let tree: Tree = store.read_json(TREE, &c.tree)?;
+    let tree: Tree = store.read_tree(&c.tree)?;
     let work = dir.join("work");
     std::fs::create_dir_all(&work)?;
-    for (path, entry) in &tree.files {
-        let target = safe_path(&work, path)?;
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&target, store.read(BLOB, &entry.blob)?)?;
-        #[cfg(unix)]
-        if entry.executable {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))?;
-        }
-    }
+    // The same checkout as a workspace: path checks, modes and symlinks.
+    wc::checkout(&work, &store, &Tree::default(), &tree)?;
     Ok((store, c))
 }
 
@@ -553,23 +528,6 @@ pub const fn max_turns() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unsafe_paths_are_refused() {
-        let root = Path::new("/tmp/x");
-        assert!(safe_path(root, "src/main.rs").is_ok());
-        for bad in [
-            "../etc/passwd",
-            "/etc/passwd",
-            "a/../../b",
-            "a//b",
-            "C:/x",
-            "a\\b",
-            "",
-        ] {
-            assert!(safe_path(root, bad).is_err(), "{bad}");
-        }
-    }
 
     #[test]
     fn long_output_is_truncated_in_the_middle() {

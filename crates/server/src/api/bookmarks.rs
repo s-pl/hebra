@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::extract::{Path as UrlPath, State};
 use axum::http::HeaderMap;
 use hebra_core::model::{Commit, Tree};
-use hebra_core::store::{COMMIT, Store, TREE};
+use hebra_core::store::{COMMIT, Store};
 use hebra_core::{ObjectId, transport};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ fn tree_of(store: &Store, commit: Option<ObjectId>) -> ApiResult<Tree> {
     Ok(match commit {
         Some(id) => {
             let c: Commit = store.read_json(COMMIT, &id)?;
-            store.read_json(TREE, &c.tree)?
+            store.read_tree(&c.tree)?
         }
         None => Tree::default(),
     })

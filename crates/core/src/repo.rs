@@ -93,7 +93,7 @@ impl Workspace {
 
         let store = Store::new(repo_dir.join("objects"));
         let conn = open_db(&repo_dir)?;
-        let empty_tree = store.write_json(TREE, &Tree::default())?;
+        let empty_tree = store.write_tree(&Tree::default())?;
         let root_id = store.write_json(COMMIT, &root_commit())?;
         let wc = Commit {
             change_id: ChangeId::random(),
@@ -274,7 +274,11 @@ impl Workspace {
             |tx| {
                 let wc_id = tx.wc_id()?;
                 let current = tx.commit(&wc_id)?;
-                let tree_id = tx.store.write_json(TREE, &tree)?;
+                let mut tree_id = tx.store.write_tree(&tree)?;
+                // Same files under an older tree encoding: keep the old id.
+                if tree_id != current.tree && tx.tree(&current.tree)? == tree {
+                    tree_id = current.tree;
+                }
                 let conflicts = still_conflicted(tx.store, &current.conflicts, &tree)?;
                 if tree_id == current.tree && conflicts == current.conflicts {
                     return Ok(false);
@@ -436,7 +440,7 @@ impl Tx<'_> {
     }
 
     pub fn tree(&self, id: &ObjectId) -> Result<Tree> {
-        self.store.read_json(TREE, id)
+        self.store.read_tree(id)
     }
 
     pub fn commit_tree(&mut self, id: &ObjectId) -> Result<Tree> {

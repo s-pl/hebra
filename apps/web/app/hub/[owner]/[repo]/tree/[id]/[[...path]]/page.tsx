@@ -13,12 +13,33 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ owner: string; repo: string; id: string; path?: string[] }> };
 
 type Node =
-  | { kind: "dir"; path: string; entries: { name: string; kind: "dir" | "file" }[] }
-  | { kind: "file"; path: string; size: number; binary: boolean; content: string | null };
+  | { kind: "dir"; path: string; entries: { name: string; kind: "dir" | "file" | "symlink" }[] }
+  | {
+      kind: "file";
+      path: string;
+      size: number;
+      binary: boolean;
+      executable?: boolean;
+      symlink?: boolean;
+      content: string | null;
+    };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo, path } = await params;
   return { title: `${path?.map(decodeURIComponent).join("/") || "code"} · ${owner}/${repo} · Hebra` };
+}
+
+/** Where a symlink points, as a path in the tree (null if it leaves it). */
+function linkTarget(from: string, target: string) {
+  if (target.startsWith("/")) return null;
+  const parts = from.split("/").slice(0, -1);
+  for (const part of target.split("/")) {
+    if (part === "..") {
+      if (parts.length === 0) return null;
+      parts.pop();
+    } else if (part !== "." && part !== "") parts.push(part);
+  }
+  return parts.join("/");
 }
 
 function size(bytes: number) {
@@ -59,7 +80,7 @@ export default async function CodePage({ params }: Params) {
   // A folder shows its listing plus its README; a file shows highlighted code.
   let html: string | null = null;
   let readme: { path: string; html: string | null; text: string } | null = null;
-  if (node.kind === "file" && node.content !== null) {
+  if (node.kind === "file" && node.content !== null && !node.symlink) {
     html = await highlight(node.content, node.path);
   } else if (node.kind === "dir") {
     const name = node.entries.find((e) => e.kind === "file" && /^readme(\.md|\.txt)?$/i.test(e.name))?.name;
@@ -70,6 +91,13 @@ export default async function CodePage({ params }: Params) {
         readme = { path: readmePath, html: await highlight(file.content, readmePath), text: file.content };
     }
   }
+
+  // A symlink links to its target when the target is a file of this tree.
+  const target =
+    node.kind === "file" && node.symlink && node.content !== null
+      ? { text: node.content, path: linkTarget(node.path, node.content) }
+      : null;
+  const targetHref = target?.path && files.includes(target.path) ? treeHref(base, target.path) : null;
 
   // Hebras working now that have changes in this file (or under this folder).
   const busy = ctx.shell.presence.flatMap((p) =>
@@ -153,6 +181,17 @@ export default async function CodePage({ params }: Params) {
                           >
                             <path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3.3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5v7A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z" />
                           </svg>
+                        ) : e.kind === "symlink" ? (
+                          <svg
+                            viewBox="0 0 16 16"
+                            className="size-4 shrink-0 text-ink-3"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            aria-hidden="true"
+                          >
+                            <path d="M3 13 13 3 M6.5 3H13v6.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
                         ) : (
                           <svg
                             viewBox="0 0 16 16"
@@ -190,8 +229,9 @@ export default async function CodePage({ params }: Params) {
               <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-surface-2 px-4 py-2.5">
                 <span className="min-w-0 truncate font-mono text-[13px]">{node.path}</span>
                 <span className="lbl flex flex-wrap items-center gap-3">
-                  <span>{languageFor(node.path)}</span>
-                  {node.content !== null ? <span>{node.content.split("\n").length} lines</span> : null}
+                  {node.symlink ? <span>symlink</span> : <span>{languageFor(node.path)}</span>}
+                  {node.executable ? <span>executable</span> : null}
+                  {node.content !== null && !node.symlink ? <span>{node.content.split("\n").length} lines</span> : null}
                   <span>{size(node.size)}</span>
                 </span>
               </div>
@@ -209,7 +249,18 @@ export default async function CodePage({ params }: Params) {
                   ))}
                 </div>
               ) : null}
-              {node.binary || node.content === null ? (
+              {target ? (
+                <p className="px-4 py-10 text-center text-ink-2 text-sm">
+                  Symbolic link to{" "}
+                  {targetHref ? (
+                    <Link href={targetHref} className="font-mono text-ink underline underline-offset-4">
+                      {target.text}
+                    </Link>
+                  ) : (
+                    <span className="font-mono text-ink">{target.text}</span>
+                  )}
+                </p>
+              ) : node.binary || node.content === null ? (
                 <p className="px-4 py-10 text-center text-ink-3 text-sm">Binary file, {size(node.size)}.</p>
               ) : html ? (
                 // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki output (escaped code)
