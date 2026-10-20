@@ -224,6 +224,43 @@ fn clean_merge_combines_agents_work() {
 }
 
 #[test]
+fn agents_adding_functions_to_one_file_merge_by_structure() {
+    let base = "use std::fmt;\n\npub fn login() -> bool {\n    true\n}\n";
+    let repo = Repo::init(&[("src/auth.rs", base)]);
+    json(&repo.root, &["commit", "-m", "base"]);
+    let a = PathBuf::from(
+        json(&repo.root, &["start", "google", "--agent", "claude-code"])["path"]
+            .as_str()
+            .unwrap(),
+    );
+    let b = PathBuf::from(
+        json(&repo.root, &["start", "audit", "--agent", "codex"])["path"]
+            .as_str()
+            .unwrap(),
+    );
+    // Both append at the very same spot: a conflict for any line merge.
+    write_in(
+        &a,
+        "src/auth.rs",
+        &format!("{base}\npub fn login_with_google() -> bool {{\n    true\n}}\n"),
+    );
+    write_in(
+        &b,
+        "src/auth.rs",
+        &format!("{base}\npub fn audit_login() {{\n    println!(\"login\");\n}}\n"),
+    );
+    json(&a, &["commit", "-m", "google"]);
+    json(&b, &["commit", "-m", "audit"]);
+
+    let merged = json(&repo.root, &["merge", "google@-", "audit@-"]);
+    assert_eq!(merged["conflicts"].as_array().unwrap().len(), 0, "{merged}");
+    let text = repo.read("src/auth.rs");
+    assert!(text.contains("fn login_with_google()"));
+    assert!(text.contains("fn audit_login()"));
+    assert!(!text.contains("<<<<<<<"));
+}
+
+#[test]
 fn conflicts_are_recorded_and_resolve_when_markers_go() {
     let repo = Repo::init(&[("a.txt", "base\n")]);
     json(&repo.root, &["commit", "-m", "base"]);

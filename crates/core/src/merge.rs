@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use crate::error::Result;
 use crate::model::{Conflict, ConflictKind, FileEntry, Tree};
 use crate::store::{BLOB, Store};
+use crate::structural;
 use crate::wc::is_binary;
 
 /// Conflict marker that starts a conflicted region (diff3 style).
@@ -37,7 +38,7 @@ pub fn merge_trees(store: &Store, base: &Tree, ours: &Tree, theirs: &Tree) -> Re
         } else {
             match (o, t) {
                 (Some(o), Some(t)) => {
-                    let (entry, conflict) = merge_file(store, b, o, t)?;
+                    let (entry, conflict) = merge_file(store, path, b, o, t)?;
                     if let Some(kind) = conflict {
                         conflicts.push(Conflict {
                             path: path.clone(),
@@ -67,6 +68,7 @@ pub fn merge_trees(store: &Store, base: &Tree, ours: &Tree, theirs: &Tree) -> Re
 
 fn merge_file(
     store: &Store,
+    path: &str,
     base: Option<&FileEntry>,
     ours: &FileEntry,
     theirs: &FileEntry,
@@ -103,10 +105,22 @@ fn merge_file(
     }
     let (data, conflict) = match diffy::merge_bytes(&base_data, &ours_data, &theirs_data) {
         Ok(clean) => (clean, None),
-        Err(with_markers) => (with_markers, Some(ConflictKind::Content)),
+        // Lines conflict: try declaration by declaration before giving up.
+        Err(with_markers) => match structural_merge(path, &base_data, &ours_data, &theirs_data) {
+            Some(clean) => (clean, None),
+            None => (with_markers, Some(ConflictKind::Content)),
+        },
     };
     let blob = store.write(BLOB, &data)?;
     Ok((FileEntry::file(blob, executable), conflict))
+}
+
+fn structural_merge(path: &str, base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+    if !structural::supports(path) {
+        return None;
+    }
+    let text = |b: &[u8]| std::str::from_utf8(b).ok().map(str::to_owned);
+    structural::merge(path, &text(base)?, &text(ours)?, &text(theirs)?).map(String::into_bytes)
 }
 
 /// Whether a file still contains conflict markers.

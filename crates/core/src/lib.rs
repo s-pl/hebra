@@ -14,6 +14,7 @@ pub mod oplog;
 mod pack;
 pub mod repo;
 pub mod store;
+pub mod structural;
 pub mod transparency;
 pub mod transport;
 pub mod wc;

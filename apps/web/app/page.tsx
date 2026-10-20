@@ -144,7 +144,7 @@ const VERSUS: [string, string, string][] = [
 ];
 
 const GAPS = [
-  "Merges are line-based, not syntax-aware yet",
+  "Structural merge covers Rust, TypeScript, JavaScript, Python, Go and Java; other files merge by lines",
   "Cloud runners are not available yet",
 ];
 
