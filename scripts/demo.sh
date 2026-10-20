@@ -12,17 +12,19 @@ HB="$ROOT/target/debug/hb"
 SERVER="$ROOT/target/debug/hebra-server"
 WORK="${DEMO_DIR:-$ROOT/target/demo}"
 ADDR="127.0.0.1:4600"
-URL="http://$ADDR/acme"
+URL="http://$ADDR/ana/acme"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
 DATA="$WORK/data"
 unset CLAUDECODE HB_TOKEN HB_ACTOR HB_ACTOR_KIND HB_ON_BEHALF_OF HB_TASK HB_SESSION HB_PROMPT
+# Sign-in links point at the web app.
+export HEBRA_PUBLIC_URL="${HEBRA_PUBLIC_URL:-http://localhost:3000}"
 
-"$SERVER" --data "$DATA" repo create acme >/dev/null
-ANA=$("$SERVER" --data "$DATA" token create --name ana --admin 2>/dev/null)
-CLAUDE=$("$SERVER" --data "$DATA" token create --name claude-code --agent --for ana 2>/dev/null)
-CODEX=$("$SERVER" --data "$DATA" token create --name codex --agent --for ana 2>/dev/null)
+# A person (site administrator), her repository, and her mandate.
+LINK=$("$SERVER" --data "$DATA" user create ana --name Ana --admin 2>/dev/null)
+"$SERVER" --data "$DATA" repo create ana/acme >/dev/null
+ANA=$("$SERVER" --data "$DATA" mandate issue ana --label demo 2>/dev/null)
 echo "$ANA" > "$WORK/ana.token"
 
 "$SERVER" --data "$DATA" serve --addr "$ADDR" &
@@ -32,6 +34,15 @@ for _ in $(seq 1 50); do
   curl -sf "http://$ADDR/api/v1/health" >/dev/null && break
   sleep 0.2
 done
+
+# Each agent gets ana's mandate narrowed to this repository and to its own
+# bookmarks (agents/<name>/*), offline: the server never sees a new secret.
+grant() {
+  HB_TOKEN="$ANA" "$HB" mandate grant --agent "$1" --repo ana/acme --server "http://$ADDR" \
+    --purpose "$2" | head -1
+}
+CLAUDE=$(grant claude-code "Google sign-in")
+CODEX=$(grant codex "documentation")
 
 # clone <dir> <user> <token>
 clone() {
@@ -84,7 +95,8 @@ cd "$WORK/codex" && printf '\n// TODO: rate limit\n' >> src/auth.rs && agent cod
 cd "$WORK/ana" && printf '\n// review\n' >> src/auth.rs && "$HB" status | tail -2
 
 echo
-echo "Server: $URL   (web: HEBRA_SERVER_URL=http://$ADDR, then http://localhost:3000/hub/acme)"
-echo "Sign in to the hub as ana with the token in $WORK/ana.token"
+echo "Server: $URL   (web: HEBRA_SERVER_URL=http://$ADDR, then $HEBRA_PUBLIC_URL/hub/ana/acme)"
+echo "Sign in to the hub as ana with this one-time link: $LINK"
+echo "ana's mandate for hb (HB_TOKEN) is in $WORK/ana.token"
 echo "Press Ctrl+C to stop."
 wait $SERVER_PID

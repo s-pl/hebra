@@ -21,10 +21,11 @@ apps/web        landing + hub /hub (Next.js 16, Tailwind 4, Biome)
 
 ## Estado (2026-10-15)
 - MVP local funcional: init/import, status, diff, describe, commit, new, log, show, merge (conflictos como datos), resolve, start/workspaces (un workspace por agente), claims, undo/op log/op restore, bookmarks, config, MCP.
-- 32 tests (unitarios + integración de la CLI). `hb git export` exporta a Git con trailers de procedencia. Prueba de estrés: 8 agentes en paralelo, 48 comandos, 0 errores de bloqueo.
+- 82 tests (unitarios + integración de la CLI, plataforma e interoperabilidad con Git). `hb git export` exporta a Git con trailers de procedencia. Prueba de estrés: 8 agentes en paralelo, 48 comandos, 0 errores de bloqueo.
 - Repo público: https://github.com/s-pl/hebra
 - Hecho también: hebra-server, hb push/pull/presence/remote, hb git import, web /hub, release.yml (binarios al crear un tag v*). scripts/demo.sh siembra un servidor de ejemplo.
-- Limitaciones conocidas: árbol plano (no Merkle), sin enlaces simbólicos, merge por líneas, presencia por sondeo (no WebSocket), el undo no rebasa contenido sobre cambios posteriores.
+- 2026-10-21: árbol Merkle (un objeto por directorio, lee el formato plano antiguo), enlaces simbólicos y bit ejecutable en todos los SO (en Windows sin privilegio se guardan en wc-cache como Git con core.symlinks/filemode=false), `HB_CA_CERT` para CA privadas, tests de interoperabilidad contra Git (`crates/cli/tests/git_interop.rs`), `scripts/github-roundtrip.sh` (5 repos reales de GitHub, árboles idénticos) y `scripts/compose-smoke.sh` (stack Docker completo con push por HTTPS); ambos en CI (job `docker` y workflow `interop.yml`).
+- Limitaciones conocidas: merge por líneas, submódulos de Git ignorados, el undo no rebasa contenido sobre cambios posteriores, import lento en Windows (un fichero por objeto; faltan packfiles).
 
 ## Comandos útiles
 - Rust: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
