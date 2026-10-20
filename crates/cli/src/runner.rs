@@ -186,7 +186,7 @@ fn checkout(
     )?;
     let objects = transport::decode(&pack)?;
     let store = Store::new(dir.join(".hebra-objects"));
-    transport::store_all(&store, &objects)?;
+    store.batch(|| transport::store_all(&store, &objects))?;
     let id = ObjectId::parse(commit)?;
     let c: Commit = store.read_json(COMMIT, &id)?;
     let tree: Tree = store.read_tree(&c.tree)?;

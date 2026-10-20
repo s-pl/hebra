@@ -118,6 +118,7 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             .run(&actor, &prov, name, |tx| forget(tx, &target))
             .map_err(Into::into),
         Command::Undo => ws.run(&actor, &prov, name, undo).map_err(Into::into),
+        Command::Gc { prune } => gc(&ws, &prune),
         Command::Op(OpCommand::Log { limit }) => op_log(&ws, limit),
         Command::Op(OpCommand::Restore { id }) => ws
             .run(&actor, &prov, name, |tx| op_restore(tx, id))
@@ -259,6 +260,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Workspaces => "workspaces",
         Command::Workspace(_) => "workspace forget",
         Command::Undo => "undo",
+        Command::Gc { .. } => "gc",
         Command::Op(_) => "op restore",
         Command::Bookmark(_) => "bookmark",
         Command::Claim { .. } => "claim",
@@ -888,6 +890,18 @@ fn undo(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
     Ok(Output::new(json!(result), text))
 }
 
+fn gc(ws: &Workspace, prune: &str) -> Result<Output> {
+    let age = if prune == "now" { 0 } else { parse_ttl(prune)? };
+    let prune_before = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(u64::try_from(age).unwrap_or(0));
+    let stats = ws.gc(prune_before)?;
+    let text = format!(
+        "Packed {} object(s); removed {} loose file(s) and {} old pack(s); dropped {} unreachable object(s).\n",
+        stats.packed, stats.loose_removed, stats.packs_removed, stats.pruned
+    );
+    Ok(Output::new(json!(stats), text))
+}
+
 fn op_log(ws: &Workspace, limit: usize) -> Result<Output> {
     let ops = ws.operations(limit)?;
     let mut text = String::new();
@@ -1195,7 +1209,11 @@ fn git_import(
         .stdout
         .take()
         .ok_or_else(|| Error::InvalidArgument("git fast-export has no stdout".to_owned()))?;
-    let (stats, tip) = hebra_core::gitimport::import(tx, std::io::BufReader::new(stdout))?;
+    // One pack instead of a file per object, made durable before the
+    // operation is recorded.
+    let store = tx.store;
+    let (stats, tip) =
+        store.batch(|| hebra_core::gitimport::import(tx, std::io::BufReader::new(stdout)))?;
     let out = child.wait_with_output().map_err(io)?;
     if !out.status.success() {
         return Err(git_error("git fast-export", &out));

@@ -11,6 +11,7 @@ pub mod ids;
 pub mod merge;
 pub mod model;
 pub mod oplog;
+mod pack;
 pub mod repo;
 pub mod store;
 pub mod transparency;

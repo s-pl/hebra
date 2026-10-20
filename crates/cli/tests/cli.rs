@@ -308,6 +308,45 @@ fn undo_twice_goes_further_back() {
 }
 
 #[test]
+fn gc_packs_everything_and_history_stays_undoable() {
+    let repo = Repo::init(&[("a.txt", "1\n")]);
+    json(&repo.root, &["commit", "-m", "one"]);
+    for i in 0..100 {
+        repo.write(&format!("many/f{i}.txt"), &format!("{i}\n"));
+    }
+    json(&repo.root, &["commit", "-m", "two"]);
+    repo.write("a.txt", "3\n");
+    json(&repo.root, &["commit", "-m", "three"]);
+    let first_op = json(&repo.root, &["op", "log"])["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|op| op["id"].as_i64().unwrap())
+        .min()
+        .unwrap();
+
+    let stats = json(&repo.root, &["gc", "--prune", "now"]);
+    assert!(stats["packed"].as_u64().unwrap() > 100);
+    let objects = repo.root.join(".hebra/repo/objects");
+    let loose = fs::read_dir(&objects)
+        .unwrap()
+        .flatten()
+        .filter(|d| d.file_name().len() == 2)
+        .count();
+    assert_eq!(loose, 0, "everything is in the pack");
+
+    let log = json(&repo.root, &["log"]);
+    assert!(log.to_string().contains("two"));
+    json(&repo.root, &["undo"]);
+    assert_eq!(repo.read("a.txt"), "3\n");
+    json(&repo.root, &["op", "restore", &first_op.to_string()]);
+    assert!(!repo.root.join("many").exists());
+    // And a second gc on a packed repository changes nothing it needs.
+    json(&repo.root, &["gc", "--prune", "now"]);
+    json(&repo.root, &["new", "@-"]);
+}
+
+#[test]
 fn provenance_comes_from_the_environment() {
     let repo = Repo::init(&[]);
     let out = hb_command(&repo.root)

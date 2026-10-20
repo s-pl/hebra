@@ -177,6 +177,43 @@ impl Workspace {
         })
     }
 
+    /// Packs every object still reachable from any recorded operation (so
+    /// everything stays undoable) into one file, and drops unreachable
+    /// objects written before `prune_before`.
+    pub fn gc(&self, prune_before: std::time::SystemTime) -> Result<crate::store::RepackStats> {
+        let mut roots: Vec<ObjectId> = Vec::new();
+        let mut views = Vec::new();
+        {
+            let mut stmt = self.conn.prepare("SELECT view FROM operations")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for row in rows {
+                views.push(serde_json::from_str::<View>(&row?)?);
+            }
+        }
+        for view in &views {
+            roots.extend(view.workspaces.values().map(|w| w.wc));
+            roots.extend(view.bookmarks.values());
+            roots.extend(view.heads.iter());
+            roots.extend(view.remotes.values().flat_map(|b| b.values()));
+        }
+        let mut keep = HashSet::new();
+        let mut objects = Vec::new();
+        while let Some(id) = roots.pop() {
+            if !keep.insert(id) {
+                continue;
+            }
+            // Commits from elsewhere may lack their earlier versions.
+            let Ok(commit) = self.store.read_json::<Commit>(COMMIT, &id) else {
+                continue;
+            };
+            self.store
+                .tree_objects(&commit.tree, &mut keep, &mut objects)?;
+            roots.extend(commit.parents);
+            roots.extend(commit.predecessors);
+        }
+        self.store.repack(&keep, prune_before)
+    }
+
     pub fn config_get(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .conn
@@ -263,7 +300,9 @@ impl Workspace {
         provenance: &Provenance,
     ) -> Result<bool> {
         let mut cache = WcCache::load(root);
-        let tree = wc::snapshot(root, &self.store, &mut cache)?;
+        let tree = self
+            .store
+            .batch(|| wc::snapshot(root, &self.store, &mut cache))?;
         let changed = self.transact_in(
             name,
             root,

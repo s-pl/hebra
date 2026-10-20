@@ -9,7 +9,7 @@ use std::io::Write;
 
 use crate::error::{Error, Result};
 use crate::ids::ObjectId;
-use crate::model::{ActorKind, Commit};
+use crate::model::{ActorKind, Commit, Tree};
 use crate::repo::Tx;
 use crate::store::BLOB;
 
@@ -133,12 +133,24 @@ pub fn write_fast_import(
     let mut next_mark = 1u64;
     let mut blob_marks: HashMap<ObjectId, u64> = HashMap::new();
     let mut commit_marks: HashMap<ObjectId, u64> = HashMap::new();
+    let empty = tx.store.write_tree(&Tree::default())?;
 
     for id in &commits {
         let commit = tx.commit(id)?;
-        let tree = tx.tree(&commit.tree)?;
+        // Only what changed since the first parent (`from`); unchanged
+        // directories are not even read.
+        let first_parent = commit
+            .parents
+            .iter()
+            .find(|p| commit_marks.contains_key(p))
+            .copied();
+        let base = match first_parent {
+            Some(parent) => tx.commit(&parent)?.tree,
+            None => empty,
+        };
+        let changes = tx.store.tree_changes(&base, &commit.tree)?;
 
-        for entry in tree.files.values() {
+        for entry in changes.iter().filter_map(|(_, e)| e.as_ref()) {
             if blob_marks.contains_key(&entry.blob) {
                 continue;
             }
@@ -174,8 +186,14 @@ pub fn write_fast_import(
                 writeln!(out, "merge :{p}").map_err(io)?;
             }
         }
-        writeln!(out, "deleteall").map_err(io)?;
-        for (path, entry) in &tree.files {
+        if first_parent.is_none() {
+            writeln!(out, "deleteall").map_err(io)?;
+        }
+        // Deletions first, so a file can become a folder and back.
+        for (path, _) in changes.iter().filter(|(_, e)| e.is_none()) {
+            writeln!(out, "D {}", quote_path(path)).map_err(io)?;
+        }
+        for (path, entry) in changes.iter().filter_map(|(p, e)| e.map(|e| (p, e))) {
             let mode = match (entry.symlink, entry.executable) {
                 (true, _) => "120000",
                 (false, true) => "100755",

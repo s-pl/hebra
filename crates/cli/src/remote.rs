@@ -342,7 +342,7 @@ pub fn pull(
         let body = json!({ "want": want, "have": have });
         let pack = remote.post("/pack", "application/json", body.to_string().as_bytes())?;
         let objects = transport::decode(&pack)?;
-        received = transport::store_all(&store, &objects)?;
+        received = store.batch(|| transport::store_all(&store, &objects))?;
     }
 
     let remote_for_tx = remote_name.to_owned();

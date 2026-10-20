@@ -88,6 +88,15 @@ pub enum Command {
     Workspace(WorkspaceCommand),
     /// Undo the last operation (everything is recorded in the operation log).
     Undo,
+    /// Pack all objects into one file and drop unreachable ones.
+    ///
+    /// Everything reachable from any recorded operation is kept, so undo and
+    /// `op restore` keep working.
+    Gc {
+        /// Drop unreachable objects older than this (`2d`, `12h`, or `now`).
+        #[arg(long, default_value = "14d")]
+        prune: String,
+    },
     /// Inspect or restore the operation log.
     #[command(subcommand)]
     Op(OpCommand),
