@@ -167,6 +167,19 @@ fn tricky_history(dir: &Path) {
     write(dir, "tools/tools", b"now a folder\n");
     write(dir, "tools/other", b"with more\n");
     commit_all(dir, "file becomes a folder");
+
+    // A submodule, pinned at some commit, left unpopulated as after a clone.
+    write(
+        dir,
+        ".gitmodules",
+        b"[submodule \"lib\"]\n\tpath = vendor/lib\n\turl = https://example.com/lib.git\n",
+    );
+    git(dir, &["add", ".gitmodules"]);
+    fs::create_dir_all(dir.join("vendor/lib")).unwrap();
+    let pinned = git(dir, &["rev-parse", "HEAD"]);
+    let info = format!("160000,{pinned},vendor/lib");
+    git(dir, &["update-index", "--add", "--cacheinfo", &info]);
+    git(dir, &["commit", "-q", "-m", "add a submodule"]);
 }
 
 #[test]
@@ -179,7 +192,7 @@ fn git_history_round_trips_with_identical_trees() {
     fs::create_dir_all(&repo).unwrap();
     hb(&repo, &["init"]);
     let imported = hb(&repo, &["git", "import", source.to_str().unwrap()]);
-    assert_eq!(imported["stats"]["commits"], 7);
+    assert_eq!(imported["stats"]["commits"], 8);
     assert_eq!(imported["stats"]["skipped_entries"], 0);
 
     let out = tmp.path().join("out.git");

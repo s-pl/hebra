@@ -309,7 +309,11 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                             .ok_or_else(|| bad(format!("unknown blob {dataref}")))?;
                         tree.files.insert(path, FileEntry::symlink(blob));
                     }
-                    // Submodules are not tracked.
+                    // A submodule: the "data" is the id of its commit.
+                    b"160000" if dataref.len() == 40 => {
+                        let blob = tx.store.write(BLOB, dataref.as_bytes())?;
+                        tree.files.insert(path, FileEntry::gitlink(blob));
+                    }
                     _ => stats.skipped_entries += 1,
                 }
             } else if let Some(path) = l.strip_prefix(b"D ") {

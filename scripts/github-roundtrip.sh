@@ -43,10 +43,7 @@ for slug in "${REPOS[@]}"; do
 
   expected=$(git -C "$src" log --format=%T "$branch" | sort | sha256sum)
   actual=$(git -C "$WORK/$name.out.git" log --format=%T "$branch" | sort | sha256sum)
-  # Submodules are not tracked, so repositories with them cannot match.
-  if [ -n "$(git -C "$src" ls-tree -r "$branch" | awk '$1 == "160000"')" ]; then
-    result="skip (submodules)"
-  elif [ "$expected" = "$actual" ]; then
+  if [ "$expected" = "$actual" ]; then
     result="identical"
   else
     result="MISMATCH"

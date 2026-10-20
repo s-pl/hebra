@@ -76,7 +76,7 @@ fn merge_file(
     } else {
         ours.executable
     };
-    if ours.blob == theirs.blob && ours.symlink == theirs.symlink {
+    if ours.blob == theirs.blob && ours.is_file() == theirs.is_file() {
         return Ok((
             FileEntry {
                 executable,
@@ -85,8 +85,8 @@ fn merge_file(
             None,
         ));
     }
-    // Symlinks have no lines to merge: both sides changed one, keep ours.
-    if ours.symlink || theirs.symlink || base.is_some_and(|b| b.symlink) {
+    // Symlinks and submodules have no lines to merge: keep ours.
+    if !ours.is_file() || !theirs.is_file() || base.is_some_and(|b| !b.is_file()) {
         return Ok((*ours, Some(ConflictKind::Binary)));
     }
     let base_data = match base {

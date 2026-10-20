@@ -19,6 +19,9 @@ pub struct FileEntry {
     /// A symbolic link; the blob holds its target, with `/` separators.
     #[serde(default, skip_serializing_if = "is_false")]
     pub symlink: bool,
+    /// A Git submodule; the blob holds the 40-hex id of its commit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub gitlink: bool,
 }
 
 impl FileEntry {
@@ -29,6 +32,7 @@ impl FileEntry {
             blob,
             executable,
             symlink: false,
+            gitlink: false,
         }
     }
 
@@ -39,7 +43,25 @@ impl FileEntry {
             blob,
             executable: false,
             symlink: true,
+            gitlink: false,
         }
+    }
+
+    /// A Git submodule pinned at the commit whose id is stored in `blob`.
+    #[must_use]
+    pub fn gitlink(blob: ObjectId) -> Self {
+        Self {
+            blob,
+            executable: false,
+            symlink: false,
+            gitlink: true,
+        }
+    }
+
+    /// A regular file, with content to show, diff and merge.
+    #[must_use]
+    pub fn is_file(&self) -> bool {
+        !self.symlink && !self.gitlink
     }
 }
 
@@ -134,7 +156,8 @@ pub enum ConflictKind {
     Content,
     /// One side modified the file and the other deleted it.
     ModifyDelete,
-    /// Both sides changed a binary file or a symlink; ours was kept.
+    /// Both sides changed a binary file, a symlink or a submodule; ours was
+    /// kept.
     Binary,
 }
 

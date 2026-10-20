@@ -97,7 +97,7 @@ sharkdp/fd                   2052       60   21475ms    2534ms      65ms      88
 tokio-rs/axum                2023      505   61203ms   17551ms      79ms     100ms identical
 ```
 
-(Windows 11, release build. Git submodules are skipped.)
+(Windows 11, release build. Submodules come along as pinned commits, like a fresh Git clone.)
 
 ## Sharing work: the Hebra server
 

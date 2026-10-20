@@ -145,7 +145,6 @@ const VERSUS: [string, string, string][] = [
 
 const GAPS = [
   "Merges are line-based, not syntax-aware yet",
-  "Git submodules are skipped on import",
   "Cloud runners are not available yet",
 ];
 

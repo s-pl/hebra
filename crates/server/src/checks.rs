@@ -178,7 +178,7 @@ fn read_file(
 ) -> ApiResult<Option<String>> {
     let c: Commit = store.read_json(COMMIT, &commit)?;
     let tree: Tree = store.read_tree(&c.tree)?;
-    let Some(entry) = tree.files.get(path).filter(|e| !e.symlink) else {
+    let Some(entry) = tree.files.get(path).filter(|e| e.is_file()) else {
         return Ok(None);
     };
     let bytes = store.read(BLOB, &entry.blob)?;

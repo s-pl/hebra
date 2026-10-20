@@ -151,7 +151,7 @@ pub fn write_fast_import(
         let changes = tx.store.tree_changes(&base, &commit.tree)?;
 
         for entry in changes.iter().filter_map(|(_, e)| e.as_ref()) {
-            if blob_marks.contains_key(&entry.blob) {
+            if entry.gitlink || blob_marks.contains_key(&entry.blob) {
                 continue;
             }
             let bytes = tx.store.read(BLOB, &entry.blob)?;
@@ -194,6 +194,12 @@ pub fn write_fast_import(
             writeln!(out, "D {}", quote_path(path)).map_err(io)?;
         }
         for (path, entry) in changes.iter().filter_map(|(p, e)| e.map(|e| (p, e))) {
+            if entry.gitlink {
+                let commit = tx.store.read(BLOB, &entry.blob)?;
+                let commit = String::from_utf8_lossy(&commit);
+                writeln!(out, "M 160000 {} {}", commit.trim(), quote_path(path)).map_err(io)?;
+                continue;
+            }
             let mode = match (entry.symlink, entry.executable) {
                 (true, _) => "120000",
                 (false, true) => "100755",

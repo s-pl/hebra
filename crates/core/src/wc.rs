@@ -43,6 +43,10 @@ pub struct WcCache {
     /// `core.filemode=false`.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     executables: BTreeSet<String>,
+    /// Git submodules (their directories are not read), with the blob that
+    /// holds the commit each one is pinned at.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    gitlinks: BTreeMap<String, ObjectId>,
 }
 
 impl WcCache {
@@ -147,6 +151,9 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
 
+    // Submodules, and any other repository nested inside, are not read.
+    let skip_root = root.to_path_buf();
+    let submodules: BTreeSet<String> = cache.gitlinks.keys().cloned().collect();
     let walker = ignore::WalkBuilder::new(root)
         .hidden(false)
         .parents(false)
@@ -154,9 +161,17 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
         .git_exclude(false)
         .require_git(false)
         .add_custom_ignore_filename(IGNORE_FILE)
-        .filter_entry(|entry| {
+        .filter_entry(move |entry| {
             let name = entry.file_name();
-            name != DOT_DIR && name != ".git"
+            if name == DOT_DIR || name == ".git" {
+                return false;
+            }
+            let path = entry.path();
+            if path == skip_root || !entry.file_type().is_some_and(|t| t.is_dir()) {
+                return true;
+            }
+            let rel = path.strip_prefix(&skip_root).ok().and_then(to_tree_path);
+            !rel.is_some_and(|r| submodules.contains(&r)) && !path.join(".git").exists()
         })
         .build();
 
@@ -222,6 +237,11 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
         );
         tree.files.insert(path, FileEntry::file(blob, executable));
     }
+    // A submodule stays as long as its directory does.
+    cache.gitlinks.retain(|path, _| root.join(path).is_dir());
+    for (path, blob) in &cache.gitlinks {
+        tree.files.insert(path.clone(), FileEntry::gitlink(*blob));
+    }
     cache.entries = fresh;
     cache.links = links;
     cache.executables = executables;
@@ -233,21 +253,33 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
 /// written through a symlink, so a tree cannot reach outside the workspace.
 pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<CheckoutStats> {
     let mut stats = CheckoutStats::default();
-    for path in from.files.keys() {
-        if !to.files.contains_key(path) {
-            let full = safe_join(root, path)?;
-            if inside_symlink(root, &full) {
-                continue;
-            }
-            if remove_entry(&full)? {
+    for (path, old) in &from.files {
+        let replaced = to
+            .files
+            .get(path)
+            .is_none_or(|new| new.gitlink != old.gitlink);
+        if !replaced {
+            continue;
+        }
+        let full = safe_join(root, path)?;
+        if inside_symlink(root, &full) {
+            continue;
+        }
+        if old.gitlink {
+            // Like Git: a submodule's own checkout is never deleted, only
+            // its empty directory.
+            if fs::remove_dir(&full).is_ok() {
                 stats.removed += 1;
             }
-            prune_empty_dirs(root, &full);
+        } else if remove_entry(&full)? {
+            stats.removed += 1;
         }
+        prune_empty_dirs(root, &full);
     }
     // Modes this system cannot hold on disk, remembered in the cache.
     let mut kept_links = Vec::new();
     let mut kept_executables = Vec::new();
+    let mut kept_gitlinks = Vec::new();
     for (path, entry) in &to.files {
         if from.files.get(path) == Some(entry) {
             continue;
@@ -258,6 +290,13 @@ pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<Ch
         }
         if let Some(parent) = full.parent() {
             fs::create_dir_all(parent).at(parent)?;
+        }
+        if entry.gitlink {
+            // An empty directory, filled by `git submodule update`.
+            fs::create_dir_all(&full).at(&full)?;
+            kept_gitlinks.push((path.clone(), entry.blob));
+            stats.written += 1;
+            continue;
         }
         let data = store.read(BLOB, &entry.blob)?;
         // Replace links instead of writing through them.
@@ -282,18 +321,25 @@ pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<Ch
     let forgotten: Vec<&String> = from
         .files
         .iter()
-        .filter(|(path, e)| (e.symlink || e.executable) && to.files.get(*path) != Some(*e))
+        .filter(|(path, e)| {
+            (e.symlink || e.executable || e.gitlink) && to.files.get(*path) != Some(*e)
+        })
         .map(|(path, _)| path)
         .collect();
-    let changed = !(kept_links.is_empty() && kept_executables.is_empty() && forgotten.is_empty());
+    let changed = !(kept_links.is_empty()
+        && kept_executables.is_empty()
+        && kept_gitlinks.is_empty()
+        && forgotten.is_empty());
     if changed && root.join(DOT_DIR).is_dir() {
         let mut cache = WcCache::load(root);
         for path in forgotten {
             cache.links.remove(path);
             cache.executables.remove(path);
+            cache.gitlinks.remove(path);
         }
         cache.links.extend(kept_links);
         cache.executables.extend(kept_executables);
+        cache.gitlinks.extend(kept_gitlinks);
         cache.save(root)?;
     }
     Ok(stats)

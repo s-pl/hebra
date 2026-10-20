@@ -1231,7 +1231,7 @@ fn git_import(
     if stats.skipped_entries > 0 {
         let _ = writeln!(
             text,
-            "  note: {} submodule entries were skipped",
+            "  note: {} entries of unknown kinds were skipped",
             stats.skipped_entries
         );
     }

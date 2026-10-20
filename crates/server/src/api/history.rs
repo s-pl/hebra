@@ -144,6 +144,7 @@ pub(crate) async fn tree(
                 "binary": binary,
                 "executable": entry.executable,
                 "symlink": entry.symlink,
+                "submodule": entry.gitlink,
                 "content": if binary { Value::Null } else { Value::String(String::from_utf8_lossy(&bytes).into_owned()) },
             })));
         }
@@ -158,6 +159,7 @@ pub(crate) async fn tree(
                 match rest.split_once('/') {
                     Some((dir, _)) => entries.insert(dir.to_owned(), "dir"),
                     None if entry.symlink => entries.insert(rest.to_owned(), "symlink"),
+                    None if entry.gitlink => entries.insert(rest.to_owned(), "submodule"),
                     None => entries.insert(rest.to_owned(), "file"),
                 };
             }
