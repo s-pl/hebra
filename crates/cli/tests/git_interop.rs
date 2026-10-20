@@ -80,6 +80,8 @@ fn git_init(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     git(dir, &["config", "core.autocrlf", "false"]);
     git(dir, &["config", "core.symlinks", "false"]);
+    // Modes come from `update-index --chmod`, so later `add -A` keep them.
+    git(dir, &["config", "core.filemode", "false"]);
 }
 
 fn write(root: &Path, path: &str, content: &[u8]) {

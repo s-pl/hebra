@@ -5,6 +5,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # proc-macro-error2 is unmaintained. It only runs at compile time, inside
+    # biscuit-auth's datalog macros, and nothing replaces it upstream yet.
+    { id = "RUSTSEC-2026-0173", reason = "compile-time only, via biscuit-quote; no maintained alternative upstream" },
+]
 
 [licenses]
 version = 2
