@@ -4,6 +4,8 @@
 
 > Status: early preview (v0.1). The local core, the `hb` CLI, the `hebra-server` and the web hub work today.
 
+**Docs:** [guide](docs/guide.md) · [agents](docs/agents.md) · [coming from Git](docs/migrating-from-git.md) · [self-hosting](docs/self-hosting.md)
+
 ## Why
 
 Git was designed for people taking turns. Agents don't take turns. With Git, teams running several coding agents keep hitting the same walls: agents overwriting each other, merge conflicts that stop everything, interactive credential prompts, CRLF/LF noise, surprise commits and generated files sneaking in. Hebra is designed around those problems instead of around them.
@@ -21,7 +23,12 @@ Git was designed for people taking turns. Agents don't take turns. With Git, tea
 
 ## Install
 
-Download `hb` and `hebra-server` for macOS, Linux or Windows from the [releases page](https://github.com/s-pl/hebra/releases) (each archive has a SHA-256 checksum and signed build provenance), or build from source:
+```sh
+curl -fsSL https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.sh | sh          # macOS, Linux
+irm https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.ps1 | iex                # Windows (PowerShell)
+```
+
+Both install `hb` and `hebra-server` from the latest [release](https://github.com/s-pl/hebra/releases) (macOS, Linux and Windows; x64 and ARM64), after checking the archive's SHA-256; every archive also has signed build provenance. Server images: `ghcr.io/s-pl/hebra-server` and `ghcr.io/s-pl/hebra-web`. From source:
 
 ```sh
 cargo install --locked --git https://github.com/s-pl/hebra hebra-cli      # hb
