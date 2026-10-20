@@ -27,6 +27,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
+      docker: ${{ steps.filter.outputs.docker }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +49,16 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - '.node-version'
+              - '.github/workflows/ci.yml'
+            docker:
+              - 'crates/**'
+              - 'Cargo.lock'
+              - 'apps/web/**'
+              - 'pnpm-lock.yaml'
+              - 'deploy/docker/**'
+              - 'deploy/compose/**'
+              - '.dockerignore'
+              - 'scripts/compose-smoke.sh'
               - '.github/workflows/ci.yml'
 
   rust:
@@ -110,3 +121,20 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+
+  docker:
+    name: Docker platform
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo build --locked -p hebra-cli
+      # Both images, then the whole compose stack: PostgreSQL, NATS, S3, two
+      # server replicas, the web app and Caddy, with a real push over HTTPS.
+      - run: scripts/compose-smoke.sh
