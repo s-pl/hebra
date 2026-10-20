@@ -1,6 +1,7 @@
 //! A small JSON client for server-wide API calls (sign-in, mandates,
 //! organizations, runners), which are not tied to one repository.
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -12,16 +13,62 @@ pub struct Client {
     agent: ureq::Agent,
 }
 
+/// The certificate authorities `hb` trusts: the public web roots, or only
+/// the PEM bundle named by `HB_CA_CERT` (like `curl --cacert`), for servers
+/// behind a private CA. A bundle that cannot be read trusts nothing.
+fn root_certs() -> ureq::tls::RootCerts {
+    static ROOTS: OnceLock<ureq::tls::RootCerts> = OnceLock::new();
+    ROOTS
+        .get_or_init(|| {
+            let Some(path) = std::env::var_os("HB_CA_CERT").filter(|p| !p.is_empty()) else {
+                return ureq::tls::RootCerts::WebPki;
+            };
+            let certs: Result<Vec<_>> = std::fs::read(&path)
+                .with_context(|| format!("reading {}", path.to_string_lossy()))
+                .and_then(|pem| {
+                    ureq::tls::parse_pem(&pem)
+                        .filter_map(|item| match item {
+                            Ok(ureq::tls::PemItem::Certificate(c)) => Some(Ok(c)),
+                            Ok(_) => None,
+                            Err(e) => Some(Err(e.into())),
+                        })
+                        .collect()
+                });
+            match certs {
+                Ok(certs) if !certs.is_empty() => ureq::tls::RootCerts::new_with_certs(&certs),
+                Ok(_) => {
+                    eprintln!("warning: HB_CA_CERT has no certificates; trusting none");
+                    ureq::tls::RootCerts::new_with_certs(&[])
+                }
+                Err(e) => {
+                    eprintln!("warning: HB_CA_CERT: {e:#}; trusting none");
+                    ureq::tls::RootCerts::new_with_certs(&[])
+                }
+            }
+        })
+        .clone()
+}
+
+/// An HTTP agent with `hb`'s TLS settings. `None` waits forever (streams).
+pub fn http_agent(timeout: Option<Duration>) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(timeout)
+        .http_status_as_error(false)
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .root_certs(root_certs())
+                .build(),
+        )
+        .build()
+        .into()
+}
+
 impl Client {
     pub fn new(base: &str, token: Option<String>) -> Self {
         Self {
             base: base.trim_end_matches('/').to_owned(),
             token,
-            agent: ureq::Agent::config_builder()
-                .timeout_global(Some(Duration::from_secs(120)))
-                .http_status_as_error(false)
-                .build()
-                .into(),
+            agent: http_agent(Some(Duration::from_secs(120))),
         }
     }
 

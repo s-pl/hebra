@@ -39,11 +39,7 @@ pub(crate) fn split_url(url: &str) -> Result<(String, String)> {
 }
 
 fn agent(timeout: Duration) -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_global(Some(timeout))
-        .http_status_as_error(false)
-        .build()
-        .into()
+    crate::client::http_agent(Some(timeout))
 }
 
 impl Remote {

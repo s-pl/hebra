@@ -143,10 +143,7 @@ pub fn watch(
 
     // Live events on a background thread.
     std::thread::spawn(move || {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .build()
-            .into();
+        let agent = crate::client::http_agent(None);
         loop {
             let mut req = agent.get(&url);
             if let Some(a) = &auth {
