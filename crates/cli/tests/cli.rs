@@ -328,6 +328,34 @@ fn undo_reverts_a_merge_including_files() {
 }
 
 #[test]
+fn undo_keeps_work_done_after_the_undone_operation() {
+    let repo = Repo::init(&[("a.txt", "1\n2\n3\n")]);
+    json(&repo.root, &["commit", "-m", "base"]);
+    let agent = PathBuf::from(
+        json(&repo.root, &["start", "top", "--agent", "x"])["path"]
+            .as_str()
+            .unwrap(),
+    );
+    write_in(&agent, "a.txt", "ONE\n2\n3\n");
+    json(&agent, &["commit", "-m", "top"]);
+    json(&repo.root, &["merge", "@-", "top@-"]);
+    assert_eq!(repo.read("a.txt"), "ONE\n2\n3\n");
+
+    // Work after the merge, then undo the merge.
+    repo.write("later.txt", "keep me\n");
+    repo.write("a.txt", "ONE\n2\nTHREE\n");
+    let undone = json(&repo.root, &["undo"]);
+    assert_eq!(undone["command"], "merge");
+    assert_eq!(undone["rebased"][0], "workspace default");
+
+    // The merge is gone, the later work is not.
+    assert_eq!(repo.read("a.txt"), "1\n2\nTHREE\n");
+    assert_eq!(repo.read("later.txt"), "keep me\n");
+    let status = json(&repo.root, &["status"]);
+    assert_eq!(status["parents"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn undo_twice_goes_further_back() {
     let repo = Repo::init(&[]);
     json(&repo.root, &["describe", "-m", "one"]);

@@ -466,6 +466,24 @@ pub struct UndoResult {
     pub undone: i64,
     pub command: String,
     pub checkout: Option<CheckoutStats>,
+    /// Workspaces and bookmarks with later work, carried over onto where
+    /// they were before (`workspace default`, `bookmark main`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rebased: Vec<String>,
+    /// Workspaces and bookmarks left as they are, because later work could
+    /// not be traced back to the undone operation.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<String>,
+}
+
+/// What undoing an operation does to one workspace or bookmark.
+enum RefUndo {
+    /// Nothing happened to it since: back to its earlier value.
+    Restore(Option<ObjectId>),
+    /// Later work, replayed on top of its earlier value.
+    Rebased(ObjectId),
+    /// Later work that does not descend from the undone change: untouched.
+    Kept,
 }
 
 impl Tx<'_> {
@@ -907,33 +925,62 @@ impl Tx<'_> {
         .view;
         let after = &target.view;
         let mut restored = self.view.clone();
+        let (mut rebased, mut kept) = (Vec::new(), Vec::new());
 
-        let names: BTreeSet<&String> = before
+        let names: BTreeSet<String> = before
             .workspaces
             .keys()
             .chain(after.workspaces.keys())
+            .cloned()
             .collect();
         for name in names {
-            let (b, a) = (before.workspaces.get(name), after.workspaces.get(name));
-            if b != a {
-                match b {
-                    Some(info) => restored.workspaces.insert(name.clone(), info.clone()),
-                    None => restored.workspaces.remove(name),
-                };
+            let (b, a) = (before.workspaces.get(&name), after.workspaces.get(&name));
+            if b == a {
+                continue;
             }
+            let current = self.view.workspaces.get(&name).map(|w| w.wc);
+            match self.undo_ref(b.map(|w| w.wc), a.map(|w| w.wc), current)? {
+                RefUndo::Restore(_) => match b {
+                    Some(info) => restored.workspaces.insert(name.clone(), info.clone()),
+                    None => restored.workspaces.remove(&name),
+                },
+                RefUndo::Rebased(id) => {
+                    if let Some(info) = restored.workspaces.get_mut(&name) {
+                        info.wc = id;
+                    }
+                    rebased.push(format!("workspace {name}"));
+                    None
+                }
+                RefUndo::Kept => {
+                    kept.push(format!("workspace {name}"));
+                    None
+                }
+            };
         }
-        let names: BTreeSet<&String> = before
+        let names: BTreeSet<String> = before
             .bookmarks
             .keys()
             .chain(after.bookmarks.keys())
+            .cloned()
             .collect();
         for name in names {
-            let (b, a) = (before.bookmarks.get(name), after.bookmarks.get(name));
-            if b != a {
-                match b {
-                    Some(id) => restored.bookmarks.insert(name.clone(), *id),
-                    None => restored.bookmarks.remove(name),
-                };
+            let (b, a) = (before.bookmarks.get(&name), after.bookmarks.get(&name));
+            if b == a {
+                continue;
+            }
+            let current = self.view.bookmarks.get(&name).copied();
+            match self.undo_ref(b.copied(), a.copied(), current)? {
+                RefUndo::Restore(Some(id)) => {
+                    restored.bookmarks.insert(name.clone(), id);
+                }
+                RefUndo::Restore(None) => {
+                    restored.bookmarks.remove(&name);
+                }
+                RefUndo::Rebased(id) => {
+                    restored.bookmarks.insert(name.clone(), id);
+                    rebased.push(format!("bookmark {name}"));
+                }
+                RefUndo::Kept => kept.push(format!("bookmark {name}")),
             }
         }
         if before.remotes != after.remotes {
@@ -953,7 +1000,108 @@ impl Tx<'_> {
             undone: target.id,
             command: target.command,
             checkout,
+            rebased,
+            kept,
         })
+    }
+
+    /// Undoing an operation that moved a reference from `before` to
+    /// `after`, now that it points at `current`.
+    fn undo_ref(
+        &mut self,
+        before: Option<ObjectId>,
+        after: Option<ObjectId>,
+        current: Option<ObjectId>,
+    ) -> Result<RefUndo> {
+        if current == after {
+            return Ok(RefUndo::Restore(before));
+        }
+        let (Some(b), Some(a), Some(c)) = (before, after, current) else {
+            return Ok(RefUndo::Kept);
+        };
+        match self.later_chain(a, c)? {
+            Some(chain) => Ok(RefUndo::Rebased(self.replay(b, a, &chain)?)),
+            None => Ok(RefUndo::Kept),
+        }
+    }
+
+    /// The commits from `after` (excluded, or its rewrite included) up to
+    /// `current`, oldest first, following first parents.
+    fn later_chain(&mut self, after: ObjectId, current: ObjectId) -> Result<Option<Vec<ObjectId>>> {
+        const LIMIT: usize = 10_000;
+        let after_change = self.commit(&after)?.change_id;
+        let mut chain = Vec::new();
+        let mut id = current;
+        for _ in 0..LIMIT {
+            if id == after {
+                chain.reverse();
+                return Ok(Some(chain));
+            }
+            let commit = self.commit(&id)?;
+            chain.push(id);
+            if commit.change_id == after_change {
+                chain.reverse();
+                return Ok(Some(chain));
+            }
+            match commit.parents.first() {
+                Some(parent) if *parent != self.root_commit => id = *parent,
+                _ => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Replays `chain` (work done after `after`) onto `before`. A rewrite of
+    /// `after` itself becomes `before` plus what changed since `after`; the
+    /// commits on top of it are moved onto the result one by one. Conflicts
+    /// are recorded in the commits, as in any merge.
+    fn replay(
+        &mut self,
+        before: ObjectId,
+        after: ObjectId,
+        chain: &[ObjectId],
+    ) -> Result<ObjectId> {
+        let after_commit = self.commit(&after)?;
+        let mut new_base = before;
+        for id in chain {
+            let commit = self.commit(id)?;
+            let rewrite_of_after = commit.change_id == after_commit.change_id;
+            let base_tree = if rewrite_of_after {
+                self.tree(&after_commit.tree)?
+            } else {
+                match commit.parents.first() {
+                    Some(parent) => self.commit_tree(parent)?,
+                    None => Tree::default(),
+                }
+            };
+            let ours = self.commit_tree(&new_base)?;
+            let theirs = self.tree(&commit.tree)?;
+            let merged = merge::merge_trees(self.store, &base_tree, &ours, &theirs)?;
+            let tree = self.store.write_tree(&merged.tree)?;
+            let next = if rewrite_of_after {
+                let mut base = self.commit(&new_base)?;
+                if commit.description != after_commit.description {
+                    base.description.clone_from(&commit.description);
+                }
+                base.predecessors = vec![new_base, *id];
+                base.tree = tree;
+                base.conflicts = merged.conflicts;
+                base.timestamp = now();
+                base
+            } else {
+                let mut moved = commit.clone();
+                if let Some(first) = moved.parents.first_mut() {
+                    *first = new_base;
+                }
+                moved.predecessors = vec![*id];
+                moved.tree = tree;
+                moved.conflicts = merged.conflicts;
+                moved.timestamp = now();
+                moved
+            };
+            new_base = self.write_commit(next)?;
+        }
+        Ok(new_base)
     }
 
     /// Restores the whole repository view to what it was after `op`.

@@ -886,7 +886,21 @@ fn show(tx: &mut Tx<'_>, revision: &str) -> hebra_core::Result<Output> {
 
 fn undo(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
     let result = tx.undo()?;
-    let text = format!("Undid operation {} ({}).\n", result.undone, result.command);
+    let mut text = format!("Undid operation {} ({}).\n", result.undone, result.command);
+    if !result.rebased.is_empty() {
+        let _ = writeln!(
+            text,
+            "Later work kept on top: {}.",
+            result.rebased.join(", ")
+        );
+    }
+    if !result.kept.is_empty() {
+        let _ = writeln!(
+            text,
+            "Left as they are (changed in unrelated ways since): {}.",
+            result.kept.join(", ")
+        );
+    }
     Ok(Output::new(json!(result), text))
 }
 
