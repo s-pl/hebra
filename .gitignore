@@ -28,3 +28,6 @@ apps/web/next-env.d.ts
 
 # Helm dependencies (helm dependency build)
 deploy/helm/*/charts/
+
+# Private notes between sessions (Spanish, not published)
+notas/
