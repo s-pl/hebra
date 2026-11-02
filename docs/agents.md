@@ -21,6 +21,8 @@ Any MCP client works the same way: the command is `hb mcp`, run in the repositor
 | Tasks | `hb_tasks`, `hb_task_show`, `hb_task_create`, `hb_task_claim`, `hb_task_release` |
 | Checks | `hb_checks`, `hb_check_log` |
 | Git | `hb_git_import`, `hb_git_export` |
+| History | `hb_blame`, `hb_grep` |
+| Everything else | `hb`, which runs any command: `{ "args": ["rebase", "main"] }` |
 
 Results come back as structured content; failures set `isError` with the same stable error codes as the CLI.
 

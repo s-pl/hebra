@@ -1,10 +1,10 @@
 # Hebra
 
-**Version control built for the agent era.** Hundreds of agents and people work in the same repository at once — isolated, coordinated, and never blocked by a merge.
+Version control for repositories where people and many coding agents work at the same time. It does everything Git does, works with Git remotes, and has its own server and web hub.
 
-> Status: early preview (v0.2). The local core, the `hb` CLI, the `hebra-server` and the web hub work today. Website and demo hub: https://hebra.samuelponceluna.workers.dev
+> Status: early preview. The `hb` CLI, `hebra-server` and the web hub work today; there is no hosted service yet. Website and demo hub: https://hebra.samuelponceluna.workers.dev
 
-**Docs:** [guide](docs/guide.md) · [agents](docs/agents.md) · [coming from Git](docs/migrating-from-git.md) · [self-hosting](docs/self-hosting.md)
+**Docs:** [guide](docs/guide.md) · [agents](docs/agents.md) · [coming from Git](docs/migrating-from-git.md) · [every Git command](docs/git-commands.md) · [self-hosting](docs/self-hosting.md) · [API](docs/api.md)
 
 ## Why
 
@@ -18,6 +18,7 @@ Git was designed for people taking turns. Agents don't take turns. With Git, tea
 | Who changed what | Name and e-mail | Person, agent, task, session and prompt |
 | Undo | Depends on the command | Every operation, always |
 | Collisions | Found at merge time | Warned before they happen (claims, overlaps) |
+| Many at once | Commands fail on `index.lock` | Commands run side by side and their results merge |
 | Line endings | Per-machine config | Normalized by the format |
 | Agent interface | Parse human output | `--json` everywhere + built-in MCP server |
 
@@ -28,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.sh 
 irm https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.ps1 | iex                # Windows (PowerShell)
 ```
 
-Both install `hb` and `hebra-server` from the latest [release](https://github.com/s-pl/hebra/releases) (macOS, Linux and Windows; x64 and ARM64), after checking the archive's SHA-256; every archive also has signed build provenance. Server images: `ghcr.io/s-pl/hebra-server` and `ghcr.io/s-pl/hebra-web`. From source:
+Both install `hb` and `hebra-server` from the latest [release](https://github.com/s-pl/hebra/releases) (macOS and Linux on x64 and ARM64, Windows on x64), after checking the archive's SHA-256; every archive also has signed build provenance. Server images: `ghcr.io/s-pl/hebra-server` and `ghcr.io/s-pl/hebra-web`. From source:
 
 ```sh
 cargo install --locked --git https://github.com/s-pl/hebra hebra-cli      # hb
@@ -59,19 +60,23 @@ hb log
 ### For agents
 
 - Every command accepts `--json` (or `HB_JSON=1`) and errors carry a stable `code`.
-- `hb mcp` serves Hebra over the Model Context Protocol (stdio): `claude mcp add hebra -- hb mcp`.
+- `hb mcp` serves Hebra over the Model Context Protocol (stdio): `claude mcp add hebra -- hb mcp`. Common commands are tools of their own, and the `hb` tool runs any other.
 - Identity and intent come from the environment: `HB_ACTOR`, `HB_ACTOR_KIND`, `HB_ON_BEHALF_OF`, `HB_TASK`, `HB_SESSION`, `HB_PROMPT`. Claude Code is detected automatically.
 
-### Pushing to GitHub
+### Working with Git and GitHub
 
-Hebra exports its history to a normal Git repository, so you can keep using GitHub while agents work in Hebra:
+A Git remote works like any other. People on Git and people on Hebra can share a repository:
 
 ```sh
-hb git export ../my-app.git            # bare repo created if missing; branch main = @-
-git -C ../my-app.git push git@github.com:you/my-app.git main
+hb clone https://github.com/you/my-app
+hb commit -m "add login"
+hb push origin main                    # adds to the branch, with the same commit ids everyone has
+hb pull
 ```
 
-Exports are deterministic (running it again only moves the branch) and every commit keeps its provenance as trailers:
+Every Git command has its counterpart, usually the same word with the same flags: `hb rebase`, `hb cherry-pick`, `hb stash`, `hb blame`, `hb bisect`, `hb tag`, `hb reset`. See [docs/git-commands.md](docs/git-commands.md); a test checks that list against `git help -a`.
+
+To write history into a Git repository without a remote, `hb git export ../my-app.git`. Exports are deterministic and every commit keeps its provenance as trailers:
 
 ```
 add OAuth login
@@ -85,11 +90,36 @@ Hebra-Task: add OAuth login
 ### Importing from Git
 
 ```sh
-hb git import ../existing-repo --branch main   # becomes the bookmark `main`
+hb git import ../existing-repo --all            # every branch and tag
+hb git import ../existing-repo --branch main    # or one, as the bookmark `main`
 hb new main
 ```
 
 Imports are deterministic, and commits that were exported by Hebra get their change ids and provenance back.
+
+### Size and speed
+
+Measured on Windows 11, median of seven runs on the same checkout:
+
+| | ripgrep (2,303 commits) | | tokio (4,850 commits) | |
+|---|---|---|---|---|
+| | Git | Hebra | Git | Hebra |
+| `status` | 49 ms | 53 ms | 52 ms | 63 ms |
+| `log -n 20` | 46 ms | 52 ms | 44 ms | 62 ms |
+| `diff` | 49 ms | 55 ms | 66 ms | 70 ms |
+| `commit` | 74 ms | 97 ms | 94 ms | 118 ms |
+| Repository, after `hb gc` | 6.3 MB | 5.7 MB | 20 MB | 17 MB |
+| Clone | 228 ms | 7.6 s | 481 ms | 21.6 s |
+
+Cloning from Git is slow because every commit is converted, and that repository then also keeps a copy of the Git objects to talk to the remote, about the same size again.
+
+Many agents at once, `scripts/stress.sh N 2`, each agent in its own workspace running `status` and `commit` at the same time:
+
+| Agents | Commands | Failures | Time |
+|---|---:|---:|---:|
+| 100 | 300 | 0 | 4.4 s |
+| 200 | 600 | 0 | 9.3 s |
+| 500 | 1,500 | 0 | 29 s |
 
 ### Fidelity with Git
 
@@ -155,7 +185,7 @@ docker compose -f deploy/compose/compose.yaml exec server hebra-server user crea
 
 ### The web hub
 
-`apps/web` serves the landing page and, under `/hub`, a view of the server: repositories, history with the agent behind each change, diffs with provenance (task, session, prompt), a file browser, reviews, tasks, checks, the merge queue, and who is working right now. Point it at a server with `HEBRA_SERVER_URL` (default `http://127.0.0.1:4600`).
+`apps/web` serves the landing page and, under `/hub`, a view of the server: repositories, branches and tags, history with the agent behind each change, diffs with provenance (task, session, prompt), a file browser with blame, comparisons, code search, reviews, tasks, checks, the merge queue, and who is working right now. Point it at a server with `HEBRA_SERVER_URL` (default `http://127.0.0.1:4600`).
 
 To see everything with sample data:
 
@@ -166,7 +196,7 @@ cd apps/web && pnpm build && pnpm start            # then open the sign-in link 
 
 ### Revisions
 
-`@` (working copy), `@-` (its parent), `<workspace>@`, `root()`, bookmarks, change-id prefixes (letters `k`–`z`) and commit-id prefixes (hex).
+`@` (working copy), `@-` (its parent, also `HEAD`), `<workspace>@`, `root()`, bookmarks, tags, `main@origin` or `origin/main`, `REV~2`, `REV^2`, `A..B`, `A...B`, change-id prefixes (letters `k`–`z`) and commit-id prefixes (hex).
 
 ## Repository layout
 
@@ -196,9 +226,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the heavier checks, and [SECURITY.md]
 
 ## Roadmap
 
-- **Now (v0.2):** BLAKE3 content-addressed store with Merkle trees and pack files, operation log with undo that keeps later work, one workspace per agent, claims and overlap warnings, three-way merge with conflicts as data and structural merge for Rust, TypeScript, JavaScript, Python, Go and Java, provenance on every change, symlinks, submodules and executable bits on every OS, MCP server, `--json`, exact Git import/export, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, checks and runners, live events, web hub.
-- **Next:** hosted Hebra (server on a VPS behind Cloudflare), structural merge for more languages, lazy fetch for large repositories.
-- **Later:** semantic history search, SDKs generated from the API.
+- **Now:** every Git command, Git remotes, content-addressed store with delta-compressed packs, operation log with undo that keeps later work, concurrent commands that merge instead of locking, one workspace per agent, claims and overlap warnings, conflicts as data and structural merge for Rust, TypeScript, JavaScript, Python, Go and Java, rename-aware merges, provenance on every change, partial clones and sparse workspaces, MCP server, `--json`, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, checks and runners, live events, web hub.
+- **Next:** a hosted server, `hb search` ([proposal](docs/design/semantic-search.md)), structural merge for more languages.
+- **Later:** SDKs generated from the API.
 
 ## License
 

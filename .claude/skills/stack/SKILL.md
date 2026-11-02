@@ -19,6 +19,8 @@ description: Decisiones de stack y arquitectura del proyecto (Rust para núcleo/
 | Metadatos | PostgreSQL (`sqlx`), con esquema particionable por repositorio |
 | Tiempo real | WebSocket + NATS |
 | Web | Next.js (App Router) + TypeScript + Tailwind CSS, gestionado con pnpm |
+| UI | Bloques gratuitos de Bencho (MIT) copiados y adaptados en `apps/web/components/bencho`, sin paquete |
+| Compresión y regex (Rust) | `miniz_oxide` y `regex` |
 | SDK | TypeScript y Python, generados a partir de la especificación de la API |
 
 ## Principios de arquitectura

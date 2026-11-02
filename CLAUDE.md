@@ -14,20 +14,20 @@ Open source. Proyecto en solitario. Comando de la CLI: `hb`. Nombre: cada agente
 ## Estructura del monorepo
 ```
 crates/core     hebra-core: almacén BLAKE3, modelo, copia de trabajo, merge, registro de operaciones (SQLite)
-crates/cli      hb: CLI (`--json` en todo) + servidor MCP (`hb mcp`)
+crates/cli      hb: CLI (`--json` en todo) + servidor MCP (`hb mcp`). porcelain.rs, inspect.rs, bridge.rs (remotos), transfer.rs (parches), extras.rs
 crates/server   hebra-server: API HTTP (axum), push/pull, presencia, tokens por agente
-apps/web        landing + hub /hub (Next.js 16, Tailwind 4, Biome)
+apps/web        landing, docs /docs + hub /hub (Next.js 16, Tailwind 4, Biome)
 ```
 
-## Estado (2026-10-21)
-- MVP local funcional: init/import, status, diff, describe, commit, new, log, show, merge (conflictos como datos), resolve, start/workspaces (un workspace por agente), claims, undo/op log/op restore, bookmarks, config, MCP.
-- 92 tests (unitarios + integración de la CLI, plataforma e interoperabilidad con Git). `hb git export` exporta a Git con trailers de procedencia. Prueba de estrés: 8 agentes en paralelo, 48 comandos, 0 errores de bloqueo.
-- Repo público: https://github.com/s-pl/hebra
-- Hecho también: hebra-server, hb push/pull/presence/remote, hb git import, web /hub, release.yml (binarios al crear un tag v*). scripts/demo.sh siembra un servidor de ejemplo.
-- 2026-10-21: árbol Merkle (un objeto por directorio, lee el formato plano antiguo), enlaces simbólicos y bit ejecutable en todos los SO (en Windows sin privilegio se guardan en wc-cache como Git con core.symlinks/filemode=false), `HB_CA_CERT` para CA privadas, tests de interoperabilidad contra Git (`crates/cli/tests/git_interop.rs`), `scripts/github-roundtrip.sh` (5 repos reales de GitHub, árboles idénticos) y `scripts/compose-smoke.sh` (stack Docker completo con push por HTTPS); ambos en CI (job `docker` y workflow `interop.yml`).
-- 2026-10-21 (v0.2.0): packfiles + `hb gc`, submódulos (gitlinks), merge estructural (tree-sitter, 6 lenguajes), undo que reaplica el trabajo posterior, docs/ de usuario, instaladores (scripts/install.sh, install.ps1), release con Linux ARM64 e imágenes en GHCR, chart de Helm probado en kind limpio.
+## Estado (2026-11-02)
+- Open source primero; Hebra Cloud (de pago) queda para después. Compatible con Git, pero con servidor y web propios: el puente es una vía de entrada, no el producto.
+- Paridad con Git: `docs/git-commands.md` cubre todo `git help -a` y un test lo comprueba contra el `git` instalado. Clone/fetch/push contra remotos Git (espejo bare en `<repo>/git/<remoto>.git` y tabla `git_map`: los commits de Git conservan su SHA y nunca se reexportan).
+- Concurrencia al estilo jj: los comandos leen sin bloqueo, hacen su trabajo y publican en una transacción corta; si otro publicó, `oplog::merge_views` fusiona a tres bandas. Bloqueo solo por workspace (`.hebra/lock`, lo libera el SO). Los archivos siguen a la vista: si un comando muere, el siguiente termina (`WcCache::synced`). Lectura sin bloqueos (`Workspace::read`, `look`).
+- Almacén: packs v2 con deltas por ruta (`delta.rs`) y zlib; índice del grafo en SQLite (`commit_index`, con generaciones); operaciones como deltas de la vista con checkpoint cada 128 (`oplog.rs`, esquema 2, migración automática desde v1, `repository_too_new` si el repo es más nuevo).
+- Servidor: tags como bookmarks `tags/<nombre>` (los anotados llevan un commit con `tag`), blame, compare, search, `/objects/get` y `filter=blob:none` para clones parciales. Hub: páginas refs, compare, search y blame.
 - Web publicada gratis en Cloudflare Workers (solo estáticos): https://hebra.samuelponceluna.workers.dev — `scripts/cloudflare-site.sh` la regenera con los datos de demo.sh. El servidor aún no está alojado (el autor decidirá VPS o free tier; idea: Cloudflare Tunnel delante).
-- Limitaciones conocidas: el merge estructural solo cubre 6 lenguajes; sin servidor alojado; sin clonado parcial para monorepos enormes.
+- Web rediseñada sobre el kit Bencho (skill `diseno`; bloques MIT en `apps/web/components/bencho`, sin dependencias nuevas). Hebra Cloud solo aparece con `NEXT_PUBLIC_HEBRA_CLOUD=1`; en un servidor autoalojado `/` abre el dashboard salvo con `HEBRA_PUBLIC_SITE=1`.
+- Limitaciones conocidas: el merge estructural solo cubre 6 lenguajes; sin servidor alojado; `hb search` es una propuesta (`docs/design/semantic-search.md`); precios provisionales.
 
 ## Comandos útiles
 - Rust: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`

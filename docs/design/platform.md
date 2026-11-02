@@ -24,7 +24,7 @@ built, where it lives, and which edition has it.
 
 ## Editions
 
-| | Community (self-hosted) | Cloud (hebra.dev) |
+| | Community (self-hosted) | Cloud (planned) |
 |---|---|---|
 | Price | Free, Apache-2.0 | Free tier and paid plans ([billing](../billing-policy.md)) |
 | Repositories, bookmarks, push/pull, Git bridge | ✓ | ✓ |
@@ -36,9 +36,7 @@ built, where it lives, and which edition has it.
 | Checks on your own runners (`hb runner`) | ✓ | ✓ |
 | Agent verification by contract | — | ✓ (metered) |
 | Merge queue | — | ✓ |
-| Cloud runners | — | coming soon |
-| Transparency log with public witness | local log only | ✓ |
-| SSO (SAML / OIDC), audit export | — | Business and up |
+| Signed transparency log | ✓ | ✓ |
 | Managed backups, high availability, support | your own | ✓ |
 
 The edition is configuration (`HEBRA_EDITION=community|cloud`), not a fork.
@@ -189,9 +187,6 @@ A run whose lease expires is queued again (up to 3 attempts). Checks from
 quarantined contributions only run after a maintainer approves them, so
 strangers cannot run code on an organization's machines.
 
-Cloud runners (machines we run, billed by the minute) are announced but not
-offered yet; the API and plans already have room for them.
-
 ## Agent verification by contract (Cloud)
 
 The repository describes, in plain language, how work must be verified:
@@ -234,8 +229,9 @@ objects written afterwards belong to the fork.
 Every bookmark move, merge, mandate issue and revocation is appended to a
 per-repository log: each entry holds the previous entry's hash, and the server
 signs the head. `hb verify-log` replays it and checks that the history the
-server shows matches what was recorded. In Cloud, log heads are published to a
-public witness so even the operator cannot rewrite them unnoticed.
+server shows matches what was recorded. A client that keeps the head it saw
+notices if the log is rewritten later. Publishing heads to a public witness
+would extend that to everyone; it is not built.
 
 ## Billing (Cloud)
 
@@ -258,9 +254,9 @@ Implementation:
 | Piece | Location |
 |---|---|
 | Identity, roles, mandates | `crates/server/src/identity/` |
-| Policy evaluation | `crates/server/src/policy.rs` |
-| Tasks, reviews, checks, runners | `crates/server/src/api/*` + `meta/` tables |
-| Model gateway | `crates/server/src/gateway/` |
+| Policy evaluation | `crates/server/src/checks.rs` |
+| Tasks, reviews, checks, runners | `crates/server/src/api/*`, `crates/server/src/db/*` |
+| Model gateway | `crates/server/src/gateway.rs` |
 | Billing (plans, metering, Stripe) | `crates/server/src/billing/` |
 | CLI: login, mandates, tasks, runners, verify | `crates/cli/src/` |
 | Hub pages | `apps/web/app/hub/` |
