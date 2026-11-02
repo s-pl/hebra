@@ -72,9 +72,24 @@ fn directory(ws: &Workspace) -> PathBuf {
         .map_or_else(|| ws.repo_dir.join("hooks"), PathBuf::from)
 }
 
+/// Like Git, a file without the execute bit is not a hook, so it is skipped and
+/// never stops a command. Windows has no such bit.
+fn runnable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
 fn find(ws: &Workspace, name: &str) -> Option<PathBuf> {
     let path = directory(ws).join(name);
-    path.is_file().then_some(path)
+    runnable(&path).then_some(path)
 }
 
 fn run(ws: &Workspace, path: &Path, args: &[&str]) -> Result<std::process::ExitStatus> {
@@ -129,7 +144,7 @@ pub fn list(ws: &Workspace) -> Output {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.path().is_file())
+        .filter(|e| runnable(&e.path()))
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     let mut text = format!("Hooks in {}:\n", dir.display());

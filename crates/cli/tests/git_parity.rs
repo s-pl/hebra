@@ -1362,23 +1362,32 @@ fn fsck_finds_damage() {
     assert_eq!(hb_raw(&dir, &["fsck"]).status.code(), Some(1));
 }
 
+/// Writes a hook the way `chmod +x` leaves it.
+fn write_hook(path: &Path, text: &str) {
+    fs::write(path, text).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 #[test]
 fn hooks_run_and_can_stop_a_commit() {
     let lab = Lab::new();
     let dir = lab.repo("r");
     let hooks = dir.join(".hebra/repo/hooks");
     fs::create_dir_all(&hooks).unwrap();
-    fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+    write_hook(&hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n");
     write(&dir, "a.txt", "1\n");
     assert!(hb_fails(&dir, &["commit", "-m", "x"]).contains("pre-commit"));
     hb(&dir, &["commit", "-m", "x", "--no-verify"]);
     fs::remove_file(hooks.join("pre-commit")).unwrap();
 
-    fs::write(
-        hooks.join("commit-msg"),
+    write_hook(
+        &hooks.join("commit-msg"),
         "#!/bin/sh\necho 'Signed-off-by: hook' >> \"$1\"\n",
-    )
-    .unwrap();
+    );
     write(&dir, "b.txt", "2\n");
     hb(&dir, &["commit", "-m", "y"]);
     assert!(
@@ -1388,6 +1397,19 @@ fn hooks_run_and_can_stop_a_commit() {
             .contains("Signed-off-by")
     );
     assert!(hbt(&dir, &["hook", "list"]).contains("commit-msg"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hook_that_is_not_executable_is_skipped_like_in_git() {
+    let lab = Lab::new();
+    let dir = lab.repo("r");
+    let hooks = dir.join(".hebra/repo/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+    write(&dir, "a.txt", "1\n");
+    hb(&dir, &["commit", "-m", "x"]);
+    assert!(!hbt(&dir, &["hook", "list"]).contains("pre-commit"));
 }
 
 #[test]
