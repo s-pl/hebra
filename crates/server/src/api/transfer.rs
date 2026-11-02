@@ -20,6 +20,43 @@ pub(crate) struct PackRequest {
     want: Vec<String>,
     #[serde(default)]
     have: Vec<String>,
+    /// `blob:none` leaves file contents out, for partial clones.
+    #[serde(default)]
+    filter: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ObjectsRequest {
+    ids: Vec<String>,
+}
+
+/// These exact objects: what a partial clone asks for as it needs contents.
+pub(crate) async fn objects(
+    State(s): St,
+    headers: HeaderMap,
+    UrlPath((owner, name)): UrlPath<(String, String)>,
+    axum::Json(body): axum::Json<ObjectsRequest>,
+) -> ApiResult<Response> {
+    let (repo, _) = s.access(&headers, &owner, &name, Action::Read).await?;
+    if body.ids.len() > 10_000 {
+        return Err(ApiError::bad("too many ids in one request"));
+    }
+    let store = s.store(&repo);
+    blocking(move || {
+        let ids = body
+            .ids
+            .iter()
+            .map(|i| ObjectId::parse(i))
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in &ids {
+            if !store.has(id) {
+                return Err(ApiError::not_found(format!("object {id} not found")));
+            }
+        }
+        let bytes = transport::encode(&transport::collect(&store, &ids)?);
+        Ok(([(header::CONTENT_TYPE, "application/x-hebra-pack")], bytes).into_response())
+    })
+    .await
 }
 
 /// The objects reachable from `want` that the client lacks (`have`).
@@ -33,6 +70,11 @@ pub(crate) async fn pack(
     if body.want.len() > 10_000 || body.have.len() > 100_000 {
         return Err(ApiError::bad("too many ids in one request"));
     }
+    let blobless = match body.filter.as_deref() {
+        None => false,
+        Some("blob:none") => true,
+        Some(other) => return Err(ApiError::bad(format!("unknown filter `{other}`"))),
+    };
     let store = s.store(&repo);
     blocking(move || {
         let parse = |ids: &[String]| {
@@ -50,7 +92,11 @@ pub(crate) async fn pack(
                 return Err(ApiError::not_found(format!("object {w} not found")));
             }
         }
-        let ids = transport::closure(&store, &want, &have)?;
+        let ids = if blobless {
+            transport::closure_without_blobs(&store, &want, &have)?
+        } else {
+            transport::closure(&store, &want, &have)?
+        };
         let bytes = transport::encode(&transport::collect(&store, &ids)?);
         Ok(([(header::CONTENT_TYPE, "application/x-hebra-pack")], bytes).into_response())
     })

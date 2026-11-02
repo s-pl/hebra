@@ -20,6 +20,7 @@ fn queue_actor(repo: &Repo) -> Actor {
         name: "merge-queue".to_owned(),
         kind: ActorKind::Agent,
         on_behalf_of: Some(repo.owner.clone()),
+        email: None,
     }
 }
 

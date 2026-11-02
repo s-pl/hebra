@@ -9,6 +9,10 @@ ignore = [
     # proc-macro-error2 is unmaintained. It only runs at compile time, inside
     # biscuit-auth's datalog macros, and nothing replaces it upstream yet.
     { id = "RUSTSEC-2026-0173", reason = "compile-time only, via biscuit-quote; no maintained alternative upstream" },
+    # crypto-bigint 0.5 comes with biscuit-auth's P-256 support, and 6.0.0 is its
+    # latest release. The timing issue needs secret P-256 keys in that code:
+    # Hebra only signs with Ed25519 (crates/mandate), so none ever reach it.
+    { id = "RUSTSEC-2026-0387", reason = "P-256 only; Hebra's secret keys are Ed25519" },
 ]
 
 [licenses]

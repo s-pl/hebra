@@ -9,7 +9,7 @@ use std::io::Write;
 
 use crate::error::{Error, Result};
 use crate::ids::ObjectId;
-use crate::model::{ActorKind, Commit, Tree};
+use crate::model::{Actor, ActorKind, Commit, Tree};
 use crate::repo::Tx;
 use crate::store::BLOB;
 
@@ -20,7 +20,8 @@ pub struct ExportStats {
 }
 
 /// Git branch names must not contain these (see `git check-ref-format`).
-fn valid_branch(name: &str) -> bool {
+#[must_use]
+pub fn valid_branch(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with(['-', '/', '.'])
         && !name.ends_with(['/', '.'])
@@ -32,11 +33,16 @@ fn valid_branch(name: &str) -> bool {
             .any(|c| c.is_ascii_control() || " ~^:?*[\\".contains(c) || c == '\x7f')
 }
 
-/// Parents-first order of `tip` and its ancestors, without the root commit.
-fn ancestry(tx: &mut Tx<'_>, tip: ObjectId) -> Result<Vec<ObjectId>> {
+/// Parents-first order of what `tips` need, stopping at the root commit and
+/// at commits Git already has.
+fn ancestry(
+    tx: &mut Tx<'_>,
+    tips: &[ObjectId],
+    known: &dyn Fn(&ObjectId) -> Option<String>,
+) -> Result<Vec<ObjectId>> {
     let mut order = Vec::new();
     let mut done = HashSet::new();
-    let mut stack = vec![(tip, false)];
+    let mut stack: Vec<(ObjectId, bool)> = tips.iter().rev().map(|t| (*t, false)).collect();
     while let Some((id, expanded)) = stack.pop() {
         if id == tx.root_commit || done.contains(&id) {
             continue;
@@ -44,6 +50,10 @@ fn ancestry(tx: &mut Tx<'_>, tip: ObjectId) -> Result<Vec<ObjectId>> {
         if expanded {
             done.insert(id);
             order.push(id);
+            continue;
+        }
+        if known(&id).is_some() {
+            done.insert(id);
             continue;
         }
         stack.push((id, true));
@@ -62,15 +72,14 @@ fn unix_seconds(timestamp: &str) -> i64 {
         .map_or(0, jiff::Timestamp::as_second)
 }
 
-/// `Name <>` with characters git rejects in identities removed.
-fn identity(name: &str) -> String {
-    let clean: String = name.chars().filter(|c| !"<>\n".contains(*c)).collect();
-    let clean = clean.trim();
-    if clean.is_empty() {
-        "unknown".to_owned()
-    } else {
-        clean.to_owned()
-    }
+/// `Name <email>` with characters git rejects in identities removed.
+fn identity(actor: &Actor) -> String {
+    let clean = |text: &str| -> String { text.chars().filter(|c| !"<>\n".contains(*c)).collect() };
+    let name = clean(&actor.name);
+    let name = name.trim();
+    let name = if name.is_empty() { "unknown" } else { name };
+    let email = clean(actor.email.as_deref().unwrap_or(""));
+    format!("{name} <{}>", email.trim())
 }
 
 fn message(id: &ObjectId, c: &Commit) -> String {
@@ -125,11 +134,37 @@ pub fn write_fast_import(
             "nothing to export: the revision is the root commit".to_owned(),
         ));
     }
+    let refs = [(format!("refs/heads/{branch}"), tip)];
+    Ok(write_refs(tx, &refs, &|_| None, out)?.stats)
+}
+
+/// What [`write_refs`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exported {
+    pub stats: ExportStats,
+    /// The fast-import mark of each commit, to ask Git for its id.
+    pub marks: Vec<(u64, ObjectId)>,
+}
+
+/// Writes a fast-import stream that makes each reference point at the Git
+/// equivalent of its commit. Commits `known` has an id for are already in
+/// Git: new commits are simply built on top of them, so pushing never
+/// rewrites history that came from there.
+pub fn write_refs(
+    tx: &mut Tx<'_>,
+    refs: &[(String, ObjectId)],
+    known: &dyn Fn(&ObjectId) -> Option<String>,
+    out: &mut impl Write,
+) -> Result<Exported> {
     let io = |e: std::io::Error| Error::Io {
         path: "git fast-import".into(),
         source: e,
     };
-    let commits = ancestry(tx, tip)?;
+    let tips: Vec<ObjectId> = refs.iter().map(|(_, id)| *id).collect();
+    let commits = ancestry(tx, &tips, known)?;
+    let branch = refs
+        .first()
+        .map_or("refs/heads/hebra-export", |(name, _)| name.as_str());
     let mut next_mark = 1u64;
     let mut blob_marks: HashMap<ObjectId, u64> = HashMap::new();
     let mut commit_marks: HashMap<ObjectId, u64> = HashMap::new();
@@ -142,7 +177,7 @@ pub fn write_fast_import(
         let first_parent = commit
             .parents
             .iter()
-            .find(|p| commit_marks.contains_key(p))
+            .find(|p| commit_marks.contains_key(p) || known(p).is_some())
             .copied();
         let base = match first_parent {
             Some(parent) => tx.commit(&parent)?.tree,
@@ -161,29 +196,37 @@ pub fn write_fast_import(
             next_mark += 1;
         }
 
-        let when = unix_seconds(&commit.timestamp);
-        let who = identity(&commit.author.name);
-        let parents: Vec<u64> = commit
+        let committer = commit.committer.as_ref().unwrap_or(&commit.author);
+        let written = unix_seconds(&commit.timestamp);
+        let authored = commit.authored_at.as_deref().map_or(written, unix_seconds);
+        let parents: Vec<String> = commit
             .parents
             .iter()
-            .filter_map(|p| commit_marks.get(p).copied())
+            .filter_map(|p| {
+                commit_marks
+                    .get(p)
+                    .map(|m| format!(":{m}"))
+                    .or_else(|| known(p))
+            })
             .collect();
         if parents.is_empty() {
             // A commit on top of root starts a fresh history, even if the
             // branch exists from an earlier export or an earlier root commit.
-            writeln!(out, "reset refs/heads/{branch}").map_err(io)?;
+            writeln!(out, "reset {branch}").map_err(io)?;
         }
-        writeln!(out, "commit refs/heads/{branch}\nmark :{next_mark}").map_err(io)?;
+        writeln!(out, "commit {branch}\nmark :{next_mark}").map_err(io)?;
         writeln!(
             out,
-            "author {who} <> {when} +0000\ncommitter {who} <> {when} +0000"
+            "author {} {authored} +0000\ncommitter {} {written} +0000",
+            identity(&commit.author),
+            identity(committer),
         )
         .map_err(io)?;
         data(out, message(id, &commit).as_bytes()).map_err(io)?;
         if let Some((first, rest)) = parents.split_first() {
-            writeln!(out, "from :{first}").map_err(io)?;
+            writeln!(out, "from {first}").map_err(io)?;
             for p in rest {
-                writeln!(out, "merge :{p}").map_err(io)?;
+                writeln!(out, "merge {p}").map_err(io)?;
             }
         }
         if first_parent.is_none() {
@@ -219,10 +262,22 @@ pub fn write_fast_import(
         commit_marks.insert(*id, next_mark);
         next_mark += 1;
     }
+    for (name, tip) in refs {
+        let target = commit_marks
+            .get(tip)
+            .map(|m| format!(":{m}"))
+            .or_else(|| known(tip));
+        if let Some(target) = target {
+            writeln!(out, "reset {name}\nfrom {target}\n").map_err(io)?;
+        }
+    }
     writeln!(out, "done").map_err(io)?;
-    Ok(ExportStats {
-        commits: commits.len(),
-        blobs: blob_marks.len(),
+    Ok(Exported {
+        stats: ExportStats {
+            commits: commits.len(),
+            blobs: blob_marks.len(),
+        },
+        marks: commit_marks.into_iter().map(|(id, m)| (m, id)).collect(),
     })
 }
 

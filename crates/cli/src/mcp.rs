@@ -491,6 +491,62 @@ fn tools() -> Vec<Tool> {
             required: &[],
             args: |_| vec!["undo".into()],
         },
+        Tool {
+            name: "hb_blame",
+            description: "Who wrote each line of a file: the person or agent, the task and the prompt behind it.",
+            properties: json!({
+                "cwd": cwd,
+                "path": { "type": "string", "description": "File path." },
+                "revision": rev,
+                "lines": { "type": "string", "description": "Only these lines, as `10,20`." },
+            }),
+            required: &["path"],
+            args: |v| {
+                let mut a = vec!["blame".into(), s(v, "path").unwrap_or_default()];
+                opt(&mut a, "--revision", s(v, "revision"));
+                opt(&mut a, "-L", s(v, "lines"));
+                a
+            },
+        },
+        Tool {
+            name: "hb_grep",
+            description: "Search tracked files with a regular expression, in the working copy or a revision.",
+            properties: json!({
+                "cwd": cwd,
+                "pattern": { "type": "string" },
+                "revision": rev,
+            }),
+            required: &["pattern"],
+            args: |v| {
+                let mut a = vec!["grep".into(), s(v, "pattern").unwrap_or_default()];
+                if let Some(rev) = s(v, "revision") {
+                    a.push(rev);
+                }
+                a
+            },
+        },
+        Tool {
+            name: "hb",
+            description: "Run any other hb command, with the same arguments as on the command line. Hebra has every Git command (`clone`, `fetch`, `rebase`, `cherry-pick`, `revert`, `stash`, `tag`, `bisect`, `reset`, `restore`...); `hb --help` lists them. Nothing here is interactive.",
+            properties: json!({
+                "cwd": cwd,
+                "args": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "For example [\"rebase\", \"main\"] or [\"log\", \"--oneline\", \"-n\", \"5\"].",
+                },
+            }),
+            required: &["args"],
+            args: |v| {
+                v.get("args")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            },
+        },
     ]
 }
 

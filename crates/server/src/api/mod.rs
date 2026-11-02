@@ -57,6 +57,7 @@ pub fn router(server: Arc<Server>) -> Router {
 
     let transfer = Router::new()
         .route(&r("/pack"), post(transfer::pack))
+        .route(&r("/objects/get"), post(transfer::objects))
         .route(
             &r("/objects"),
             post(transfer::receive_objects).layer(DefaultBodyLimit::max(MAX_PUSH_BYTES)),
@@ -167,6 +168,9 @@ pub fn router(server: Arc<Server>) -> Router {
         .route(&r("/log"), get(history::log))
         .route(&r("/commits/{id}"), get(history::commit))
         .route(&r("/tree/{id}"), get(history::tree))
+        .route(&r("/blame/{id}"), get(history::blame))
+        .route(&r("/compare"), get(history::compare))
+        .route(&r("/search"), get(history::search))
         .route(&r("/presence"), get(presence::get).post(presence::post))
         // Reviews
         .route(&r("/reviews"), get(reviews::list).post(reviews::open))
@@ -243,4 +247,38 @@ pub fn metrics_router(server: Arc<Server>) -> Router {
     Router::new()
         .route("/metrics", get(system::metrics))
         .with_state(server)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_route_is_documented() {
+        let code = include_str!("mod.rs");
+        let doc = include_str!("../../../../docs/api.md");
+        let mut seen = 0;
+        for line in code.lines() {
+            let line = line.trim();
+            if line.starts_with("//") {
+                continue;
+            }
+            // Routes as `r("/x")` under a repository, or `"/api/v1/x"`.
+            let path = if let Some(rest) = line.split("r(\"").nth(1) {
+                rest.split('"').next().map(|p| format!("…{p}"))
+            } else if let Some(rest) = line.split("\"/api/v1").nth(1) {
+                rest.split('"').next().map(str::to_owned)
+            } else {
+                None
+            };
+            let Some(path) = path else { continue };
+            if path.is_empty() || path == "/repos/{owner}/{repo}" {
+                continue;
+            }
+            seen += 1;
+            assert!(
+                doc.contains(&format!("`{path}`")),
+                "{path} is not in docs/api.md"
+            );
+        }
+        assert!(seen > 60, "only {seen} routes found");
+    }
 }

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use hebra_core::claims::{self, Claim};
-use hebra_core::diff::{self, FileDiff, FileStatus};
+use hebra_core::diff::FileStatus;
 use hebra_core::identity;
 use hebra_core::model::{Actor, ActorKind, Commit, Conflict, Provenance};
 use hebra_core::repo::DEFAULT_WORKSPACE;
@@ -16,14 +16,22 @@ use hebra_core::{Error, ObjectId, Tx, Workspace};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    BookmarkCommand, ChecksCommand, Command, ConfigCommand, DiffArgs, GitCommand, OpCommand,
-    RemoteCommand, ReviewCommand, StartArgs, TaskCommand, WorkspaceCommand,
+    BookmarkCommand, BundleCommand, ChecksCommand, Command, ConfigArgs, ConfigCommand, GitCommand,
+    HookCommand, NotesCommand, OpCommand, RemoteCommand, ReviewCommand, StartArgs, StashCommand,
+    TaskCommand, WorkspaceCommand, WorktreeCommand,
 };
 use crate::fmt::{ago, parse_ttl, slug};
+use crate::{bridge, extras, hooks, inspect, porcelain, sign, transfer};
 
 pub struct Output {
     pub json: Value,
     pub text: String,
+    /// Holds a diff, to color at a terminal.
+    pub diff: bool,
+    /// Bytes to write as they are instead of `text` (file contents).
+    pub raw: Option<Vec<u8>>,
+    /// Exit code, for commands that answer with it (`merge-base --is-ancestor`).
+    pub exit: u8,
 }
 
 impl Output {
@@ -31,6 +39,34 @@ impl Output {
         Self {
             json,
             text: text.into(),
+            diff: false,
+            raw: None,
+            exit: 0,
+        }
+    }
+
+    pub(crate) fn with_diff(mut self) -> Self {
+        self.diff = true;
+        self
+    }
+
+    pub(crate) fn binary(json: Value, raw: Vec<u8>) -> Self {
+        Self {
+            json,
+            text: String::new(),
+            diff: false,
+            raw: Some(raw),
+            exit: 0,
+        }
+    }
+
+    pub(crate) fn with_exit(json: Value, text: impl Into<String>, exit: u8) -> Self {
+        Self {
+            json,
+            text: text.into(),
+            diff: false,
+            raw: None,
+            exit,
         }
     }
 }
@@ -39,108 +75,689 @@ fn env(key: &str) -> Option<String> {
     std::env::var(key).ok()
 }
 
-/// `user.name` from Hebra's config, falling back to Git's.
+/// A setting from the `[user]` section of Git's config files. Read directly:
+/// starting `git` on every command would cost more than the command itself.
+fn git_user_setting(key: &str) -> Option<String> {
+    let home = env("HOME").or_else(|| env("USERPROFILE"))?;
+    let home = std::path::PathBuf::from(home);
+    let xdg = env("XDG_CONFIG_HOME").map_or_else(|| home.join(".config"), Into::into);
+    [home.join(".gitconfig"), xdg.join("git").join("config")]
+        .iter()
+        .find_map(|path| {
+            let text = std::fs::read_to_string(path).ok()?;
+            let mut in_user = false;
+            let mut found = None;
+            for line in text.lines() {
+                let line = line.trim();
+                if line.starts_with('[') {
+                    in_user = line.eq_ignore_ascii_case("[user]");
+                } else if in_user
+                    && let Some((name, value)) = line.split_once('=')
+                    && name.trim().eq_ignore_ascii_case(key)
+                {
+                    found = Some(value.trim().trim_matches('"').to_owned());
+                }
+            }
+            found.filter(|v| !v.is_empty())
+        })
+}
+
+/// A `user.*` setting from Hebra's config, falling back to Git's.
+fn configured(ws: Option<&Workspace>, key: &str) -> Option<String> {
+    ws.and_then(|w| w.config_get(&format!("user.{key}")).ok().flatten())
+        .or_else(|| crate::settings::get(&format!("user.{key}")))
+        .or_else(|| git_user_setting(key))
+}
+
 fn configured_user(ws: Option<&Workspace>) -> Option<String> {
-    if let Some(name) = ws.and_then(|w| w.config_get("user.name").ok().flatten()) {
-        return Some(name);
-    }
-    let out = std::process::Command::new("git")
-        .args(["config", "--get", "user.name"])
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-        .filter(|s| !s.is_empty())
+    configured(ws, "name")
 }
 
 pub(crate) fn identity_for(ws: &Workspace) -> Result<(Actor, Provenance)> {
     let info = ws.info()?;
-    let actor = identity::resolve_actor(env, info.as_ref(), configured_user(Some(ws)));
+    let mut actor = identity::resolve_actor(env, info.as_ref(), configured_user(Some(ws)));
+    if actor.kind == ActorKind::Human {
+        actor.email = configured(Some(ws), "email");
+    }
     let provenance = identity::provenance(env, info.as_ref());
     Ok((actor, provenance))
 }
 
 pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
-    if let Command::Init { path } = &command {
+    if let Command::Init { path, .. } = &command {
         return init(&cwd.join(path.as_deref().unwrap_or(Path::new("."))));
     }
+    if let Command::Clone(args) = &command {
+        return bridge::clone(args, cwd);
+    }
+    if let Command::Version = &command {
+        let version = env!("CARGO_PKG_VERSION");
+        return Ok(Output::new(
+            json!({ "version": version }),
+            format!("hb {version}\n"),
+        ));
+    }
+    if let Command::Config(args) = &command
+        && args.global
+    {
+        return extras::config_global(
+            args.key.as_deref(),
+            args.value.as_deref(),
+            args.unset,
+            args.list,
+        );
+    }
     let mut ws = Workspace::open(cwd)?;
+    crate::remote::enable_partial(&ws)?;
     let (actor, prov) = identity_for(&ws)?;
     let name = command_name(&command);
+    let name = name.as_str();
     match command {
-        Command::Init { .. } | Command::Mcp => unreachable!("handled by the caller"),
-        Command::Status => {
-            ws.snapshot_others(&prov)?;
-            let mut out = ws.run(&actor, &prov, name, status)?;
+        Command::Init { .. } | Command::Mcp | Command::Clone(_) | Command::Version => {
+            unreachable!("handled by the caller")
+        }
+        Command::Status(args) => {
+            if args.short || args.porcelain {
+                return ws
+                    .read(&actor, &prov, |tx| inspect::status_short(tx, &args))
+                    .map_err(Into::into);
+            }
+            ws.snapshot_others(&prov, false)?;
+            let mut out = ws.read(&actor, &prov, status)?;
             add_remote_warnings(&mut ws, &actor, &prov, &mut out);
             Ok(out)
         }
         Command::Diff(args) => ws
-            .run(&actor, &prov, name, |tx| diff_cmd(tx, &args))
+            .read(&actor, &prov, |tx| inspect::diff_cmd(tx, &args))
             .map_err(Into::into),
-        Command::Describe { revision, message } => ws
+        Command::Describe {
+            revision,
+            message: Some(message),
+            ..
+        } => ws
             .run(&actor, &prov, name, |tx| describe(tx, &revision, message))
             .map_err(Into::into),
-        Command::Commit { message, task } => {
-            let mut prov = prov;
-            if let Some(task) = task {
-                prov.task = Some(task);
-            }
-            ws.run(&actor, &prov, name, |tx| commit(tx, message))
-                .map_err(Into::into)
+        Command::Describe {
+            revision,
+            message: None,
+            always,
+        } => {
+            let revision = if revision == "@" {
+                "@-".to_owned()
+            } else {
+                revision
+            };
+            ws.look(&actor, &prov, |tx| {
+                porcelain::describe_tag(tx, &revision, always)
+            })
+            .map_err(Into::into)
         }
+        Command::Commit(args) => porcelain::commit(&mut ws, &actor, &prov, &args, cwd),
         Command::New { revisions, message } => ws
             .run(&actor, &prov, name, |tx| new(tx, &revisions, message))
             .map_err(Into::into),
-        Command::Log { limit } => ws
-            .run(&actor, &prov, name, |tx| log(tx, limit))
+        Command::Log(args) => ws
+            .read(&actor, &prov, |tx| inspect::log(tx, &args))
             .map_err(Into::into),
-        Command::Show { revision } => ws
-            .run(&actor, &prov, name, |tx| show(tx, &revision))
+        Command::Show(args) => ws
+            .read(&actor, &prov, |tx| inspect::show(tx, &args))
             .map_err(Into::into),
-        Command::Merge { revisions, message } => ws
-            .run(&actor, &prov, name, |tx| merge(tx, &revisions, message))
+        Command::Merge(args) => {
+            if args.abort {
+                bail!("nothing to abort: a merge never stops half-way. `hb undo` takes it back");
+            }
+            if args.sign.gpg_sign.is_some() {
+                bail!("`hb commit` finishes a merge: sign it there, with `hb commit -S`");
+            }
+            if args.resume {
+                return Ok(Output::new(
+                    json!({ "continued": false }),
+                    "Nothing to continue: conflicts are recorded in the change. Edit the files, then `hb commit`.\n"
+                        .to_owned(),
+                ));
+            }
+            ws.run(&actor, &prov, name, |tx| porcelain::merge(tx, &args))
+                .map_err(Into::into)
+        }
+        Command::Resolve {
+            paths,
+            ours,
+            theirs,
+        } => {
+            let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::resolve(tx, &paths, ours, theirs)
+            })
+            .map_err(Into::into)
+        }
+        Command::Add { .. } => Ok(porcelain::add()),
+        Command::Rm {
+            paths,
+            cached,
+            recursive,
+            force: _,
+        } => porcelain::rm(&mut ws, &actor, &prov, cwd, &paths, cached, recursive),
+        Command::Mv { paths, force } => {
+            let out = porcelain::mv(&ws, cwd, &paths, force)?;
+            ws.snapshot(&actor, &prov)?;
+            Ok(out)
+        }
+        Command::Restore { staged: true, .. } => Ok(porcelain::add()),
+        Command::Restore { paths, source, .. } => {
+            let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::restore(tx, &paths, &source)
+            })
+            .map_err(Into::into)
+        }
+        Command::Reset {
+            revision,
+            hard,
+            soft: _,
+            mixed: _,
+        } => {
+            // `git reset <file>` unstages it: there is nothing to unstage.
+            if cwd.join(&revision).exists()
+                && ws.look(&actor, &prov, |tx| tx.resolve(&revision)).is_err()
+            {
+                return Ok(porcelain::add());
+            }
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::reset(tx, &revision, hard)
+            })
+            .map_err(Into::into)
+        }
+        Command::Clean {
+            dry_run,
+            force,
+            d: _,
+            x,
+            only_ignored,
+        } => porcelain::clean(&mut ws, &actor, &prov, dry_run, force, x, only_ignored),
+        Command::Checkout {
+            target,
+            create,
+            paths,
+        } => {
+            // `git checkout .` and `git checkout <file>` restore files.
+            let names_files = target.as_deref().is_some_and(|t| {
+                t == "."
+                    || (cwd.join(t).exists() && ws.look(&actor, &prov, |tx| tx.resolve(t)).is_err())
+            });
+            if names_files {
+                let path = target.clone().unwrap_or_default();
+                let paths = porcelain::tree_paths(&ws, cwd, &[path])?;
+                return ws
+                    .run(&actor, &prov, name, |tx| {
+                        porcelain::restore(tx, &paths, "@-")
+                    })
+                    .map_err(Into::into);
+            }
+            if !paths.is_empty() {
+                let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+                let source = target.unwrap_or_else(|| "@-".to_owned());
+                return ws
+                    .run(&actor, &prov, name, |tx| {
+                        porcelain::restore(tx, &paths, &source)
+                    })
+                    .map_err(Into::into);
+            }
+            let out = ws.run(&actor, &prov, name, |tx| {
+                porcelain::switch(tx, target.as_deref(), create.as_deref(), false)
+            })?;
+            hooks::run_optional(&ws, "post-checkout", &[]);
+            Ok(out)
+        }
+        Command::Switch {
+            target,
+            create,
+            detach,
+        } => {
+            let out = ws.run(&actor, &prov, name, |tx| {
+                porcelain::switch(tx, target.as_deref(), create.as_deref(), detach)
+            })?;
+            hooks::run_optional(&ws, "post-checkout", &[]);
+            Ok(out)
+        }
+        Command::Branch(args) => {
+            let lists = !args.delete && !args.rename && args.name.is_none();
+            if lists {
+                ws.look(&actor, &prov, |tx| porcelain::branch(tx, &args))
+                    .map_err(Into::into)
+            } else {
+                ws.run(&actor, &prov, name, |tx| porcelain::branch(tx, &args))
+                    .map_err(Into::into)
+            }
+        }
+        Command::Tag(args) => {
+            let signer = sign::signer_for_tags(&ws, args.sign);
+            if args.verify {
+                let target = args.name.clone().unwrap_or_default();
+                return extras::verify(&mut ws, &actor, &prov, &target);
+            }
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::tag(tx, &args, signer.as_ref())
+            })
+            .map_err(Into::into)
+        }
+        Command::Stash { command } => {
+            let cmd = match command {
+                None => StashCommand::Push {
+                    message: None,
+                    include_untracked: true,
+                    paths: Vec::new(),
+                },
+                Some(StashCommand::Push {
+                    message,
+                    include_untracked,
+                    paths,
+                }) => StashCommand::Push {
+                    message,
+                    include_untracked,
+                    paths: porcelain::tree_paths(&ws, cwd, &paths)?,
+                },
+                Some(other) => other,
+            };
+            ws.run(&actor, &prov, name, |tx| porcelain::stash(tx, &cmd))
+                .map_err(Into::into)
+        }
+        Command::Rebase(args) => {
+            let plan = porcelain::rebase_plan(&mut ws, &actor, &prov, &args)?;
+            hooks::run_required(&ws, "pre-rebase", &[])?;
+            let signer = sign::wanted(&ws, &args.sign);
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::rebase(tx, &args, &plan, signer.as_ref())
+            })
+            .map_err(Into::into)
+        }
+        Command::CherryPick {
+            revisions,
+            no_commit,
+            record_origin,
+            mainline,
+            sign,
+        } => {
+            let signer = sign::wanted(&ws, &sign);
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::cherry_pick(
+                    tx,
+                    &revisions,
+                    no_commit,
+                    record_origin,
+                    mainline,
+                    signer.as_ref(),
+                )
+            })
+            .map_err(Into::into)
+        }
+        Command::Revert {
+            revisions,
+            no_commit,
+            mainline,
+            sign,
+        } => {
+            let signer = sign::wanted(&ws, &sign);
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::revert(tx, &revisions, no_commit, mainline, signer.as_ref())
+            })
+            .map_err(Into::into)
+        }
+        Command::Squash {
+            from,
+            into,
+            message,
+            paths,
+        } => {
+            let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::squash(tx, &from, into.as_deref(), message, &paths)
+            })
+            .map_err(Into::into)
+        }
+        Command::Split {
+            revision,
+            message,
+            paths,
+        } => {
+            let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+            ws.run(&actor, &prov, name, |tx| {
+                porcelain::split(tx, &revision, message, &paths)
+            })
+            .map_err(Into::into)
+        }
+        Command::Abandon { revisions } => ws
+            .run(&actor, &prov, name, |tx| porcelain::abandon(tx, &revisions))
             .map_err(Into::into),
-        Command::Resolve { paths } => ws
-            .run(&actor, &prov, name, |tx| resolve(tx, &paths))
+        Command::Edit { revision } => ws
+            .run(&actor, &prov, name, |tx| porcelain::edit(tx, &revision))
             .map_err(Into::into),
+        Command::Filter {
+            remove,
+            keep,
+            revision,
+        } => ws
+            .run(&actor, &prov, name, |tx| {
+                porcelain::filter(tx, &remove, &keep, &revision)
+            })
+            .map_err(Into::into),
+        Command::Fetch { remote, all, .. } => {
+            bridge::fetch_cmd(&mut ws, &actor, &prov, &remote, all)
+        }
+        Command::Blame {
+            path,
+            revision,
+            lines,
+        } => {
+            let path = porcelain::tree_path(&ws, cwd, &path)?;
+            ws.read(&actor, &prov, |tx| {
+                inspect::blame_cmd(tx, &path, &revision, lines.as_deref())
+            })
+            .map_err(Into::into)
+        }
+        Command::Grep(mut args) => {
+            args.paths = porcelain::tree_paths(&ws, cwd, &args.paths)?;
+            ws.read(&actor, &prov, |tx| inspect::grep(tx, &args))
+                .map_err(Into::into)
+        }
+        Command::Shortlog {
+            summary,
+            email,
+            revision,
+        } => ws
+            .look(&actor, &prov, |tx| {
+                inspect::shortlog(tx, summary, email, &revision)
+            })
+            .map_err(Into::into),
+        Command::LsFiles {
+            modified,
+            deleted,
+            ignored,
+            paths,
+        } => {
+            if ignored {
+                let files = hebra_core::wc::ignored_files(&ws.root)?;
+                let text: String = files.iter().map(|f| format!("{f}\n")).collect();
+                return Ok(Output::new(json!({ "files": files }), text));
+            }
+            let paths = porcelain::tree_paths(&ws, cwd, &paths)?;
+            ws.read(&actor, &prov, |tx| {
+                inspect::ls_files(tx, modified, deleted, &paths)
+            })
+            .map_err(Into::into)
+        }
+        Command::LsTree {
+            revision,
+            recursive,
+            name_only,
+            path,
+        } => ws
+            .read(&actor, &prov, |tx| {
+                inspect::ls_tree(tx, &revision, recursive, name_only, path.as_deref())
+            })
+            .map_err(Into::into),
+        Command::Cat { spec, kind, .. } => ws
+            .read(&actor, &prov, |tx| inspect::cat(tx, &spec, kind))
+            .map_err(Into::into),
+        Command::RevParse {
+            revisions,
+            show_toplevel,
+            git_dir,
+            is_inside_work_tree,
+            verify: _,
+            abbrev_ref,
+            short,
+        } => {
+            if show_toplevel {
+                let root = ws.root.display().to_string();
+                return Ok(Output::new(
+                    json!({ "toplevel": root }),
+                    format!("{root}\n"),
+                ));
+            }
+            if git_dir {
+                let dir = ws.repo_dir.display().to_string();
+                return Ok(Output::new(json!({ "dir": dir }), format!("{dir}\n")));
+            }
+            if is_inside_work_tree {
+                return Ok(Output::new(json!({ "inside": true }), "true\n".to_owned()));
+            }
+            ws.look(&actor, &prov, |tx| {
+                inspect::rev_parse(tx, &revisions, abbrev_ref, short)
+            })
+            .map_err(Into::into)
+        }
+        Command::RevList {
+            revisions,
+            count,
+            limit,
+        } => ws
+            .look(&actor, &prov, |tx| {
+                inspect::rev_list(tx, &revisions, count, limit)
+            })
+            .map_err(Into::into),
+        Command::MergeBase {
+            a,
+            b,
+            is_ancestor,
+            all,
+        } => ws
+            .look(&actor, &prov, |tx| {
+                inspect::merge_base(tx, &a, &b, is_ancestor, all)
+            })
+            .map_err(Into::into),
+        Command::ForEachRef { pattern } => ws
+            .look(&actor, &prov, |tx| {
+                inspect::for_each_ref(tx, pattern.as_deref())
+            })
+            .map_err(Into::into),
+        Command::NameRev { revision } => ws
+            .look(&actor, &prov, |tx| inspect::name_rev(tx, &revision))
+            .map_err(Into::into),
+        Command::Bisect(cmd) => extras::bisect(&mut ws, &actor, &prov, &cmd),
+        Command::FormatPatch {
+            revision,
+            output_directory,
+            stdout,
+        } => {
+            let dir = cwd.join(output_directory);
+            std::fs::create_dir_all(&dir)?;
+            ws.read(&actor, &prov, |tx| {
+                transfer::format_patch(tx, &revision, &dir, stdout)
+            })
+            .map_err(Into::into)
+        }
+        Command::Apply {
+            files,
+            check,
+            reverse,
+        } => {
+            let texts = transfer::read_inputs(cwd, &files)?;
+            ws.run(&actor, &prov, name, |tx| {
+                transfer::apply(tx, &texts, check, reverse)
+            })
+            .map_err(Into::into)
+        }
+        Command::Am { files, sign } => {
+            let mails: Vec<transfer::Mail> = transfer::read_inputs(cwd, &files)?
+                .iter()
+                .flat_map(|text| transfer::parse_mails(text))
+                .collect();
+            transfer::require_mails(&mails)?;
+            let signer = sign::wanted(&ws, &sign);
+            ws.run(&actor, &prov, name, |tx| {
+                transfer::am(tx, &mails, signer.as_ref())
+            })
+            .map_err(Into::into)
+        }
+        Command::Archive {
+            revision,
+            format,
+            output,
+            prefix,
+        } => {
+            let output = output.map(|o| cwd.join(o));
+            ws.read(&actor, &prov, |tx| {
+                transfer::archive_cmd(
+                    tx,
+                    &revision,
+                    format.as_deref(),
+                    output.as_deref(),
+                    prefix.as_deref(),
+                )
+            })
+            .map_err(Into::into)
+        }
+        Command::Bundle(BundleCommand::Create { file, bookmarks }) => {
+            transfer::bundle_create(&ws, &cwd.join(file), &bookmarks)
+        }
+        Command::Bundle(BundleCommand::Unbundle { file }) => {
+            transfer::bundle_unbundle(&mut ws, &actor, &prov, &cwd.join(file))
+        }
+        Command::Bundle(BundleCommand::ListHeads { file } | BundleCommand::Verify { file }) => {
+            transfer::bundle_heads(&cwd.join(file))
+        }
+        Command::Notes { command } => match command.unwrap_or(NotesCommand::List) {
+            NotesCommand::Add { revision, message } => ws
+                .look(&actor, &prov, |tx| {
+                    porcelain::notes_add(tx, &revision, &message)
+                })
+                .map_err(Into::into),
+            NotesCommand::Show { revision } => ws
+                .look(&actor, &prov, |tx| porcelain::notes_show(tx, &revision))
+                .map_err(Into::into),
+            NotesCommand::List => ws
+                .look(&actor, &prov, porcelain::notes_list)
+                .map_err(Into::into),
+            NotesCommand::Remove { revision } => ws
+                .look(&actor, &prov, |tx| porcelain::notes_remove(tx, &revision))
+                .map_err(Into::into),
+        },
+        Command::Fsck => extras::fsck(&ws),
+        Command::Sparse(cmd) => extras::sparse(&mut ws, &actor, &prov, &cmd),
+        Command::Submodule { command } => extras::submodule(
+            &mut ws,
+            &actor,
+            &prov,
+            &command.unwrap_or(crate::cli::SubmoduleCommand::Status),
+        ),
+        Command::Reflog { limit } => op_log(&ws, limit),
+        Command::Worktree(WorktreeCommand::List) => ws
+            .look(&actor, &prov, |tx| Ok(extras::worktree_list(tx)))
+            .map_err(Into::into),
+        Command::Worktree(WorktreeCommand::Add { path, revision }) => {
+            let path = cwd.join(path);
+            ws.run(&actor, &prov, name, |tx| {
+                extras::worktree_add(tx, &path, &revision)
+            })
+            .map_err(Into::into)
+        }
+        Command::Worktree(WorktreeCommand::Remove { name: target, keep }) => ws
+            .run(&actor, &prov, name, |tx| {
+                extras::worktree_remove(tx, &target, keep)
+            })
+            .map_err(Into::into),
+        Command::Worktree(WorktreeCommand::Prune) => ws
+            .run(&actor, &prov, name, extras::worktree_prune)
+            .map_err(Into::into),
+        Command::Stats => extras::stats(&ws),
+        Command::Verify { revision } => extras::verify(&mut ws, &actor, &prov, &revision),
+        Command::Cherry { upstream, head } => ws
+            .look(&actor, &prov, |tx| inspect::cherry(tx, &upstream, &head))
+            .map_err(Into::into),
+        Command::RangeDiff { old, new } => ws
+            .look(&actor, &prov, |tx| inspect::range_diff(tx, &old, &new))
+            .map_err(Into::into),
+        Command::ShowBranch { revisions } => ws
+            .look(&actor, &prov, |tx| inspect::show_branch(tx, &revisions))
+            .map_err(Into::into),
+        Command::Difftool { from, to } => {
+            extras::difftool(&mut ws, &actor, &prov, from.as_deref(), to.as_deref())
+        }
+        Command::Mergetool => extras::mergetool(&mut ws, &actor, &prov),
+        Command::Hook(HookCommand::List) => Ok(hooks::list(&ws)),
+        Command::Hook(HookCommand::Run { name, args }) => hooks::run_by_hand(&ws, &name, &args),
         Command::Start(args) => ws
             .run(&actor, &prov, name, |tx| start(tx, args))
             .map_err(Into::into),
         Command::Workspaces => {
-            ws.snapshot_others(&prov)?;
+            ws.snapshot_others(&prov, true)?;
             let activity: BTreeMap<String, String> = ws.last_activity()?.into_iter().collect();
-            ws.run(&actor, &prov, name, |tx| workspaces(tx, &activity))
+            ws.read(&actor, &prov, |tx| workspaces(tx, &activity))
                 .map_err(Into::into)
         }
         Command::Workspace(WorkspaceCommand::Forget { name: target }) => ws
             .run(&actor, &prov, name, |tx| forget(tx, &target))
             .map_err(Into::into),
         Command::Undo => ws.run(&actor, &prov, name, undo).map_err(Into::into),
-        Command::Gc { prune } => gc(&ws, &prune),
+        Command::Gc {
+            auto,
+            prune,
+            expire_ops,
+        } => {
+            if auto && !ws.store.needs_gc() {
+                return Ok(Output::new(
+                    json!({ "skipped": true }),
+                    "Nothing to do yet.\n".to_owned(),
+                ));
+            }
+            gc(&mut ws, &prune, &expire_ops)
+        }
         Command::Op(OpCommand::Log { limit }) => op_log(&ws, limit),
+        Command::Op(OpCommand::Show { id }) => inspect::op_show(&ws, id),
         Command::Op(OpCommand::Restore { id }) => ws
             .run(&actor, &prov, name, |tx| op_restore(tx, id))
+            .map_err(Into::into),
+        Command::Bookmark(BookmarkCommand::List) => ws
+            .look(&actor, &prov, |tx| bookmark(tx, BookmarkCommand::List))
             .map_err(Into::into),
         Command::Bookmark(cmd) => ws
             .run(&actor, &prov, name, |tx| bookmark(tx, cmd))
             .map_err(Into::into),
         Command::Claim { paths, ttl, note } => {
             let ttl = parse_ttl(&ttl)?;
-            ws.run(&actor, &prov, name, |tx| claim(tx, &paths, ttl, note))
+            ws.look(&actor, &prov, |tx| claim(tx, &paths, ttl, note))
                 .map_err(Into::into)
         }
         Command::Release { paths } => ws
-            .run(&actor, &prov, name, |tx| release(tx, &paths))
+            .look(&actor, &prov, |tx| release(tx, &paths))
             .map_err(Into::into),
-        Command::Claims => ws.run(&actor, &prov, name, list_claims).map_err(Into::into),
-        Command::Config(cmd) => config(&ws, cmd),
-        Command::Remote(RemoteCommand::Add { name, url, token }) => {
-            crate::remote::add(&ws, &name, &url, token)
+        Command::Claims => ws.look(&actor, &prov, list_claims).map_err(Into::into),
+        Command::Config(args) => config(&ws, args),
+        Command::Remote {
+            command: None | Some(RemoteCommand::List),
+            ..
+        } => crate::remote::list(&ws),
+        Command::Remote {
+            command:
+                Some(RemoteCommand::Add {
+                    name,
+                    url,
+                    token,
+                    git,
+                }),
+            ..
+        } => match bridge::add(&ws, &name, &url, git)? {
+            Some(out) => Ok(out),
+            None => crate::remote::add(&ws, &name, &url, token),
+        },
+        Command::Remote {
+            command: Some(RemoteCommand::Remove { name }),
+            ..
+        } => crate::remote::remove(&ws, &name),
+        Command::Remote {
+            command: Some(RemoteCommand::SetUrl { name, url }),
+            ..
+        } => {
+            ws.config_set(&format!("remote.{name}.url"), &url)?;
+            Ok(Output::new(
+                json!({ "remote": name, "url": url }),
+                format!("{name} -> {url}\n"),
+            ))
         }
-        Command::Remote(RemoteCommand::List) => crate::remote::list(&ws),
-        Command::Remote(RemoteCommand::Remove { name }) => crate::remote::remove(&ws, &name),
+        Command::Remote {
+            command: Some(RemoteCommand::Rename { old, new }),
+            ..
+        } => crate::remote::rename(&ws, &old, &new),
         Command::Push {
             remote,
             delete: Some(name),
@@ -148,10 +765,62 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         } => crate::collab::delete_bookmark(&mut ws, &actor, &prov, &remote, &name),
         Command::Push {
             remote,
+            branches,
             bookmark,
             revision,
             delete: None,
-        } => crate::remote::push(&mut ws, &actor, &prov, &remote, bookmark, revision),
+            force,
+            tags,
+            all,
+            set_upstream: _,
+            no_verify,
+        } => {
+            if !no_verify {
+                hooks::run_required(&ws, "pre-push", &[&remote])?;
+            }
+            // `HEAD` is the branch you are on, as in `git push origin HEAD`.
+            let current = ws.info()?.and_then(|w| w.bookmark);
+            let branches: Vec<String> = branches
+                .into_iter()
+                .map(|b| match (b.as_str(), &current) {
+                    ("HEAD", Some(name)) => name.clone(),
+                    _ => b,
+                })
+                .collect();
+            if bridge::kind(&ws, &remote)? == bridge::Kind::Hebra {
+                return crate::remote::push(
+                    &mut ws,
+                    &actor,
+                    &prov,
+                    &remote,
+                    crate::remote::PushWhat {
+                        bookmark,
+                        revision,
+                        branches,
+                        tags,
+                    },
+                );
+            }
+            let mut branches = branches;
+            if let Some(name) = bookmark {
+                if let Some(rev) = revision {
+                    ws.run(&actor, &prov, "bookmark", |tx| {
+                        let id = tx.resolve(&rev)?;
+                        tx.view.bookmarks.insert(name.clone(), id);
+                        Ok(())
+                    })?;
+                }
+                branches.push(name);
+            }
+            bridge::push(
+                &mut ws,
+                &actor,
+                &prov,
+                &remote,
+                &branches,
+                bridge::PushOptions { force, tags, all },
+            )
+        }
         Command::Review(ReviewCommand::Open {
             bookmark,
             title,
@@ -172,7 +841,28 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             let json_out = std::env::var("HB_JSON").is_ok_and(|v| v == "1" || v == "true");
             crate::collab::watch(&mut ws, &actor, &prov, &remote, interval, json_out)
         }
-        Command::Pull { remote } => crate::remote::pull(&mut ws, &actor, &prov, &remote),
+        Command::Pull {
+            remote,
+            rebase,
+            merge,
+            ff_only,
+            sign,
+            ..
+        } => {
+            let signer = sign::wanted(&ws, &sign);
+            bridge::pull(
+                &mut ws,
+                &actor,
+                &prov,
+                &remote,
+                &bridge::PullMode {
+                    rebase,
+                    merge,
+                    ff_only,
+                    signer,
+                },
+            )
+        }
         Command::Presence { remote } => crate::remote::presence(&mut ws, &actor, &prov, &remote),
         Command::Review(ReviewCommand::Show { id, remote }) => {
             crate::work::review_show(&ws, &remote, id)
@@ -224,17 +914,19 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             revision,
         }) => {
             let dir = cwd.join(dir);
-            ws.run(&actor, &prov, name, |tx| {
-                git_export(tx, &dir, &branch, &revision)
-            })
-            .map_err(Into::into)
+            ws.read(&actor, &prov, |tx| git_export(tx, &dir, &branch, &revision))
+                .map_err(Into::into)
         }
         Command::Git(GitCommand::Import {
             dir,
             branch,
             bookmark,
+            all,
         }) => {
             let dir = cwd.join(dir);
+            if all {
+                return git_import_all(&mut ws, &actor, &prov, &dir);
+            }
             let bookmark = bookmark.unwrap_or_else(|| branch.clone());
             ws.run(&actor, &prov, name, |tx| {
                 git_import(tx, &dir, &branch, &bookmark)
@@ -244,50 +936,53 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
     }
 }
 
-fn command_name(command: &Command) -> &'static str {
-    match command {
-        Command::Init { .. } => "init",
-        Command::Status => "status",
-        Command::Diff(_) => "diff",
-        Command::Describe { .. } => "describe",
-        Command::Commit { .. } => "commit",
-        Command::New { .. } => "new",
-        Command::Log { .. } => "log",
-        Command::Show { .. } => "show",
-        Command::Merge { .. } => "merge",
-        Command::Resolve { .. } => "resolve",
-        Command::Start(_) => "start",
-        Command::Workspaces => "workspaces",
-        Command::Workspace(_) => "workspace forget",
-        Command::Undo => "undo",
-        Command::Gc { .. } => "gc",
-        Command::Op(_) => "op restore",
-        Command::Bookmark(_) => "bookmark",
-        Command::Claim { .. } => "claim",
-        Command::Release { .. } => "release",
-        Command::Claims => "claims",
-        Command::Config(_) => "config",
-        Command::Mcp => "mcp",
-        Command::Remote(_) => "remote",
-        Command::Push { .. } => "push",
-        Command::Review(_) => "review",
-        Command::Watch { .. } => "watch",
-        Command::Pull { .. } => "pull",
-        Command::Presence { .. } => "presence",
-        Command::Task(_) => "task",
-        Command::VerifyLog { .. } => "verify-log",
-        Command::Checks(_) => "checks",
-        Command::Login { .. } => "login",
-        Command::Logout { .. } => "logout",
-        Command::Whoami { .. } => "whoami",
-        Command::Mandate(_) => "mandate",
-        Command::Runner(_) => "runner",
-        Command::Org(_) => "org",
-        Command::Agent(_) => "agent",
-        Command::Repo(_) => "repo",
-        Command::Git(GitCommand::Export { .. }) => "git export",
-        Command::Git(GitCommand::Import { .. }) => "git import",
+/// `hb git import --all`: the directory becomes a remote, and every branch
+/// and tag comes over, the same as a clone.
+fn git_import_all(
+    ws: &mut Workspace,
+    actor: &Actor,
+    prov: &Provenance,
+    dir: &Path,
+) -> Result<Output> {
+    let absolute = std::path::absolute(dir)?.display().to_string();
+    bridge::add(ws, "git-import", &absolute, true)?;
+    let fetched = bridge::fetch(ws, actor, prov, "git-import")?;
+    let bookmarks = fetched.bookmarks.clone();
+    ws.run(actor, prov, "git import", |tx| {
+        for (name, id) in &bookmarks {
+            tx.view.bookmarks.entry(name.clone()).or_insert(*id);
+        }
+        Ok(())
+    })?;
+    Ok(Output::new(
+        json!({ "bookmarks": fetched.bookmarks.keys().collect::<Vec<_>>(), "commits": fetched.objects }),
+        format!(
+            "Imported {} branch(es) and {} commit(s).\n",
+            fetched.bookmarks.len(),
+            fetched.objects
+        ),
+    ))
+}
+
+/// The first word of a command, as recorded in the operation log.
+fn command_name(command: &Command) -> String {
+    let text = format!("{command:?}");
+    let word: String = text
+        .chars()
+        .take_while(char::is_ascii_alphanumeric)
+        .collect();
+    let mut out = String::new();
+    for (i, c) in word.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('-');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
     }
+    out
 }
 
 // ---------------------------------------------------------------- helpers
@@ -331,10 +1026,7 @@ pub(crate) fn own_changes(
     tx: &mut Tx<'_>,
     id: &ObjectId,
 ) -> hebra_core::Result<Vec<(String, FileStatus)>> {
-    let commit = tx.commit(id)?;
-    let (base, _) = tx.parents_tree(&commit.parents)?;
-    let tree = tx.tree(&commit.tree)?;
-    Ok(diff::changed_paths(&base, &tree))
+    tx.own_changes(id)
 }
 
 fn conflicts_text(out: &mut String, conflicts: &[Conflict]) {
@@ -351,31 +1043,20 @@ fn conflicts_text(out: &mut String, conflicts: &[Conflict]) {
     }
 }
 
-fn diff_text(out: &mut String, files: &[FileDiff], stat: bool) {
-    if files.is_empty() {
-        let _ = writeln!(out, "No changes.");
-        return;
-    }
-    for f in files {
-        if stat || f.binary {
-            let detail = if f.binary {
-                "binary".to_owned()
-            } else {
-                format!("+{} -{}", f.additions, f.deletions)
-            };
-            let _ = writeln!(out, "{} {}  {detail}", f.status.letter(), f.path);
-        } else if let Some(patch) = &f.patch {
-            out.push_str(patch);
-        }
-    }
-}
-
 // ---------------------------------------------------------------- commands
+
+/// Who is acting, before any repository exists.
+pub(crate) fn fresh_identity() -> (Actor, Provenance) {
+    let mut actor = identity::resolve_actor(env, None, configured_user(None));
+    if actor.kind == ActorKind::Human {
+        actor.email = configured(None, "email");
+    }
+    (actor, identity::provenance(env, None))
+}
 
 fn init(path: &Path) -> Result<Output> {
     std::fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
-    let env_actor = identity::resolve_actor(env, None, configured_user(None));
-    let prov = identity::provenance(env, None);
+    let (env_actor, prov) = fresh_identity();
     let mut ws = Workspace::init(path, &env_actor, &prov)?;
     ws.snapshot(&env_actor, &prov)?;
     let root = ws.root.display().to_string();
@@ -449,6 +1130,14 @@ fn status(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
         }
     }
     conflicts_text(&mut text, &commit.conflicts);
+    for (bookmark, others) in &tx.view.bookmark_conflicts {
+        let list: Vec<String> = others.iter().map(ObjectId::short).collect();
+        let _ = writeln!(
+            text,
+            "Bookmark {bookmark} was moved two ways at once; also at {}. `hb bookmark set` settles it.",
+            list.join(", ")
+        );
+    }
     if !claimed.is_empty() || !overlapping.is_empty() {
         let _ = writeln!(text, "Coordination warnings:");
         for (path, c) in &claimed {
@@ -477,28 +1166,13 @@ fn status(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
         "parents": parents.iter().map(|(id, c)| commit_json(id, c)).collect::<Vec<_>>(),
         "changes": changes.iter().map(|(p, s)| json!({ "path": p, "status": s })).collect::<Vec<_>>(),
         "conflicts": commit.conflicts,
+        "bookmark_conflicts": tx.view.bookmark_conflicts,
         "warnings": {
             "claimed_by_others": claimed.iter().map(|(p, c)| json!({ "path": p, "claim": c })).collect::<Vec<_>>(),
             "overlapping": overlapping.iter().map(|(p, n, a)| json!({ "path": p, "workspace": n, "actor": a })).collect::<Vec<_>>(),
         },
     });
     Ok(Output::new(json, text))
-}
-
-fn diff_cmd(tx: &mut Tx<'_>, args: &DiffArgs) -> hebra_core::Result<Output> {
-    let (from_tree, to_tree) = if args.from.is_some() || args.to.is_some() {
-        let from = tx.resolve(args.from.as_deref().unwrap_or("@-"))?;
-        let to = tx.resolve(args.to.as_deref().unwrap_or("@"))?;
-        (tx.commit_tree(&from)?, tx.commit_tree(&to)?)
-    } else {
-        let id = tx.resolve(args.revision.as_deref().unwrap_or("@"))?;
-        let commit = tx.commit(&id)?;
-        (tx.parents_tree(&commit.parents)?.0, tx.tree(&commit.tree)?)
-    };
-    let files = diff::diff_trees(tx.store, &from_tree, &to_tree, !args.stat)?;
-    let mut text = String::new();
-    diff_text(&mut text, &files, args.stat);
-    Ok(Output::new(json!({ "files": files }), text))
 }
 
 fn describe(tx: &mut Tx<'_>, revision: &str, message: String) -> hebra_core::Result<Output> {
@@ -520,31 +1194,6 @@ fn describe(tx: &mut Tx<'_>, revision: &str, message: String) -> hebra_core::Res
     let commit = tx.commit(&new)?;
     let text = format!("Described {}\n", short_line(&new, &commit));
     Ok(Output::new(commit_json(&new, &commit), text))
-}
-
-fn commit(tx: &mut Tx<'_>, message: String) -> hebra_core::Result<Output> {
-    let wc = tx.wc_id()?;
-    let provenance = tx.provenance.clone();
-    let described = tx.rewrite(wc, |c| {
-        c.description = message;
-        if c.provenance.is_empty() {
-            c.provenance = provenance;
-        }
-    })?;
-    let tree = tx.commit(&described)?.tree;
-    let next = tx.new_commit(vec![described], tree, String::new(), Vec::new())?;
-    tx.switch_wc(next)?;
-    let done = tx.commit(&described)?;
-    let next_commit = tx.commit(&next)?;
-    let text = format!(
-        "Committed {}\nWorking copy is now {}\n",
-        short_line(&described, &done),
-        short_line(&next, &next_commit)
-    );
-    Ok(Output::new(
-        json!({ "committed": commit_json(&described, &done), "working_copy": commit_json(&next, &next_commit) }),
-        text,
-    ))
 }
 
 fn new_change(
@@ -579,78 +1228,6 @@ fn new(
     Ok(Output::new(commit_json(&id, &commit), text))
 }
 
-fn merge(
-    tx: &mut Tx<'_>,
-    revisions: &[String],
-    message: Option<String>,
-) -> hebra_core::Result<Output> {
-    let wc = tx.wc_id()?;
-    // An empty working copy is replaced by the merge instead of kept as a parent.
-    let mut parents = if tx.is_empty_change(&wc)? {
-        tx.commit(&wc)?.parents
-    } else {
-        vec![wc]
-    };
-    let original = parents.clone();
-    let mut names = Vec::new();
-    for rev in revisions {
-        let id = tx.resolve(rev)?;
-        if !parents.contains(&id) {
-            parents.push(id);
-        }
-        let c = tx.commit(&id)?;
-        names.push(format!(
-            "{} ({})",
-            c.change_id.short(),
-            describe_or_placeholder(&c.description)
-        ));
-    }
-    // A single remaining parent is a fast-forward: the new change simply
-    // starts on top of the merged work.
-    let parents = tx.simplify_parents(parents)?;
-    if parents == original {
-        return Err(Error::InvalidArgument(
-            "nothing to merge: the revisions are already included".to_owned(),
-        ));
-    }
-    let message = message.unwrap_or_else(|| format!("merge {}", names.join(", ")));
-    let (id, commit) = new_change(tx, parents, Some(message))?;
-    let mut text = format!("Merged into {}\n", short_line(&id, &commit));
-    if commit.conflicts.is_empty() {
-        let _ = writeln!(text, "No conflicts.");
-    } else {
-        conflicts_text(&mut text, &commit.conflicts);
-        let _ = writeln!(
-            text,
-            "Edit the files to resolve; markers are detected automatically."
-        );
-    }
-    Ok(Output::new(commit_json(&id, &commit), text))
-}
-
-fn resolve(tx: &mut Tx<'_>, paths: &[String]) -> hebra_core::Result<Output> {
-    let wc = tx.wc_id()?;
-    let before = tx.commit(&wc)?.conflicts;
-    let remaining: Vec<Conflict> = if paths.is_empty() {
-        Vec::new()
-    } else {
-        before
-            .iter()
-            .filter(|c| !paths.contains(&c.path))
-            .cloned()
-            .collect()
-    };
-    let resolved = before.len() - remaining.len();
-    let new = tx.rewrite(wc, |c| c.conflicts = remaining)?;
-    let commit = tx.commit(&new)?;
-    let mut text = format!("Marked {resolved} conflict(s) as resolved.\n");
-    conflicts_text(&mut text, &commit.conflicts);
-    Ok(Output::new(
-        json!({ "resolved": resolved, "remaining": commit.conflicts }),
-        text,
-    ))
-}
-
 fn start(tx: &mut Tx<'_>, args: StartArgs) -> hebra_core::Result<Output> {
     let base = tx.resolve(&args.from)?;
     let wanted = args.name.unwrap_or_else(|| slug(&args.task));
@@ -668,6 +1245,7 @@ fn start(tx: &mut Tx<'_>, args: StartArgs) -> hebra_core::Result<Output> {
                 ActorKind::Human => Some(tx.actor.name.clone()),
                 ActorKind::Agent => tx.actor.on_behalf_of.clone(),
             }),
+            email: None,
         }),
         (None, ActorKind::Agent) => Some(tx.actor.clone()),
         (None, ActorKind::Human) => None,
@@ -773,117 +1351,6 @@ fn forget(tx: &mut Tx<'_>, name: &str) -> hebra_core::Result<Output> {
     ))
 }
 
-fn log(tx: &mut Tx<'_>, limit: usize) -> hebra_core::Result<Output> {
-    let current = tx.wc_id()?;
-    let mut at: BTreeMap<ObjectId, Vec<String>> = BTreeMap::new();
-    for (name, info) in &tx.view.workspaces {
-        at.entry(info.wc).or_default().push(format!("{name}@"));
-    }
-    for (name, id) in &tx.view.bookmarks {
-        at.entry(*id).or_default().push(name.clone());
-    }
-    let visible = tx.visible()?;
-    let total = visible.len();
-    let mut text = String::new();
-    let mut entries = Vec::new();
-    for id in visible.into_iter().take(limit) {
-        let c = tx.commit(&id)?;
-        let labels = at.get(&id).cloned().unwrap_or_default();
-        let symbol = if id == current {
-            "@"
-        } else if id == tx.root_commit {
-            "◆"
-        } else if !c.conflicts.is_empty() {
-            "×"
-        } else {
-            "○"
-        };
-        let when = if id == tx.root_commit {
-            String::new()
-        } else {
-            ago(&c.timestamp)
-        };
-        let merge_note = if c.parents.len() > 1 { "  (merge)" } else { "" };
-        let _ = writeln!(
-            text,
-            "{symbol}  {} {}  {}  {when}{}{merge_note}",
-            c.change_id.short(),
-            id.short(),
-            if id == tx.root_commit {
-                "root()".to_owned()
-            } else {
-                c.author.display()
-            },
-            if labels.is_empty() {
-                String::new()
-            } else {
-                format!("  [{}]", labels.join(" "))
-            },
-        );
-        let empty = id != tx.root_commit && tx.is_empty_change(&id)?;
-        if id != tx.root_commit {
-            let summary = if empty {
-                "(empty)".to_owned()
-            } else {
-                describe_or_placeholder(&c.description)
-            };
-            let _ = writeln!(text, "│  {summary}");
-            if let Some(task) = &c.provenance.task
-                && task != first_line(&c.description)
-            {
-                let _ = writeln!(text, "│  task: {task}");
-            }
-        }
-        let mut entry = commit_json(&id, &c);
-        entry["labels"] = json!(labels);
-        entry["current"] = json!(id == current);
-        entry["empty"] = json!(empty);
-        entries.push(entry);
-    }
-    if total > limit {
-        let _ = writeln!(text, "… {} more (use -n)", total - limit);
-    }
-    Ok(Output::new(
-        json!({ "commits": entries, "total": total }),
-        text,
-    ))
-}
-
-fn show(tx: &mut Tx<'_>, revision: &str) -> hebra_core::Result<Output> {
-    let id = tx.resolve(revision)?;
-    let c = tx.commit(&id)?;
-    let (base, _) = tx.parents_tree(&c.parents)?;
-    let tree = tx.tree(&c.tree)?;
-    let files = diff::diff_trees(tx.store, &base, &tree, true)?;
-    let mut text = String::new();
-    let _ = writeln!(text, "Change:  {}", c.change_id);
-    let _ = writeln!(text, "Commit:  {id}");
-    let _ = writeln!(text, "Author:  {}", c.author.display());
-    let _ = writeln!(text, "Date:    {} ({})", c.timestamp, ago(&c.timestamp));
-    for p in &c.parents {
-        let _ = writeln!(text, "Parent:  {}", p.short());
-    }
-    if let Some(task) = &c.provenance.task {
-        let _ = writeln!(text, "Task:    {task}");
-    }
-    if let Some(session) = &c.provenance.session {
-        let _ = writeln!(text, "Session: {session}");
-    }
-    if let Some(prompt) = &c.provenance.prompt {
-        let _ = writeln!(text, "Prompt:  {prompt}");
-    }
-    let _ = writeln!(
-        text,
-        "\n    {}\n",
-        describe_or_placeholder(&c.description).replace('\n', "\n    ")
-    );
-    conflicts_text(&mut text, &c.conflicts);
-    diff_text(&mut text, &files, false);
-    let mut json = commit_json(&id, &c);
-    json["files"] = json!(files);
-    Ok(Output::new(json, text))
-}
-
 fn undo(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
     let result = tx.undo()?;
     let mut text = format!("Undid operation {} ({}).\n", result.undone, result.command);
@@ -904,11 +1371,21 @@ fn undo(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
     Ok(Output::new(json!(result), text))
 }
 
-fn gc(ws: &Workspace, prune: &str) -> Result<Output> {
+fn gc(ws: &mut Workspace, prune: &str, expire_ops: &str) -> Result<Output> {
     let age = if prune == "now" { 0 } else { parse_ttl(prune)? };
     let prune_before = std::time::SystemTime::now()
         - std::time::Duration::from_secs(u64::try_from(age).unwrap_or(0));
-    let stats = ws.gc(prune_before)?;
+    let expire = if expire_ops == "never" {
+        None
+    } else {
+        let age = if expire_ops == "now" {
+            0
+        } else {
+            parse_ttl(expire_ops)?
+        };
+        Some((jiff::Timestamp::now() - jiff::SignedDuration::from_secs(age)).to_string())
+    };
+    let stats = ws.gc(prune_before, expire.as_deref())?;
     let text = format!(
         "Packed {} object(s); removed {} loose file(s) and {} old pack(s); dropped {} unreachable object(s).\n",
         stats.packed, stats.loose_removed, stats.packs_removed, stats.pruned
@@ -942,9 +1419,9 @@ fn op_log(ws: &Workspace, limit: usize) -> Result<Output> {
 }
 
 fn op_restore(tx: &mut Tx<'_>, id: i64) -> hebra_core::Result<Output> {
-    let checkout = tx.restore(id)?;
+    tx.restore(id)?;
     Ok(Output::new(
-        json!({ "restored": id, "checkout": checkout }),
+        json!({ "restored": id }),
         format!("Restored the repository to operation {id}.\n"),
     ))
 }
@@ -954,12 +1431,14 @@ fn bookmark(tx: &mut Tx<'_>, cmd: BookmarkCommand) -> hebra_core::Result<Output>
         BookmarkCommand::Set { name, revision } => {
             let id = tx.resolve(&revision)?;
             tx.view.bookmarks.insert(name.clone(), id);
+            tx.view.bookmark_conflicts.remove(&name);
             let c = tx.commit(&id)?;
             Ok(Output::new(
                 json!({ "bookmark": name, "commit": commit_json(&id, &c) }),
                 format!("Bookmark {name} -> {}\n", short_line(&id, &c)),
             ))
         }
+        BookmarkCommand::Rename { old, new } => crate::porcelain::bookmark_rename(tx, &old, &new),
         BookmarkCommand::Delete { name } => {
             tx.view
                 .bookmarks
@@ -1063,7 +1542,22 @@ fn list_claims(tx: &mut Tx<'_>) -> hebra_core::Result<Output> {
     Ok(Output::new(json!({ "claims": all }), text))
 }
 
-fn config(ws: &Workspace, cmd: ConfigCommand) -> Result<Output> {
+fn config(ws: &Workspace, args: ConfigArgs) -> Result<Output> {
+    if args.global {
+        return extras::config_global(
+            args.key.as_deref(),
+            args.value.as_deref(),
+            args.unset,
+            args.list,
+        );
+    }
+    let cmd = match (args.command, args.key, args.value) {
+        (Some(cmd), _, _) => cmd,
+        (None, Some(key), _) if args.unset => ConfigCommand::Unset { key },
+        (None, Some(key), Some(value)) => ConfigCommand::Set { key, value },
+        (None, Some(key), None) => ConfigCommand::Get { key },
+        (None, None, _) => ConfigCommand::List,
+    };
     match cmd {
         ConfigCommand::Get { key } => {
             let Some(value) = ws.config_get(&key)? else {
@@ -1079,6 +1573,13 @@ fn config(ws: &Workspace, cmd: ConfigCommand) -> Result<Output> {
             Ok(Output::new(
                 json!({ "key": key, "value": value }),
                 format!("Set {key} = {value}\n"),
+            ))
+        }
+        ConfigCommand::Unset { key } => {
+            ws.config_unset(&key)?;
+            Ok(Output::new(
+                json!({ "unset": key }),
+                format!("Unset {key}\n"),
             ))
         }
         ConfigCommand::List => {
@@ -1226,8 +1727,9 @@ fn git_import(
     // One pack instead of a file per object, made durable before the
     // operation is recorded.
     let store = tx.store;
-    let (stats, tip) =
-        store.batch(|| hebra_core::gitimport::import(tx, std::io::BufReader::new(stdout)))?;
+    let imported = store
+        .batch(|| hebra_core::gitimport::import(tx, std::io::BufReader::new(stdout), &|_| None))?;
+    let (stats, tip) = (imported.stats, imported.tip);
     let out = child.wait_with_output().map_err(io)?;
     if !out.status.success() {
         return Err(git_error("git fast-export", &out));
@@ -1256,10 +1758,15 @@ fn git_import(
     ))
 }
 
+/// `hb status` must stay instant even if the server is slow or down.
+const PRESENCE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(800);
+
 /// If an `origin` remote is configured, shares our presence and adds warnings
 /// for files other machines are touching. Best effort: never fails `status`.
 fn add_remote_warnings(ws: &mut Workspace, actor: &Actor, prov: &Provenance, out: &mut Output) {
-    if ws.config_get("remote.origin.url").ok().flatten().is_none() {
+    if ws.config_get("remote.origin.url").ok().flatten().is_none()
+        || !crate::remote::presence_due(ws)
+    {
         return;
     }
     let changed: Vec<String> = out.json["changes"]
@@ -1268,7 +1775,9 @@ fn add_remote_warnings(ws: &mut Workspace, actor: &Actor, prov: &Provenance, out
         .flatten()
         .filter_map(|c| c["path"].as_str().map(str::to_owned))
         .collect();
-    match crate::remote::exchange(ws, actor, prov, "origin", std::time::Duration::from_secs(3)) {
+    let reply = crate::remote::exchange(ws, actor, prov, "origin", PRESENCE_TIMEOUT);
+    crate::remote::presence_answered(ws, reply.is_ok());
+    match reply {
         Ok(others) => {
             let warnings = crate::remote::remote_warnings(&others, &changed);
             if !warnings.is_empty() {
