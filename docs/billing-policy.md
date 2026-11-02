@@ -1,7 +1,10 @@
 # Hebra Cloud: plans and billing policy
 
+> Hebra Cloud is not open yet. This is the policy it is planned to start with;
+> prices and limits may change before it does.
+
 Hebra Community (self-hosted) is free and open source, forever. This policy
-covers Hebra Cloud (hebra.dev), the hosted service. Prices are in US dollars,
+covers Hebra Cloud, the hosted service. Prices are in US dollars,
 before taxes. The machine-readable version of the plans is
 [`deploy/billing/plans.toml`](../deploy/billing/plans.toml); the web pricing
 page is generated from it.
@@ -32,12 +35,8 @@ page is generated from it.
 | Checks on your own runners | unlimited | unlimited | unlimited | unlimited | unlimited |
 | Agent credits included / month | 100 | 1,000 | 2,500 / person | 5,000 / person | custom |
 | Merge queue | — | ✓ | ✓ | ✓ | ✓ |
-| Transparency log with public witness | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SSO (SAML, OIDC), audit log export | — | — | — | ✓ | ✓ |
-| Point-in-time recovery | 7 days | 7 days | 14 days | 30 days | custom |
-| Uptime commitment | — | — | 99.9% | 99.9% | 99.95% |
+| Signed transparency log | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Support | community | email | email, 2 business days | priority, 1 business day | dedicated |
-| Cloud runners | coming soon | coming soon | coming soon | coming soon | coming soon |
 
 Annual billing: two months free (pay for 10, get 12).
 
@@ -75,8 +74,7 @@ any charge applies. Your own runners are always free.
 Every organization has a monthly spending limit for usage above its plan
 (agent credits, storage, runner minutes). It is **$0 by default**: when the
 allowance is used up, agent checks report `skipped: credit limit reached`
-instead of charging. Owners and billing managers can raise it at any time;
-Hebra emails them at 75% and 100% of the limit.
+instead of charging. Owners and billing managers can raise it at any time.
 
 ## Payments and invoices
 
@@ -110,9 +108,7 @@ Hebra emails them at 75% and 100% of the limit.
 ## Refunds
 
 Payments are not refundable except where the law requires it (for example the
-statutory withdrawal right of consumers in the EU, where applicable) or when
-Hebra fails its uptime commitment, in which case service credits apply as
-described in the plan's terms.
+statutory withdrawal right of consumers in the EU, where applicable).
 
 ## Fair use
 

@@ -50,6 +50,30 @@ Caddy uses its own local CA for `localhost`; point `hb` at it with `HB_CA_CERT` 
 
 Run `hebra-server --help` for the full list (rate limits, CORS, TLS, NATS credentials, cache size).
 
+## Backups
+
+Back up three things, and test restoring them:
+
+- **Metadata.** With SQLite, copy `--data` with the server stopped, or use `sqlite3 hebra.db ".backup copy.db"` while it runs. With PostgreSQL, `pg_dump`.
+- **Objects.** With a local store, the `--data` directory. With S3, turn on bucket versioning or replicate the bucket. Objects never change once written, so an incremental copy is always safe.
+- **Keys.** `HEBRA_ENCRYPTION_KEYS` and `HEBRA_MANDATE_KEY`, somewhere other than the backups. Without the encryption keys the objects cannot be read, and without the mandate key every issued credential stops working.
+
+Copy metadata before objects. An object with no metadata pointing at it is harmless; the other way around is a missing commit.
+
+To restore, put back the objects, then the metadata, and start the server with the same keys. Then check a repository with `hb clone URL` and `hb fsck`.
+
+## Upgrades
+
+`hebra-server` applies database migrations at startup, and they only move forward. So:
+
+1. Back up first.
+2. Stop all replicas and start one with the new version. It migrates, then serves.
+3. Start the rest. Rolling upgrades across a migration are not supported; within one schema they are.
+
+To go back, restore the backup: there are no downward migrations.
+
+Local repositories upgrade themselves the first time a newer `hb` opens them. An older `hb` refuses a repository written by a newer one, with the error `repository_too_new`, instead of misreading it.
+
 ## People, agents and repositories
 
 ```sh
@@ -74,4 +98,6 @@ hb runner start build-1
 
 ## The web hub
 
-The web app (`apps/web`) shows repositories, history with provenance, reviews, tasks, checks, the merge queue and who is working right now. Set `HEBRA_SERVER_URL` to the server's internal URL.
+The web app (`apps/web`) shows repositories, branches and tags, history with provenance, blame, comparisons, code search, reviews, tasks, checks, the merge queue and who is working right now. Set `HEBRA_SERVER_URL` to the server's internal URL.
+
+`/` opens the dashboard. Set `HEBRA_PUBLIC_SITE=1` to serve the public landing page there instead. The documentation is built into the web app at `/docs`.

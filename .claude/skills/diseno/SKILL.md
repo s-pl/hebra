@@ -5,31 +5,36 @@ description: Sistema de diseño de la marca, la landing y la web (dirección vis
 
 # Sistema de diseño
 
-> Estado: **decidido** (2026-10-19). Cambios de dirección, siempre con el autor.
+> Estado: **decidido** (2026-11-02). Cambios de dirección, siempre con el autor.
 
 ## Historia
 - 2026-10-16: «herramienta de precisión» (Linear/Vercel). Descartada.
-- 2026-10-17: landing pixel (lienzo «Hebra redesign», artboard `Pixel.dc.html`). Gustó la landing; el hub no.
-- 2026-10-19: el autor eligió la dirección **B «Console»** para toda la web y pidió combinar la landing pixel con ella.
+- 2026-10-17: landing pixel. Gustó la landing; el hub no.
+- 2026-10-19: dirección «Console» (panel cálido, teclas, etiquetas impresas). Sustituida.
+- 2026-11-02: el autor pidió adaptar el diseño al kit [Bencho](https://bencho.dev). Es la dirección actual.
 
-## Dirección visual: un instrumento (2026-10-19)
-- **Tema claro por defecto** (panel cálido `#e6e5df`, tinta `#141414`); oscuro con `data-theme="dark"` (guardado en `localStorage` como `hebra-theme`).
-- **Teclas**: los botones son teclas (`.key`, `.key-ink`, `.key-accent`, `.key-danger`) con un borde inferior que se hunde al pulsar. Los atajos van en una tecla pequeña `.cap`.
-- **Etiquetas impresas**: `.lbl` (mono, 11px, mayúsculas, tracking). Los módulos se numeran: `01 CHANNELS`.
-- **Cada hebra tiene su color** (`--thread-1..4`); las personas son neutras (`--person`); el rosa (`--err`) es solo para conflictos y fallos. `--signal` (azafrán) es la única luz: LEDs, cursor, prompt `hb ▸`.
-- **Glifos pixel 5×5** para agentes (cara de robot) y personas (`components/hub/glyph.tsx`). El logo es un tejido 4×4 (`components/logo.tsx`).
-- **Tipografía**: Hanken Grotesk y JetBrains Mono (sin ligaduras en código).
-- **Piezas de consola** en `components/hub/console.tsx`: `Module`, `DotNumber` (matriz de puntos), `Readout`, `Channel` (tira de canal por hebra).
-- **Hub**: sin barra lateral. Barra superior con migas en mono y una fila de pestañas-tecla con atajo de una letra (O, F, V, T, K, Q, L, S). Repositorios y bookmarks en menús y en ⌘K.
+## Dirección visual: Bencho con la identidad de Hebra
+- **Neutros y una sola acción llena**: tinta sobre blanco, blanco sobre negro. El tema sigue al sistema; `data-theme` lo fija y `hebra-theme` en `localStorage` lo recuerda.
+- **Píldoras** para todo lo que se pulsa (`button()` en `lib/ui.ts`, altura 36 px, peso 500). **Tableros** grandes y suaves para todo lo que se lee (`rounded-2xl bg-surface`), sin líneas alrededor. Las líneas solo separan filas dentro de un tablero.
+- **Tipografía**: Inter (títulos de peso 500, tracking mínimo) y JetBrains Mono solo para código, comandos e ids. Nada de mayúsculas impresas.
+- **`bg-wash`** es el fondo de lo secundario: es translúcido y funciona sobre cualquier superficie.
+- **Color solo con significado**: cada hebra tiene su hilo (`--thread-1..4`), las personas son neutras, el rosa (`--err`) es para conflictos y fallos, `--led` para lo que está en marcha.
+- **Se queda de Hebra**: el logo tejido, los glifos pixel de agentes y personas, los robots del escenario (`components/landing/cast.tsx`) y la palabra pixel del pie.
+- **Sin lo de Console**: teclas, etiquetas numeradas (`01 CHANNELS`), matriz de puntos y marco con líneas.
 
-## Landing (pixel + consola)
-- Marco con líneas: todas las secciones dentro de una columna de 1376px con hairlines a los lados; cabecera y pie en celdas.
-- Hero: titular y el **escenario** (`components/landing/cast.tsx`): robots y personas pixel sobre parches tejidos y la banda con la lanzadera. Al pulsar un agente reclama `src/auth.rs`; si lo pulsa otro, los dos se avisan en rosa. Sin terminal en el hero (el autor la quitó).
-- La captura del hub está hecha con las piezas reales de la consola (`console-shot.tsx`).
-- How it works: navegación lateral y filas con terminales sobre baldosas pixel del color de cada tema.
-- Built for agents: celdas de features, cada una con su sticker (`public/stickers/*.png`, hechos en ChatGPT). Sin pared de stickers (el autor la quitó).
-- Pie: palabra «hebra» en píxeles, un robot que camina y la banda tejida.
-- Movimiento pixel en `globals.css` (`.px-*`): `steps()` para fotogramas, transform/opacity/clip-path, todo apagado con `prefers-reduced-motion`.
+## Bloques de Bencho
+- En `components/bencho/`, adaptados y con su licencia MIT (ver su `README.md`). Solo los gratuitos: los Pro son de pago y su nombre y la cabra no se usan.
+- Sin dependencias nuevas: `motion/react` e iconos SVG en línea.
+- Un bloque entra si muestra un dato real de Hebra. Hoy: `StackedBars` (actividad del repo), `WorkingIsland` (quién trabaja), `ToastStack` y `OpScrubber` (portada).
+
+## Portada
+- Héroe centrado, escenario pixel en un tablero y debajo una pared de tableros, cada uno con una pieza viva del producto y su explicación.
+- Lo que aún no funciona se dice («Not there yet»). Las cifras llevan fecha y script.
+
+## Portada y dashboard
+- `/` es la portada solo en la web pública (`HEBRA_PUBLIC_SITE=1`) y en `next dev`. Un servidor autoalojado abre el dashboard (`proxy.ts`).
+- `/hub` es la portada del dashboard: qué pasa en tus repositorios, y los primeros pasos si no hay ninguno.
+- Hebra Cloud no aparece salvo con `NEXT_PUBLIC_HEBRA_CLOUD=1`. El dashboard sigue a `caps.features`, nunca a ese interruptor.
 
 ## Voz y texto (para que no suene a IA)
 El autor pidió expresamente quitar el "tono de IA". Reglas:
@@ -47,7 +52,7 @@ El autor pidió expresamente quitar el "tono de IA". Reglas:
 5. **El movimiento tiene propósito** y respeta `prefers-reduced-motion`.
 
 ## Tokens
-Definidos en `apps/web/app/globals.css` (`:root` claro y `:root[data-theme="dark"]`) y expuestos a Tailwind con `@theme inline`: `bg`, `surface`, `surface-2`, `surface-3`, `line`, `line-strong`, `ink`, `ink-2`, `ink-3`, `accent`, `ok`, `warn`, `err`, `info`, `agent`, `signal`, `person`, `thread-1..5` y `term-*` (la terminal siempre es oscura).
+Definidos en `apps/web/app/globals.css` (`:root` claro y `:root[data-theme="dark"]`) y expuestos a Tailwind con `@theme inline`: `bg`, `surface`, `surface-2`, `surface-3`, `wash`, `wash-strong`, `line`, `line-strong`, `ink`, `ink-2`, `ink-3`, `accent`, `ok`, `warn`, `err`, `info`, `agent`, `signal` (el LED), `person`, `thread-1..5` y `term-*` (la terminal siempre es oscura). Los nombres que leen los bloques de Bencho (`--fill-slab`, `--fill-on`...) están en el mismo sitio.
 
 ## Skills globales que conviene usar
 - `emil-design-eng` y `apple-design`: pulido de interfaz y detalles.

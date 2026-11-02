@@ -21,10 +21,12 @@ description: Convenciones de la web (landing y plataforma) en apps/web con Next.
 - Metadatos completos: título, descripción, Open Graph e imagen social.
 
 ## Piezas existentes
-- `components/terminal.tsx`: terminal que se escribe sola al entrar en pantalla. Su contenido debe reproducir la salida real de `hb`.
-- `components/visuals.tsx`: ilustraciones animadas por sección. `components/details.tsx`: bento. `components/threads.tsx`: hebras del hero.
-- `components/agent-logo.tsx`: logos de agentes desde `simple-icons` (CC0). OpenAI no está en Simple Icons: Codex usa una insignia neutra; no redibujar logos de marcas a mano. Mantener la nota de marcas junto a los logos.
-- Animaciones en `app/globals.css` (grano, pulsos, revelado por scroll); todas se desactivan con `prefers-reduced-motion`.
+- `lib/ui.ts`: recetas de botón y campo. `components/hub/ui.tsx` y `console.tsx`: tarjetas, listas, contadores.
+- `components/bencho/`: bloques de Bencho adaptados (ver su `README.md`).
+- `components/landing/typed-term.tsx`: terminal que se escribe sola al entrar en pantalla. Su contenido debe reproducir la salida real de `hb`.
+- `components/agent-logo.tsx`: logos de agentes desde `simple-icons` (CC0). OpenAI no está en Simple Icons: Codex usa una insignia neutra; no redibujar logos de marcas a mano.
+- `lib/docs.ts` y `app/docs`: la documentación de `docs/*.md` servida en la web con `lib/markdown.tsx`.
+- Todas las animaciones se desactivan con `prefers-reduced-motion`.
 
 ## Antes de dar algo por terminado
 `pnpm lint`, `pnpm typecheck` y `pnpm build` sin errores, y revisar la página en móvil (375 px) y escritorio.
