@@ -42,11 +42,12 @@ function fileFor(pathname) {
 }
 
 /**
- * A thin bar on every page saying this is a snapshot. It is added to the
- * stylesheets (body::after), not the HTML, so React hydration still matches.
+ * A thin bar on the hub pages saying they are a snapshot. The landing and the
+ * docs are the real thing, so they go without. It is added to the stylesheets
+ * (body::after), not the HTML, so React hydration still matches.
  */
 const BANNER_CSS = `
-body::after{content:"Static preview of Hebra with demo data. Sign-in and actions need a running server.";position:fixed;inset:auto 0 0 0;z-index:100;padding:6px 12px;font:12px/1.4 system-ui,sans-serif;text-align:center;background:#0b0c0e;color:#aeb4bd;border-top:1px solid #2a2d33;pointer-events:none}`;
+body:not(:has(nav[aria-label="Main"]))::after{content:"Static preview of Hebra with demo data. Sign-in and actions need a running server.";position:fixed;inset:auto 0 0 0;z-index:100;padding:6px 12px;font:12px/1.4 system-ui,sans-serif;text-align:center;background:#0b0c0e;color:#aeb4bd;border-top:1px solid #2a2d33;pointer-events:none}`;
 
 function save(rel, body) {
   const path = join(outDir, decodeURIComponent(rel));
