@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CopyCommand } from "@/components/copy-command";
-import { DotNumber } from "@/components/hub/console";
+
 import { LiveRefresh } from "@/components/hub/live";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { Card, Chip, Empty, PageTitle, ServerDown } from "@/components/hub/ui";
@@ -81,14 +81,12 @@ export default async function TransparencyPage({ params }: Params) {
       />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card title="01 · Signed head">
+        <Card title="Signed head">
           {t.head ? (
             <dl className="grid gap-2 text-[13px]">
-              <div className="flex items-end justify-between gap-4 rounded-md border border-line bg-surface-3 p-3">
+              <div className="grid gap-1">
                 <dt className="lbl">Entries</dt>
-                <dd>
-                  <DotNumber value={t.head.seq} dot={4} label={`${t.head.seq} entries`} />
-                </dd>
+                <dd className="tnum font-medium text-[32px] leading-none tracking-[-0.02em]">{t.head.seq}</dd>
               </div>
               <div className="grid gap-1">
                 <dt className="lbl">Hash</dt>
@@ -108,7 +106,7 @@ export default async function TransparencyPage({ params }: Params) {
           )}
         </Card>
         <Card
-          title="02 · Verify it yourself"
+          title="Verify it yourself"
           sub="Checks every hash and the signature, and remembers the key so a swapped key is caught."
         >
           <div className="grid gap-2 [&>*]:min-w-0">

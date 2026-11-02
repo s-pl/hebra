@@ -56,10 +56,10 @@ for _ in $(seq 1 90); do
 done
 curl -skf https://localhost/api/v1/ready >/dev/null || fail "server not ready behind Caddy"
 for _ in $(seq 1 30); do
-  curl -skf https://localhost/ -o "$WORK/landing.html" 2>/dev/null && break
+  curl -skfL https://localhost/ -o "$WORK/landing.html" 2>/dev/null && break
   sleep 2
 done
-grep -qi "hebra" "$WORK/landing.html" || fail "web app not serving the landing page"
+grep -qi "hebra" "$WORK/landing.html" || fail "web app not serving the dashboard"
 echo "server ready, web serving"
 
 step "creating a person, a repository and a mandate"

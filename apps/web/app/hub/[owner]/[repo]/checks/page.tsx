@@ -58,8 +58,8 @@ export default async function ChecksPage({ params }: Params) {
         title="Checks"
         sub={
           <>
-            Commands and agent verifications from <code className="font-mono">.hb/checks.toml</code>, run on your own
-            machines.
+            {ctx.caps?.features.agent_verification ? "Commands and agent verifications" : "Commands"} from{" "}
+            <code className="font-mono">.hb/checks.toml</code>, run on your own machines.
           </>
         }
       />

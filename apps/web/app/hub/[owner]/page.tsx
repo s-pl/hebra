@@ -69,11 +69,11 @@ export default async function OwnerPage({ params }: Params) {
               alt=""
               width={64}
               height={64}
-              className="size-16 rounded-[6px] border border-line"
+              className="size-16 rounded-sm border border-line"
             />
           ) : account.kind === "org" ? (
             <span
-              className="grid size-16 place-items-center rounded-[6px] border border-line bg-surface-3"
+              className="grid size-16 place-items-center rounded-sm border border-line bg-surface-3"
               aria-hidden="true"
             >
               <Mark size={34} />

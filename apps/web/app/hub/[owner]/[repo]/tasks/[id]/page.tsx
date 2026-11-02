@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { taskAction } from "@/app/hub/actions";
 import { CopyCommand } from "@/components/copy-command";
-import { DotNumber } from "@/components/hub/console";
+
 import { ActionButton } from "@/components/hub/forms";
 import { LiveRefresh } from "@/components/hub/live";
 import { Reveal } from "@/components/hub/motion";
@@ -75,7 +75,7 @@ export default async function TaskPage({ params }: Params) {
 
       <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
-          <Card title="01 · Description">
+          <Card title="Description">
             {t.body ? (
               <p className="whitespace-pre-wrap text-[14.5px] text-ink-2 leading-relaxed">{t.body}</p>
             ) : (
@@ -83,8 +83,8 @@ export default async function TaskPage({ params }: Params) {
             )}
           </Card>
           <Card
-            title="02 · Acceptance criteria"
-            sub="What “done” means. Agent verification checks the work against this list."
+            title="Acceptance criteria"
+            sub={`What “done” means.${ctx.caps?.features.agent_verification ? " Agent verification checks the work against this list." : ""}`}
           >
             {t.acceptance.length === 0 ? (
               <p className="text-[13.5px] text-ink-3">None given.</p>
@@ -100,7 +100,7 @@ export default async function TaskPage({ params }: Params) {
             )}
           </Card>
           {deps.length > 0 ? (
-            <Card title="03 · Depends on">
+            <Card title="Depends on">
               <ul className="grid gap-2">
                 {deps.map((d) => (
                   <li key={d.id}>
@@ -133,15 +133,9 @@ export default async function TaskPage({ params }: Params) {
                   </div>
                 </div>
                 {leaseMinutes !== null ? (
-                  <div className="mt-4 flex items-end justify-between gap-3 rounded-md border border-line bg-surface-3 p-3">
-                    <span className="lbl">Lease, minutes left</span>
-                    <DotNumber
-                      value={leaseMinutes}
-                      dot={4}
-                      label={`${leaseMinutes} minutes left on the claim`}
-                      color={leaseMinutes < 5 ? "var(--err)" : "var(--text)"}
-                    />
-                  </div>
+                  <p className={`mt-4 text-[14px] ${leaseMinutes < 5 ? "text-err" : "text-ink-3"}`}>
+                    Lease: <span className="tnum font-medium">{leaseMinutes}</span> minutes left
+                  </p>
                 ) : null}
               </>
             ) : t.state === "done" || t.state === "cancelled" ? (

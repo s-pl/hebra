@@ -1,32 +1,27 @@
 import { PixelWord, ROBOT_A, ROBOT_CLASSES, ROBOT_WALK, robotColors, Sprite, Weave } from "@/components/landing/pixel";
 import { Logo } from "@/components/logo";
 import { SmartLink } from "@/components/smart-link";
-import { SITE } from "@/lib/site";
+import { CLOUD, SITE, VERSION } from "@/lib/site";
 
-const COLUMNS = [
+const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
   {
     title: "Product",
     links: [
       { href: "/#how", label: "How it works" },
-      { href: "/#features", label: "Features" },
-      { href: "/pricing", label: "Pricing" },
+      { href: "/#git", label: "Compared with Git" },
       { href: "/hub", label: "Hub" },
+      ...(CLOUD ? [{ href: "/pricing", label: "Pricing" }] : []),
     ],
   },
   {
     title: "Developers",
     links: [
-      { href: `${SITE.repo}#readme`, label: "Documentation" },
+      { href: "/docs", label: "Documentation" },
+      { href: "/docs/self-hosting", label: "Self-hosting" },
       { href: `${SITE.repo}/releases`, label: "Releases" },
-      { href: `${SITE.repo}/tree/main/deploy`, label: "Self-hosting" },
       { href: SITE.repo, label: "Source code" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { href: "/legal/billing", label: "Billing policy" },
       { href: `${SITE.repo}/blob/main/LICENSE`, label: "License (Apache 2.0)" },
+      ...(CLOUD ? [{ href: "/legal/billing", label: "Billing policy" }] : []),
     ],
   },
 ];
@@ -37,27 +32,24 @@ const COLUMNS = [
  */
 export function SiteFooter({ pixel = false }: { pixel?: boolean }) {
   return (
-    <footer className="border-line border-t">
-      <div className="mx-auto grid max-w-[1376px] grid-cols-2 border-line border-x md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div className="col-span-2 border-line border-b px-6 py-10 md:col-span-1 md:border-r md:border-b-0">
+    <footer className="mt-24">
+      <div className="mx-auto grid max-w-[1376px] grid-cols-2 gap-x-6 gap-y-10 px-6 py-12 md:grid-cols-[2fr_1fr_1fr]">
+        <div className="col-span-2 md:col-span-1">
           <Logo />
-          <p className="mt-3 max-w-xs text-[13px] text-ink-3 leading-relaxed">
+          <p className="mt-3 max-w-xs text-[14px] text-ink-3 leading-relaxed">
             Version control for people and agents. Open source, built in the open.
           </p>
+          <p className="mt-4 text-[13px] text-ink-3">hebra v{VERSION}</p>
         </div>
         {COLUMNS.map((c) => (
-          <nav
-            key={c.title}
-            aria-label={c.title}
-            className="border-line px-6 py-8 max-md:border-b max-md:odd:border-l md:border-r md:py-10 md:last:border-r-0"
-          >
+          <nav key={c.title} aria-label={c.title}>
             <p className="lbl">{c.title}</p>
             <ul className="mt-3 grid gap-2">
               {c.links.map((l) => (
                 <li key={l.href}>
                   <SmartLink
                     href={l.href}
-                    className="text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink"
+                    className="text-[14px] text-ink-2 transition-colors duration-150 hover:text-ink"
                   >
                     {l.label}
                   </SmartLink>
@@ -66,11 +58,6 @@ export function SiteFooter({ pixel = false }: { pixel?: boolean }) {
             </ul>
           </nav>
         ))}
-      </div>
-      <div className="border-line border-t">
-        <p className="mx-auto max-w-[1376px] border-line border-x px-6 py-5 font-mono text-[11.5px] text-ink-3">
-          hebra v0.1 · early preview
-        </p>
       </div>
       {pixel ? (
         <div aria-hidden="true">

@@ -1,9 +1,10 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { readDoc } from "@/lib/docs";
 import { headings, Markdown } from "@/lib/markdown";
+import { CLOUD } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Billing policy · Hebra",
@@ -13,19 +14,9 @@ export const metadata: Metadata = {
 // Built once from the repository's copy, the single source of the policy.
 export const dynamic = "force-static";
 
-async function policy(): Promise<string> {
-  for (const p of [
-    path.join(process.cwd(), "../../docs/billing-policy.md"),
-    path.join(process.cwd(), "docs/billing-policy.md"),
-  ]) {
-    const text = await readFile(/*turbopackIgnore: true*/ p, "utf8").catch(() => null);
-    if (text) return text;
-  }
-  throw new Error("docs/billing-policy.md not found");
-}
-
 export default async function BillingPolicyPage() {
-  const source = await policy();
+  if (!CLOUD) notFound();
+  const source = await readDoc("billing-policy.md");
   const toc = headings(source);
   return (
     <>

@@ -6,13 +6,13 @@ import { button, TONE_BADGE, type Tone } from "@/lib/ui";
 
 /**
  * A hebra's pixel glyph in its thread colour (see glyph.tsx). From 20px up it
- * sits on a small key-like tile so it reads at a glance in lists.
+ * sits on a small round tile so it reads at a glance in lists.
  */
 export function ActorAvatar({ actor, size = 24 }: { actor: Pick<Actor, "name" | "kind">; size?: number }) {
   if (size < 20) return <HebraGlyph name={actor.name} kind={actor.kind} size={size} />;
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-[4px] border border-line bg-surface-3"
+      className="grid shrink-0 place-items-center rounded-full bg-wash"
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
@@ -23,12 +23,12 @@ export function ActorAvatar({ actor, size = 24 }: { actor: Pick<Actor, "name" | 
 
 const CHIP_TONES = { plain: "neutral", accent: "accent", warn: "warn" } as const;
 
-/** A small monospace tag: bookmarks, ids, labels. */
+/** A small pill: bookmarks, ids, labels. */
 export function Chip({ children, tone = "plain" }: { children: ReactNode; tone?: keyof typeof CHIP_TONES | Tone }) {
   const t: Tone = tone in CHIP_TONES ? CHIP_TONES[tone as keyof typeof CHIP_TONES] : (tone as Tone);
   return (
     <span
-      className={`inline-flex h-5 max-w-full items-center gap-1 truncate rounded-[3px] border px-1.5 font-mono text-[11px] ${TONE_BADGE[t]}`}
+      className={`inline-flex h-[22px] max-w-full items-center gap-1 truncate rounded-full px-2.5 font-medium text-[12px] ${TONE_BADGE[t]}`}
     >
       {children}
     </span>
@@ -55,14 +55,16 @@ const STATE_TONE: Record<string, Tone> = {
   stale: "neutral",
 };
 
-/** A state label (reviews, tasks, checks, batches) with a square LED. */
+/** A state label (reviews, tasks, checks, batches) with a dot. */
 export function StateBadge({ state, label }: { state: string; label?: string }) {
   const tone = STATE_TONE[state] ?? "neutral";
   return (
     <span
-      className={`inline-flex h-5 shrink-0 items-center gap-1.5 rounded-[3px] border px-1.5 font-medium font-mono text-[10.5px] uppercase tracking-[0.06em] ${TONE_BADGE[tone]}`}
+      className={`inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-full px-2.5 font-medium text-[12px] capitalize ${TONE_BADGE[tone]}`}
     >
-      <span className={`size-1.5 bg-current ${state === "running" || state === "testing" ? "led-live" : ""}`} />
+      <span
+        className={`size-1.5 rounded-full bg-current ${state === "running" || state === "testing" ? "led-live" : ""}`}
+      />
       {label ?? state.replace("_", " ")}
     </span>
   );
@@ -73,8 +75,8 @@ export function PageTitle({ title, sub, children }: { title: ReactNode; sub?: Re
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-balance font-semibold text-[24px] leading-tight tracking-[-0.025em]">{title}</h1>
-        {sub ? <p className="mt-1 max-w-2xl text-[13px] text-ink-3 leading-relaxed">{sub}</p> : null}
+        <h1 className="text-balance font-medium text-[28px] leading-[1.15] tracking-[-0.02em]">{title}</h1>
+        {sub ? <p className="mt-1.5 max-w-2xl text-[14px] text-ink-3 leading-relaxed">{sub}</p> : null}
       </div>
       {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
@@ -83,15 +85,15 @@ export function PageTitle({ title, sub, children }: { title: ReactNode; sub?: Re
 
 export function Empty({ title, children, icon }: { title: string; children?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="grid justify-items-center rounded-lg border border-line-strong border-dashed bg-surface-2 px-6 py-10 text-center">
+    <div className="grid justify-items-center rounded-2xl bg-surface px-6 py-12 text-center">
       {icon ? <div className="mb-3 text-ink-3">{icon}</div> : null}
-      <p className="font-medium text-[14px]">{title}</p>
-      {children ? <div className="mt-1.5 max-w-md text-[13px] text-ink-3 leading-relaxed">{children}</div> : null}
+      <p className="font-medium text-[15px]">{title}</p>
+      {children ? <div className="mt-1.5 max-w-md text-[14px] text-ink-3 leading-relaxed">{children}</div> : null}
     </div>
   );
 }
 
-/** A bordered section with an optional header row. */
+/** A board with an optional header row. */
 export function Card({
   title,
   sub,
@@ -109,18 +111,18 @@ export function Card({
 }) {
   return (
     <section
-      className={`overflow-hidden rounded-lg border bg-surface ${tone === "danger" ? "border-[color-mix(in_oklch,var(--err)_40%,var(--border))]" : "border-line"}`}
+      className={`overflow-hidden rounded-2xl bg-surface ${tone === "danger" ? "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--err)_40%,transparent)]" : ""}`}
     >
       {title || action ? (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-line border-b bg-surface-2 px-4 py-3">
+        <header className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4 pb-1">
           <div className="min-w-0">
-            {title ? <h2 className="lbl">{title}</h2> : null}
-            {sub ? <p className="mt-0.5 text-[12.5px] text-ink-3 leading-relaxed">{sub}</p> : null}
+            {title ? <h2 className="font-medium text-[15px]">{title}</h2> : null}
+            {sub ? <p className="mt-0.5 text-[13px] text-ink-3 leading-relaxed">{sub}</p> : null}
           </div>
           {action}
         </header>
       ) : null}
-      <div className={flush ? "" : "p-4"}>{children}</div>
+      <div className={flush ? "pt-2 pb-1" : "px-5 pt-3 pb-5"}>{children}</div>
     </section>
   );
 }
@@ -144,7 +146,7 @@ export function ListLink({
       <Link
         href={href}
         prefetch={false}
-        className="flex min-h-11 items-center gap-3 px-4 py-2.5 transition-colors duration-100 hover:bg-surface-2"
+        className="flex min-h-12 items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-wash"
       >
         {children}
       </Link>
@@ -153,7 +155,7 @@ export function ListLink({
 }
 
 export function ListRow({ children }: { children: ReactNode }) {
-  return <li className="flex min-h-11 flex-wrap items-center gap-3 px-4 py-2.5">{children}</li>;
+  return <li className="flex min-h-12 flex-wrap items-center gap-3 px-5 py-2.5">{children}</li>;
 }
 
 /** Tabs as links (server-rendered; the current one is marked). */
@@ -173,13 +175,13 @@ export function Tabs({
             key={t.key}
             href={t.href}
             aria-current={active ? "page" : undefined}
-            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-[4px] px-2.5 font-medium text-[13px] transition-colors duration-150 ${
-              active ? "bg-ink text-bg" : "text-ink-2 hover:bg-surface-2 hover:text-ink"
+            className={`pressable flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 font-medium text-[13px] ${
+              active ? "bg-ink text-bg" : "bg-wash text-ink-2 hover:bg-wash-strong hover:text-ink"
             }`}
           >
             {t.label}
             {t.count !== undefined ? (
-              <span className={`tnum font-mono text-[11px] ${active ? "text-bg/70" : "text-ink-3"}`}>{t.count}</span>
+              <span className={`tnum text-[12px] ${active ? "text-bg/70" : "text-ink-3"}`}>{t.count}</span>
             ) : null}
           </Link>
         );

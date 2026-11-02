@@ -34,7 +34,8 @@ export async function loadRepo(
         repos: data.repos.map((r) => r.full_name),
         shell: {
           full,
-          bookmarks: data.info.bookmarks,
+          // Tags have their own page: they are not somewhere to work.
+          bookmarks: Object.fromEntries(Object.entries(data.info.bookmarks).filter(([b]) => !b.startsWith("tags/"))),
           protected: data.info.protected,
           presence: data.presence,
           role: data.info.role,

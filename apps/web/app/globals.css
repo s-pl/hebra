@@ -3,75 +3,95 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /*
- * Hebra design tokens. An instrument: a warm light panel by default (dark on
- * request), ink keys for the main action, labels in small mono capitals.
- * Every hebra (agent or person) owns a thread colour; people are neutral, and
- * rose (--err) marks conflicts and failures. --signal is the console's one
- * lit colour: LEDs, the caret, the command prompt.
+ * Hebra design tokens. Quiet neutrals and one filled action: black on white,
+ * white on black. Pills for everything pressed, big soft boards for everything
+ * read, no hairlines around them. The neutrals are Bencho's (tokens.css, MIT,
+ * see components/bencho). Colour is kept for meaning: every hebra owns a thread
+ * colour, people are neutral, rose (--err) marks conflicts and failures, and
+ * --led marks what is live.
  */
 :root {
-  --bg: #e6e5df;
-  --surface: #f4f3ee;
-  --surface-2: #edece6;
-  --surface-3: #fbfaf6;
-  --border: #cfcdc5;
-  --border-strong: #b9b6ac;
-  --text: #141414;
-  --text-2: #3d3c39;
-  --text-3: #5c5b57;
+  --bg: #ffffff;
+  --surface: #f7f7f6;
+  --surface-2: #f1f1f0;
+  --raised: #ffffff;
+  --wash: rgb(23 24 26 / 0.06);
+  --wash-strong: rgb(23 24 26 / 0.1);
+  --border: rgb(23 24 26 / 0.09);
+  --border-strong: rgb(23 24 26 / 0.17);
+  --text: #17181a;
+  --text-2: #3c3b37;
+  --text-3: #5c5b56;
 
-  --accent: #4351c9;
-  --accent-strong: #2e3a9e;
-  --accent-soft: rgb(67 81 201 / 0.12);
+  --accent: #2231dd;
+  --accent-strong: #1a27b0;
+  --accent-soft: rgb(34 49 221 / 0.09);
   --on-accent: #ffffff;
-  --signal: #f2ae3e;
+  --focus: #2231dd;
+  --led: #e09a12;
 
-  --ok: #11705f;
+  --ok: #15803d;
   --warn: #8c5a00;
   --err: #c53468;
   --info: #2c6e9b;
   --agent: #6a45b8;
 
-  /* Thread colours: one per hebra in graphs, channels and glyphs. */
+  /* Thread colours: one per hebra in graphs, charts and glyphs. */
   --thread-1: #de961f;
   --thread-2: #178f78;
   --thread-3: #4351c9;
   --thread-4: #6a45b8;
   --thread-5: #8f8c83;
-  --person: #3d3c39;
+  --person: #3c3b37;
 
   /* Terminals and the command line are always dark. */
-  --term-bg: #141414;
-  --term-border: #2a2b30;
-  --term-text: #f2f1ec;
+  --term-bg: #17181a;
+  --term-border: rgb(255 255 255 / 0.09);
+  --term-text: #f7f7f6;
   --term-dim: #a3a5ad;
   --term-ok: #4fcbb1;
   --term-warn: #f2ae3e;
   --term-err: #ef7ca2;
 
-  --shadow-pop: 0 0 0 1px var(--border-strong), 0 16px 40px -16px rgb(20 20 20 / 0.3);
+  /* The names the Bencho blocks read, mapped onto the ones above. */
+  --font-ui: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ink: var(--text);
+  --ink-rgb: 23, 24, 26;
+  --ink-2: var(--text-2);
+  --card: var(--surface);
+  --fill-slab: #ffffff;
+  --fill-on: #17181a;
+  --fill-on-rgb: 23, 24, 26;
+  --pane-edge: rgb(23 24 26 / 0.08);
+  --signal: var(--accent);
+
+  --shadow-pop: 0 0 0 1px var(--border), 0 16px 40px -16px rgb(23 24 26 / 0.2);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #111113;
-  --surface: #1a1a1d;
-  --surface-2: #151517;
-  --surface-3: #222226;
-  --border: #2c2d32;
-  --border-strong: #3e3f45;
-  --text: #f2f1ec;
-  --text-2: #c9cad0;
-  --text-3: #9a9ca4;
+  --bg: #000000;
+  --surface: #1a1a1a;
+  --surface-2: #242424;
+  --raised: #262626;
+  --wash: rgb(255 255 255 / 0.08);
+  --wash-strong: rgb(255 255 255 / 0.13);
+  --border: rgb(255 255 255 / 0.09);
+  --border-strong: rgb(255 255 255 / 0.17);
+  --text: #ffffff;
+  --text-2: #b4b4b4;
+  --text-3: #9a9a9a;
 
-  --accent: #7c86ea;
-  --accent-strong: #a0a8f0;
-  --accent-soft: rgb(124 134 234 / 0.15);
-  --on-accent: #0e0f12;
+  --accent: #8e97ff;
+  --accent-strong: #aeb5ff;
+  --accent-soft: rgb(142 151 255 / 0.14);
+  --on-accent: #000000;
+  --focus: #8e97ff;
+  --led: #f2ae3e;
 
-  --ok: #4fcbb1;
+  --ok: #34d17a;
   --warn: #f2ae3e;
   --err: #ef7ca2;
   --info: #7fb2e0;
@@ -82,12 +102,18 @@
   --thread-3: #7c86ea;
   --thread-4: #a58bea;
   --thread-5: #a3a5ad;
-  --person: #c9cad0;
+  --person: #b4b4b4;
 
-  --term-bg: #0b0b0d;
-  --term-border: #2c2d32;
+  --term-bg: #0a0a0a;
+  --term-border: rgb(255 255 255 / 0.09);
 
-  --shadow-pop: 0 0 0 1px var(--border-strong), 0 16px 48px -12px rgb(0 0 0 / 0.6);
+  --ink-rgb: 255, 255, 255;
+  --fill-slab: #262626;
+  --fill-on: #ffffff;
+  --fill-on-rgb: 255, 255, 255;
+  --pane-edge: rgb(255 255 255 / 0.08);
+
+  --shadow-pop: 0 0 0 1px var(--border), 0 16px 48px -12px rgb(0 0 0 / 0.7);
   color-scheme: dark;
 }
 
@@ -95,7 +121,9 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
-  --color-surface-3: var(--surface-3);
+  --color-surface-3: var(--raised);
+  --color-wash: var(--wash);
+  --color-wash-strong: var(--wash-strong);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-ink: var(--text);
@@ -110,7 +138,7 @@
   --color-err: var(--err);
   --color-info: var(--info);
   --color-agent: var(--agent);
-  --color-signal: var(--signal);
+  --color-signal: var(--led);
   --color-person: var(--person);
   --color-thread-1: var(--thread-1);
   --color-thread-2: var(--thread-2);
@@ -124,9 +152,14 @@
   --color-term-ok: var(--term-ok);
   --color-term-warn: var(--term-warn);
   --color-term-err: var(--term-err);
-  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
   --shadow-pop: var(--shadow-pop);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
 }
 
 /* ------------------------------------------------------------------ base */
@@ -142,19 +175,19 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
+  letter-spacing: -0.003em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--accent) 30%, transparent);
+  background: color-mix(in oklch, var(--accent) 24%, transparent);
   color: var(--text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: 5px;
 }
 
 * {
@@ -172,14 +205,13 @@ body {
 /* Press feedback for anything clickable. */
 .pressable {
   transition:
-    transform 140ms var(--ease-out),
+    scale 140ms var(--ease-out),
     background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
+    opacity 140ms ease,
+    color 140ms ease;
 }
 .pressable:active:not(:disabled) {
-  transform: scale(0.97);
+  scale: 0.97;
 }
 
 /* Numbers that change in place (counters, meters) do not jitter. */
@@ -187,102 +219,46 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------------------------------------------------------------- console */
-
-/* In the components layer, so utilities on an element can still override them. */
 @layer components {
-  /*
-   * A key: raised by a 2px inset edge at the bottom, pressed by losing it and
-   * moving down 1px. The edge is a shadow, so pressing never shifts layout.
-   */
-  .key {
-    border: 1px solid var(--border-strong);
-    background: var(--surface-3);
-    color: var(--text);
-    box-shadow: inset 0 -2px 0 var(--border-strong);
-    transition:
-      transform 80ms var(--ease-out),
-      box-shadow 80ms var(--ease-out),
-      background-color 120ms ease;
-  }
-  .key:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--surface-3) 60%, white);
-  }
-  .key:active:not(:disabled) {
-    transform: translateY(1px);
-    box-shadow: inset 0 0 0 var(--border-strong);
-  }
-  .key-ink {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--bg);
-    box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--bg) 28%, var(--text));
-  }
-  .key-ink:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--text) 86%, var(--bg));
-  }
-  .key-accent {
-    border-color: var(--accent-strong);
-    background: var(--accent);
-    color: var(--on-accent);
-    box-shadow: inset 0 -2px 0 var(--accent-strong);
-  }
-  .key-accent:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--accent) 88%, white);
-  }
-  .key-danger {
-    border-color: color-mix(in oklch, var(--err) 70%, black);
-    background: var(--err);
-    color: white;
-    box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--err) 70%, black);
-  }
-
-  /* A shortcut printed on a tiny key cap. */
+  /* A shortcut, printed small. */
   .cap {
     display: inline-grid;
     place-items: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    border: 1px solid var(--border-strong);
-    border-radius: 3px;
-    background: var(--surface);
-    font-family: var(--font-mono);
-    font-size: 10px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 6px;
+    background: var(--wash);
+    font-size: 11px;
+    font-weight: 500;
     line-height: 1;
     color: var(--text-3);
   }
 
-  /* Panel labels: small mono capitals, like the print on a device. */
+  /* A small heading over a group of things. */
   .lbl {
-    font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: var(--text-3);
   }
 }
 
 /* An LED that blinks while something is live. */
 .led-live {
-  animation: blink 1s steps(1) infinite;
+  animation: led 1.6s ease-in-out infinite;
+}
+@keyframes led {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* --------------------------------------------------------------- landing */
 
-/* A dot grid, like the holes in a panel, fading out from the top. */
-.grid-backdrop {
-  background-image: radial-gradient(color-mix(in oklch, var(--text) 16%, transparent) 1px, transparent 1px);
-  background-size: 18px 18px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 75%);
-}
-
 /*
  * Motion. The landing is seen rarely, so it may tell a story: the headline
- * arrives word by word and the console settles into place, with the LEDs of
- * working hebras blinking in steps. The app is used all day, so it only answers input and marks what others
- * changed. Everything animates transform and opacity (plus a small blur
+ * arrives word by word. The app is used all day, so it only answers input and
+ * marks what others changed. Everything animates transform and opacity (plus a small blur
  * that hides the crossfade), and every element's resting style is its
  * final state, so with reduced motion nothing is lost.
  */
@@ -313,18 +289,6 @@ body {
     opacity: 0;
     transform: translateY(0.3em);
     filter: blur(8px);
-  }
-}
-
-/* The product shot tilts up into place, like a screen set on a desk. */
-.shot-in {
-  transform-origin: 50% 0;
-  animation: shot-in 1100ms var(--ease-arrive) 350ms both;
-}
-@keyframes shot-in {
-  from {
-    opacity: 0;
-    transform: perspective(1600px) translateY(32px) rotateX(14deg) scale(0.97);
   }
 }
 
@@ -417,7 +381,7 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 1px;
+  border-radius: 999px;
   background: currentColor;
   animation: live 2s var(--ease-out) infinite;
 }
@@ -471,7 +435,7 @@ body {
   z-index: 90;
   height: 2px;
   transform-origin: 0 50%;
-  background: var(--signal);
+  background: var(--accent);
   pointer-events: none;
 }
 .nav-progress[data-state="loading"] {
@@ -564,7 +528,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .word,
-  .shot-in,
   .reveal,
   .value-in,
   .unroll,
@@ -578,8 +541,9 @@ body {
   .nav-progress {
     display: none;
   }
-  .pressable:active:not(:disabled),
-  .key:active:not(:disabled),
+  .pressable:active:not(:disabled) {
+    scale: 1;
+  }
   :where(a, button):hover > .nudge {
     transform: none;
   }

@@ -21,9 +21,9 @@ function isActive(pathname: string, tab: Tab) {
 }
 
 /**
- * The hub's section tabs. Each one prints its shortcut on a key cap, and the
- * shortcut works anywhere on the page (a single letter, outside text fields).
- * The current tab is an ink key; no animation, it is clicked all day.
+ * The hub's section tabs, as pills. Each has a one-letter shortcut that works
+ * anywhere on the page, outside text fields; the tooltip names it. The current
+ * tab is the filled pill; no animation, it is clicked all day.
  */
 export function KeyTabs({ tabs, label }: { tabs: Tab[]; label: string }) {
   const pathname = usePathname();
@@ -61,14 +61,14 @@ export function KeyTabs({ tabs, label }: { tabs: Tab[]; label: string }) {
             href={t.href}
             aria-current={active ? "page" : undefined}
             aria-keyshortcuts={t.key}
-            className={`flex h-8 shrink-0 items-center gap-2 rounded-[4px] pr-2.5 pl-1.5 font-medium text-[13px] transition-colors duration-100 ${
-              active ? "bg-ink text-bg" : "text-ink-2 hover:bg-surface-2 hover:text-ink"
+            title={`${t.label} (${t.key})`}
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 font-medium text-[13px] transition-colors duration-100 ${
+              active ? "bg-ink text-bg" : "text-ink-2 hover:bg-wash hover:text-ink"
             }`}
           >
-            <span className={`cap ${active ? "border-transparent bg-bg/15 text-bg" : ""}`}>{t.key}</span>
             {t.label}
             {t.count ? (
-              <span className={`tnum font-mono text-[11px] ${active ? "text-bg/70" : "text-ink-3"}`}>{t.count}</span>
+              <span className={`tnum text-[12px] ${active ? "text-bg/70" : "text-ink-3"}`}>{t.count}</span>
             ) : null}
           </Link>
         );
@@ -85,7 +85,7 @@ export function MenuLink({ href, children }: { href: string; children: ReactNode
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`flex h-8 items-center gap-2 truncate rounded-[4px] px-2 text-[12.5px] hover:bg-surface-2 hover:text-ink ${active ? "text-ink" : "text-ink-2"}`}
+      className={`flex h-9 items-center gap-2 truncate rounded-[10px] px-2.5 text-[13.5px] hover:bg-wash hover:text-ink ${active ? "text-ink" : "text-ink-2"}`}
     >
       {children}
     </Link>

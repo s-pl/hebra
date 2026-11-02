@@ -30,7 +30,7 @@ export function AuthFrame({
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="flex flex-col px-5 sm:px-10">
-        <div className="-mx-5 h-20 border-line border-b sm:-mx-10 lg:hidden">
+        <div className="-mx-5 h-20 sm:-mx-10 lg:hidden">
           <PixelLoom />
         </div>
         <header className="flex h-16 items-center justify-between">
@@ -41,33 +41,27 @@ export function AuthFrame({
         </header>
         <main id="main" className="grid flex-1 place-items-center py-10">
           <div className="rise w-full max-w-[380px]">
-            <h1 className="text-balance font-semibold text-[24px] leading-tight tracking-[-0.025em]">{title}</h1>
-            {sub ? <div className="mt-2 text-[13.5px] text-ink-3 leading-relaxed">{sub}</div> : null}
+            <h1 className="text-balance font-medium text-[28px] leading-[1.15] tracking-[-0.02em]">{title}</h1>
+            {sub ? <div className="mt-2 text-[14px] text-ink-3 leading-relaxed">{sub}</div> : null}
             <div className="mt-8">{children}</div>
-            {foot ? (
-              <div className="mt-8 border-line border-t pt-5 text-[12.5px] text-ink-3 leading-relaxed">{foot}</div>
-            ) : null}
+            {foot ? <div className="mt-8 text-[13px] text-ink-3 leading-relaxed">{foot}</div> : null}
           </div>
         </main>
       </div>
-      <aside className="relative hidden overflow-hidden border-line border-l bg-surface lg:block">
+      <aside className="relative m-3 hidden overflow-hidden rounded-2xl bg-surface lg:block">
         {/* The loom fades out behind the text so it stays easy to read. */}
         <div className="absolute inset-0 [mask-image:radial-gradient(ellipse_75%_45%_at_32%_42%,transparent_30%,black_85%)]">
           <PixelLoom />
         </div>
         <div className="relative flex h-full flex-col justify-center px-14 pb-40">
-          <p className="lbl">hebra · sign in</p>
-          <p className="mt-3 max-w-md text-balance font-semibold text-[28px] leading-[1.15] tracking-[-0.03em]">
+          <p className="max-w-md text-balance font-medium text-[28px] leading-[1.15] tracking-[-0.02em]">
             Version control for people and agents.
           </p>
           <ul className="mt-10 grid max-w-md gap-6">
             {POINTS.map(([t, d]) => (
-              <li key={t} className="grid grid-cols-[24px_minmax(0,1fr)] gap-3">
-                <span className="cap mt-0.5">{POINTS.findIndex(([x]) => x === t) + 1}</span>
-                <span>
-                  <span className="block font-medium text-[14px]">{t}</span>
-                  <span className="mt-0.5 block text-[13px] text-ink-3 leading-relaxed">{d}</span>
-                </span>
+              <li key={t}>
+                <span className="block font-medium text-[15px]">{t}</span>
+                <span className="mt-0.5 block text-[14px] text-ink-3 leading-relaxed">{d}</span>
               </li>
             ))}
           </ul>

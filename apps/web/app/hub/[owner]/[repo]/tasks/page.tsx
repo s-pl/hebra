@@ -98,7 +98,11 @@ export default async function TasksPage({ params, searchParams }: Params) {
             <Field
               label="Acceptance criteria"
               htmlFor="acceptance"
-              hint="One per line. Agent verification checks against these."
+              hint={
+                ctx.caps?.features.agent_verification
+                  ? "One per line. Agent verification checks against these."
+                  : "One per line."
+              }
             >
               <TextArea
                 id="acceptance"

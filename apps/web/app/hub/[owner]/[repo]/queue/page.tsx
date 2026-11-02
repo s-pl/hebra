@@ -99,7 +99,7 @@ export default async function QueuePage({ params }: Params) {
                     <Link
                       key={n}
                       href={`/hub/${full}/reviews/${n}`}
-                      className="key inline-flex h-7 items-center rounded-[4px] px-2 font-mono text-[12px]"
+                      className="pressable inline-flex h-7 items-center rounded-full bg-wash px-3 font-medium text-[12.5px] hover:bg-wash-strong"
                     >
                       #{n}
                     </Link>

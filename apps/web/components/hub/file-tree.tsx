@@ -45,7 +45,7 @@ function Folder({
     <li>
       <details open={open} className="group/dir">
         <summary
-          className={`flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-[4px] pr-2 text-[13px] hover:bg-surface ${
+          className={`flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-sm pr-2 text-[13px] hover:bg-surface ${
             current === path ? "text-ink" : "text-ink-2"
           }`}
           style={{ paddingLeft: 8 + depth * 12 }}
@@ -103,7 +103,7 @@ function Entries({
               href={href(base, path)}
               prefetch={false}
               aria-current={active ? "page" : undefined}
-              className={`flex h-7 items-center gap-1.5 rounded-[4px] pr-2 text-[13px] ${
+              className={`flex h-7 items-center gap-1.5 rounded-sm pr-2 text-[13px] ${
                 active ? "bg-ink font-medium text-bg" : "text-ink-2 hover:bg-surface hover:text-ink"
               }`}
               style={{ paddingLeft: 8 + depth * 12 + 16 }}

@@ -9,6 +9,14 @@ import { type NextRequest, NextResponse } from "next/server";
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const dev = process.env.NODE_ENV === "development";
+
+  // A self-hosted server opens on its dashboard. The landing page is for the public site.
+  if (request.nextUrl.pathname === "/" && !dev && process.env.HEBRA_PUBLIC_SITE !== "1") {
+    const hub = request.nextUrl.clone();
+    hub.pathname = "/hub";
+    return NextResponse.redirect(hub);
+  }
+
   const https = request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
   const csp = [
     "default-src 'self'",

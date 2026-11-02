@@ -13,7 +13,7 @@ export const TERM_TONES = {
   accent: "text-signal",
 };
 
-/** The window chrome of a terminal: a printed label and a lit LED. Always dark. */
+/** The window of a terminal. Always dark. */
 export function TermFrame({
   title,
   className = "",
@@ -24,13 +24,12 @@ export function TermFrame({
   children: ReactNode;
 }) {
   return (
-    <div className={`overflow-hidden rounded-lg border border-term-line bg-term text-term-text ${className}`}>
-      <div className="flex h-8 items-center gap-2 border-term-line border-b px-3">
-        <span className="size-1.5 bg-signal" />
-        <span className="truncate font-mono text-[10.5px] text-term-dim uppercase tracking-[0.08em]">
-          {title ?? "terminal"}
-        </span>
-      </div>
+    <div className={`overflow-hidden rounded-xl bg-term text-term-text ${className}`}>
+      {title ? (
+        <div className="flex h-9 items-center border-term-line border-b px-4">
+          <span className="truncate font-medium text-[12.5px] text-term-dim">{title}</span>
+        </div>
+      ) : null}
       <pre className="whitespace-pre-wrap break-words px-3.5 py-3 font-mono text-[11px] leading-[1.75] sm:px-4 sm:text-[12px]">
         {children}
       </pre>

@@ -22,7 +22,7 @@ export function CopyCommand({ command, display }: { command: string; display?: s
   }
 
   return (
-    <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-surface py-1 pr-1 pl-3 font-mono text-[13px] text-ink-2">
+    <div className="inline-flex max-w-full items-center gap-1 rounded-full bg-wash py-1 pr-1 pl-4 font-mono text-[13px] text-ink-2">
       <span className="select-none text-ink-3">$</span>
       <span className="min-w-0 truncate px-1.5" title={command}>
         {display ?? command}
@@ -31,7 +31,7 @@ export function CopyCommand({ command, display }: { command: string; display?: s
         type="button"
         onClick={copy}
         aria-label={copied ? "Copied" : "Copy command"}
-        className="pressable relative grid size-7 shrink-0 place-items-center rounded text-ink-3 hover:bg-surface-2 hover:text-ink"
+        className="pressable relative grid size-7 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-wash hover:text-ink"
       >
         <svg
           viewBox="0 0 24 24"

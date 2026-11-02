@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
-/** Switches between the light default and the dark theme; remembers it. */
+/** Switches between the light and dark themes and remembers the choice. Until then the system decides. */
 export function ThemeToggle({ className = "" }: { className?: string }) {
   const [theme, setTheme] = useState<Theme>("light");
 
@@ -16,8 +16,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     const next: Theme = theme === "dark" ? "light" : "dark";
     const apply = () => {
       setTheme(next);
-      if (next === "dark") document.documentElement.dataset.theme = "dark";
-      else delete document.documentElement.dataset.theme;
+      document.documentElement.dataset.theme = next;
     };
     // Crossfade the whole page (View Transitions) instead of a hard flash.
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -37,7 +36,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className={`pressable grid size-8 place-items-center rounded-md text-ink-3 hover:bg-surface-2 hover:text-ink ${className}`}
+      className={`pressable grid size-8 place-items-center rounded-full text-ink-3 hover:bg-wash hover:text-ink ${className}`}
     >
       <svg
         viewBox="0 0 16 16"

@@ -30,6 +30,7 @@ const STATUS = {
   added: { letter: "A", tone: "text-ok" },
   modified: { letter: "M", tone: "text-[var(--thread-3)]" },
   deleted: { letter: "D", tone: "text-err" },
+  renamed: { letter: "R", tone: "text-[var(--thread-2)]" },
 };
 
 export function fileAnchor(path: string): string {
@@ -76,7 +77,10 @@ export function DiffFile({ file }: { file: FileDiff }) {
           <path d="M2 4h8L6 9z" />
         </svg>
         <span className={`font-mono font-semibold text-[12px] ${status.tone}`}>{status.letter}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{file.path}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[13px]">
+          {file.renamed_from ? `${file.renamed_from} → ` : ""}
+          {file.path}
+        </span>
         <DiffStat additions={file.additions} deletions={file.deletions} />
       </summary>
       {file.binary ? (

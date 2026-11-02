@@ -164,7 +164,7 @@ export function PaletteButton() {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new Event("hebra:palette"))}
-      className="pressable flex h-8 w-full items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[12.5px] text-ink-3 hover:border-line-strong hover:text-ink-2"
+      className="pressable flex h-8 w-full items-center gap-2 rounded-full bg-wash px-3 text-[13px] text-ink-3 hover:bg-wash-strong hover:text-ink-2"
     >
       <svg
         viewBox="0 0 16 16"

@@ -63,6 +63,19 @@ printf '# acme\n\nThe acme app.\n' > README.md
 mkdir -p .hb
 printf '[[check]]\nname = "build"\nrun = "echo building acme"\non = ["review", "push:main"]\n\n[[check]]\nname = "test"\nrun = "echo 12 tests passed"\non = ["review", "push:main"]\n' > .hb/checks.toml
 "$HB" commit -m "Initial import of the acme app" >/dev/null
+
+# A few weeks of work, so the hub has a history to chart. GNU date, then BSD.
+days_ago() { date -u -d "$1 days ago" +%Y-%m-%dT12:00:00Z 2>/dev/null || date -u -v-"$1"d +%Y-%m-%dT12:00:00Z; }
+n=0
+for day in 18 17 15 15 14 12 11 11 10 8 8 7 5 4 4 3 2 1; do
+  n=$((n + 1))
+  printf 'Change %s\n' "$n" >> NOTES.md
+  case $((n % 3)) in
+    0) "$HB" commit --date "$(days_ago "$day")" -m "Tidy up after change $n" >/dev/null ;;
+    1) agent claude-code "$HB" commit --date "$(days_ago "$day")" -m "Change $n of the login flow" >/dev/null ;;
+    2) agent codex "$HB" commit --date "$(days_ago "$day")" -m "Notes for change $n" >/dev/null ;;
+  esac
+done
 "$HB" push --bookmark main -r @-
 
 echo "ana plans the work as tasks"
