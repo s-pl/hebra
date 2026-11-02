@@ -32,7 +32,10 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }} -p hebra-cli -p hebra-server
+      # The server keeps unwinding, so a panic ends one request and not the
+      # process. Without it `hb` is 4 MB smaller.
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p hebra-cli --config 'profile.release.panic="abort"'
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p hebra-server
       - name: Package
         shell: bash
         env:
@@ -89,8 +92,14 @@ jobs:
         run: gh release create "$TAG" dist/* --repo "$REPO" --title "Hebra $TAG" --generate-notes
 
   images:
-    name: Container images
-    runs-on: ubuntu-latest
+    name: Container image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, os: ubuntu-latest }
+          - { arch: arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -105,12 +114,37 @@ jobs:
           ACTOR: ${{ github.actor }}
           TAG: ${{ github.ref_name }}
           OWNER: ${{ github.repository_owner }}
+          ARCH: ${{ matrix.arch }}
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           for app in server web; do
+            image="ghcr.io/$owner/hebra-$app:${TAG#v}-$ARCH"
+            docker build -f "deploy/docker/$app.Dockerfile" -t "$image" .
+            docker push "$image"
+          done
+
+  manifests:
+    name: Multi-architecture images
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Tag both architectures under one name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          TAG: ${{ github.ref_name }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          version=${TAG#v}
+          for app in server web; do
             image="ghcr.io/$owner/hebra-$app"
-            docker build -f "deploy/docker/$app.Dockerfile" -t "$image:${TAG#v}" -t "$image:latest" .
-            docker push "$image:${TAG#v}"
-            docker push "$image:latest"
+            docker buildx imagetools create -t "$image:$version" -t "$image:latest" \
+              "$image:$version-amd64" "$image:$version-arm64"
           done

@@ -8,11 +8,12 @@
 //! ciphertext as associated data, so encrypted files cannot be swapped. The
 //! first key encrypts; every key can decrypt, which allows key rotation.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use chacha20poly1305::XChaCha20Poly1305;
@@ -30,6 +31,17 @@ pub const TREE: &str = "tree";
 pub const COMMIT: &str = "commit";
 
 const MAGIC: &[u8; 4] = b"HBE1";
+/// Objects smaller than this are not worth compressing one by one.
+const MIN_COMPRESS: usize = 96;
+/// Fast, for objects written while working.
+const LOOSE_LEVEL: u8 = 1;
+/// Slower but smaller, for `hb gc`.
+const PACK_LEVEL: u8 = 6;
+/// Earlier versions each object is compared against (Git uses 10, across all
+/// objects of a kind; ours are already grouped by path).
+const DELTA_WINDOW: usize = 4;
+/// Very large files are stored whole: comparing them costs more than it saves.
+const MAX_DELTA_INPUT: usize = 64 * 1024 * 1024;
 /// Deeper trees are rejected, so hostile input cannot exhaust the stack.
 const MAX_TREE_DEPTH: usize = 256;
 const KEY_ID_LEN: usize = 8;
@@ -126,11 +138,9 @@ pub struct RepackStats {
 impl FsBackend {
     #[must_use]
     pub fn new(dir: PathBuf) -> Self {
-        let packs = PackSet::default();
-        packs.refresh(&dir, true);
         Self {
             dir,
-            packs,
+            packs: PackSet::default(),
             batch: Mutex::new(Batch::default()),
         }
     }
@@ -156,6 +166,21 @@ impl FsBackend {
             Err(Error::Io { source, .. }) => Err(source),
             Err(e) => Err(std::io::Error::other(e.to_string())),
         }
+    }
+
+    fn stats(&self) -> StoreStats {
+        let mut stats = StoreStats::default();
+        for (key, _) in self.loose() {
+            stats.loose_objects += 1;
+            stats.loose_bytes += fs::metadata(self.dir.join(key)).map_or(0, |m| m.len());
+        }
+        self.packs.refresh(&self.dir, true);
+        for pack in self.packs.all() {
+            stats.packs += 1;
+            stats.packed_objects += pack.ids().count();
+            stats.pack_bytes += fs::metadata(&pack.pack_path).map_or(0, |m| m.len());
+        }
+        stats
     }
 
     /// Keys of every loose object file, with its modification time.
@@ -191,9 +216,14 @@ impl FsBackend {
     /// pack, then removes what the pack replaces: loose copies, older packs,
     /// and unreachable objects last written before `prune_before`. Newer
     /// unreachable objects stay, since a command may be about to use them.
+    ///
+    /// `families` lists objects likely to resemble each other (the versions
+    /// of one path, newest first): each is stored as a delta against an
+    /// earlier one when that saves space, like Git's pack heuristic.
     pub fn repack(
         &self,
         keep: &HashSet<ObjectId>,
+        families: &[Vec<ObjectId>],
         prune_before: SystemTime,
     ) -> std::io::Result<RepackStats> {
         let mut stats = RepackStats::default();
@@ -201,13 +231,17 @@ impl FsBackend {
         let old_packs = self.packs.all();
         let loose = self.loose();
 
-        let mut builder = PackBuilder::create(&self.dir)?;
+        let builder = Mutex::new(PackBuilder::create(&self.dir)?);
+        self.pack_families(&builder, keep, families)?;
+        let mut builder = builder
+            .into_inner()
+            .map_err(|_| std::io::Error::other("pack lock poisoned"))?;
         let mut copy = |id: &pack::Id| -> std::io::Result<()> {
             if builder.contains(id) || !keep.contains(&ObjectId::from_bytes(*id)) {
                 return Ok(());
             }
             if let Some(bytes) = self.get(&pack::id_key(id))? {
-                builder.put(*id, &bytes)?;
+                builder.put(*id, &compressed(bytes))?;
             }
             Ok(())
         };
@@ -218,7 +252,7 @@ impl FsBackend {
         }
         for p in &old_packs {
             for id in p.ids() {
-                copy(id)?;
+                copy(&id)?;
             }
         }
         stats.packed = builder.len();
@@ -250,8 +284,7 @@ impl FsBackend {
                 .is_ok_and(|t| t < prune_before);
             let unreachable = p
                 .ids()
-                .iter()
-                .filter(|id| !keep.contains(&ObjectId::from_bytes(**id)))
+                .filter(|id| !keep.contains(&ObjectId::from_bytes(*id)))
                 .count();
             if old_enough || unreachable == 0 {
                 gone.insert(p.idx_path.clone());
@@ -289,6 +322,110 @@ impl FsBackend {
             }
         }
         Ok(stats)
+    }
+    /// Packs each family on one of several threads: reading, comparing and
+    /// compressing happen in parallel, and only the final write is shared.
+    fn pack_families(
+        &self,
+        builder: &Mutex<PackBuilder>,
+        keep: &HashSet<ObjectId>,
+        families: &[Vec<ObjectId>],
+    ) -> std::io::Result<()> {
+        let next = AtomicUsize::new(0);
+        let claimed: Mutex<HashSet<ObjectId>> = Mutex::new(HashSet::new());
+        let workers = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
+        let work = || -> std::io::Result<()> {
+            loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                let Some(family) = families.get(i) else {
+                    return Ok(());
+                };
+                self.pack_family(builder, keep, family, &claimed)?;
+            }
+        };
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (1..workers).map(|_| scope.spawn(work)).collect();
+            let mut result = work();
+            for handle in handles {
+                let joined = handle
+                    .join()
+                    .unwrap_or_else(|_| Err(std::io::Error::other("a pack worker panicked")));
+                if result.is_ok() {
+                    result = joined;
+                }
+            }
+            result
+        })
+    }
+
+    fn pack_family(
+        &self,
+        builder: &Mutex<PackBuilder>,
+        keep: &HashSet<ObjectId>,
+        family: &[ObjectId],
+        claimed: &Mutex<HashSet<ObjectId>>,
+    ) -> std::io::Result<()> {
+        let poisoned = || std::io::Error::other("pack lock poisoned");
+        // The last few objects of this family, with their chain depth. Only
+        // objects packed here serve as bases, which rules out cycles.
+        let mut window: VecDeque<(ObjectId, Vec<u8>, usize)> = VecDeque::new();
+        for id in family {
+            if !keep.contains(id) || !claimed.lock().map_err(|_| poisoned())?.insert(*id) {
+                continue;
+            }
+            let Some(stored) = self.get(&key_of(id))? else {
+                continue;
+            };
+            if stored.starts_with(MAGIC) {
+                builder
+                    .lock()
+                    .map_err(|_| poisoned())?
+                    .put(*id.as_bytes(), &stored)?;
+                continue;
+            }
+            let plain = if pack::is_deflated(&stored) {
+                pack::inflate(&stored)?
+            } else {
+                stored
+            };
+            let whole = pack::deflate(&plain, PACK_LEVEL);
+            let mut best: Option<(ObjectId, Vec<u8>, usize)> = None;
+            if plain.len() <= MAX_DELTA_INPUT {
+                for (base, base_plain, depth) in window.iter().rev() {
+                    if *depth >= pack::MAX_DEPTH {
+                        continue;
+                    }
+                    let Some(delta) = crate::delta::encode(base_plain, &plain) else {
+                        continue;
+                    };
+                    let delta = pack::deflate(&delta, PACK_LEVEL);
+                    let limit = best.as_ref().map_or(whole.len(), |(_, d, _)| d.len());
+                    if delta.len() + 33 < limit {
+                        best = Some((*base, delta, depth + 1));
+                    }
+                }
+            }
+            let depth = {
+                let mut pack = builder.lock().map_err(|_| poisoned())?;
+                match best {
+                    Some((base, delta, depth)) => {
+                        pack.put_delta(*id.as_bytes(), base.as_bytes(), &delta)?;
+                        depth
+                    }
+                    None => {
+                        pack.put(*id.as_bytes(), &whole)?;
+                        0
+                    }
+                }
+            };
+            if plain.len() <= MAX_DELTA_INPUT {
+                window.push_back((*id, plain, depth));
+                if window.len() > DELTA_WINDOW {
+                    window.pop_front();
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -377,12 +514,40 @@ impl Backend for FsBackend {
     }
 }
 
-#[derive(Debug, Clone)]
+/// What an object directory holds (`hb stats`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StoreStats {
+    pub loose_objects: usize,
+    pub loose_bytes: u64,
+    pub packs: usize,
+    pub packed_objects: usize,
+    pub pack_bytes: u64,
+}
+
+/// One path that differs between two trees: its entry on each side.
+pub type TreeChange = (String, Option<FileEntry>, Option<FileEntry>);
+
+/// Gets objects that are not here from somewhere else, for partial clones.
+/// Returns them as raw bytes (kind, NUL, data); every one is verified.
+pub trait Fetcher: Send + Sync {
+    fn fetch(&self, ids: &[ObjectId]) -> std::io::Result<Vec<Vec<u8>>>;
+}
+
+#[derive(Clone)]
 pub struct Store {
     backend: Arc<dyn Backend>,
     /// The same backend when it is a local directory (for `repack`).
     local: Option<Arc<FsBackend>>,
     keys: Arc<Vec<Key>>,
+    fetcher: Arc<OnceLock<Box<dyn Fetcher>>>,
+}
+
+impl std::fmt::Debug for Store {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Store")
+            .field("backend", &self.backend)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The backend key of an object: `ab/cdef…`.
@@ -415,6 +580,7 @@ impl Store {
             backend: Arc::clone(&local) as Arc<dyn Backend>,
             local: Some(local),
             keys: Arc::new(keys),
+            fetcher: Arc::new(OnceLock::new()),
         }
     }
 
@@ -424,20 +590,73 @@ impl Store {
             backend,
             local: None,
             keys: Arc::new(keys),
+            fetcher: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// Objects missing here will be asked of `fetcher` when read.
+    pub fn set_fetcher(&self, fetcher: Box<dyn Fetcher>) {
+        let _ = self.fetcher.set(fetcher);
+    }
+
+    /// Whether objects may legitimately be missing (a partial clone).
+    #[must_use]
+    pub fn is_partial(&self) -> bool {
+        self.fetcher.get().is_some()
+    }
+
+    /// Asks for many missing objects at once: reading them one by one would
+    /// be one request each.
+    pub fn prefetch(&self, ids: &[ObjectId]) -> Result<()> {
+        let Some(fetcher) = self.fetcher.get() else {
+            return Ok(());
+        };
+        let missing: Vec<ObjectId> = ids.iter().filter(|id| !self.has(id)).copied().collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let found = fetcher.fetch(&missing).map_err(|source| Error::Io {
+            path: PathBuf::from("remote objects"),
+            source,
+        })?;
+        for raw in found {
+            self.write_raw(&raw)?;
+        }
+        Ok(())
+    }
+
+    /// How much is stored, for local stores.
+    pub fn stats(&self) -> Result<StoreStats> {
+        let local = self.local.as_ref().ok_or_else(|| {
+            Error::InvalidArgument("only local object stores report their size".to_owned())
+        })?;
+        Ok(local.stats())
+    }
+
+    /// Whether the store has grown enough to compact (`hb gc --auto`). Like
+    /// Git, it counts one of the 256 directories instead of all of them, so
+    /// asking costs nothing.
+    #[must_use]
+    pub fn needs_gc(&self) -> bool {
+        /// Git's `gc.auto` default, for one directory.
+        const LOOSE_IN_ONE_DIR: usize = 6700 / 256;
+        self.local.as_ref().is_some_and(|l| {
+            fs::read_dir(l.dir.join("17")).is_ok_and(|d| d.count() > LOOSE_IN_ONE_DIR)
+        })
     }
 
     /// Compacts a local store into one pack; see [`FsBackend::repack`].
     pub fn repack(
         &self,
         keep: &HashSet<ObjectId>,
+        families: &[Vec<ObjectId>],
         prune_before: SystemTime,
     ) -> Result<RepackStats> {
         let local = self.local.as_ref().ok_or_else(|| {
             Error::InvalidArgument("only local object stores can be repacked".to_owned())
         })?;
         local
-            .repack(keep, prune_before)
+            .repack(keep, families, prune_before)
             .map_err(|source| Error::Io {
                 path: PathBuf::from("objects"),
                 source,
@@ -468,7 +687,16 @@ impl Store {
         Ok(out)
     }
 
+    /// The plain object from the bytes a backend returned.
     fn open(&self, id: &ObjectId, file: Vec<u8>) -> Result<Vec<u8>> {
+        let opened = self.decrypt(id, file)?;
+        if pack::is_deflated(&opened) {
+            return pack::inflate(&opened).map_err(|_| Error::CorruptObject(id.hex()));
+        }
+        Ok(opened)
+    }
+
+    fn decrypt(&self, id: &ObjectId, file: Vec<u8>) -> Result<Vec<u8>> {
         let Some(rest) = file.strip_prefix(MAGIC) else {
             return Ok(file);
         };
@@ -523,7 +751,7 @@ impl Store {
         raw.extend_from_slice(kind.as_bytes());
         raw.push(0);
         raw.extend_from_slice(data);
-        let bytes = self.seal(&id, raw)?;
+        let bytes = self.seal(&id, shrink(raw))?;
         self.backend
             .put(&key, &bytes)
             .map_err(|e| io_error(&id, e))?;
@@ -547,16 +775,17 @@ impl Store {
 
     /// The plaintext object bytes (kind, NUL, data), verified against the id.
     pub fn read_raw(&self, id: &ObjectId) -> Result<Vec<u8>> {
-        let file = self
-            .backend
-            .get(&key_of(id))
-            .map_err(|e| io_error(id, e))?
-            .ok_or_else(|| {
-                io_error(
-                    id,
-                    std::io::Error::new(std::io::ErrorKind::NotFound, "object not found"),
-                )
-            })?;
+        let mut file = self.backend.get(&key_of(id)).map_err(|e| io_error(id, e))?;
+        if file.is_none() && self.is_partial() {
+            self.prefetch(std::slice::from_ref(id))?;
+            file = self.backend.get(&key_of(id)).map_err(|e| io_error(id, e))?;
+        }
+        let file = file.ok_or_else(|| {
+            io_error(
+                id,
+                std::io::Error::new(std::io::ErrorKind::NotFound, "object not found"),
+            )
+        })?;
         let raw = self.open(id, file)?;
         if blake3::hash(&raw).as_bytes() != id.as_bytes() {
             return Err(Error::CorruptObject(id.hex()));
@@ -647,6 +876,20 @@ impl Store {
         Ok(())
     }
 
+    /// Whether two trees hold the same files. Different ids can only mean
+    /// the same files when one of them is in the old flat format.
+    pub fn same_tree(&self, a: &ObjectId, b: &ObjectId) -> Result<bool> {
+        if a == b {
+            return Ok(true);
+        }
+        let flat =
+            |id: &ObjectId| -> Result<bool> { Ok(self.read_json::<StoredTree>(TREE, id)?.v == 0) };
+        if flat(a)? || flat(b)? {
+            return Ok(self.read_tree(a)? == self.read_tree(b)?);
+        }
+        Ok(false)
+    }
+
     /// The paths that differ between two trees, each with its entry in `to`
     /// (`None` when deleted), sorted by path. Directories with the same id
     /// on both sides are skipped without being read.
@@ -655,21 +898,55 @@ impl Store {
         from: &ObjectId,
         to: &ObjectId,
     ) -> Result<Vec<(String, Option<FileEntry>)>> {
+        Ok(self
+            .tree_delta(from, to)?
+            .into_iter()
+            .map(|(path, _, new)| (path, new))
+            .collect())
+    }
+
+    /// Like [`Self::tree_changes`], with the entry on each side.
+    pub fn tree_delta(&self, from: &ObjectId, to: &ObjectId) -> Result<Vec<TreeChange>> {
         let mut out = Vec::new();
         if from != to {
-            self.diff_dirs(Some(from), Some(to), "", 0, &mut out)?;
+            self.diff_dirs(Some(from), Some(to), "", 0, &mut out, &mut |_, _| {})?;
         }
         out.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(out)
     }
 
+    /// Calls `visit` with the path and object of everything `to` has that
+    /// `from` does not: new blobs, and directories (their paths ending in
+    /// `/`). What `hb gc` uses to line up the versions of each path.
+    pub fn walk_changes(
+        &self,
+        from: Option<&ObjectId>,
+        to: &ObjectId,
+        visit: &mut dyn FnMut(String, ObjectId),
+    ) -> Result<()> {
+        if from == Some(to) {
+            return Ok(());
+        }
+        let mut out = Vec::new();
+        visit("/".to_owned(), *to);
+        self.diff_dirs(from, Some(to), "", 0, &mut out, visit)?;
+        for (path, _, new) in out {
+            if let Some(entry) = new {
+                visit(path, entry.blob);
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn diff_dirs(
         &self,
         from: Option<&ObjectId>,
         to: Option<&ObjectId>,
         prefix: &str,
         depth: usize,
-        out: &mut Vec<(String, Option<FileEntry>)>,
+        out: &mut Vec<TreeChange>,
+        visit_dir: &mut dyn FnMut(String, ObjectId),
     ) -> Result<()> {
         if depth > MAX_TREE_DEPTH {
             return Err(Error::InvalidArgument("tree is too deep".to_owned()));
@@ -682,28 +959,30 @@ impl Store {
         if depth == 0 && (from.is_some() && a.v == 0 || to.is_some() && b.v == 0) {
             let a = from.map_or_else(|| Ok(Tree::default()), |id| self.read_tree(id))?;
             let b = to.map_or_else(|| Ok(Tree::default()), |id| self.read_tree(id))?;
-            for path in a.files.keys() {
+            for (path, entry) in &a.files {
                 if !b.files.contains_key(path) {
-                    out.push((format!("{prefix}{path}"), None));
+                    out.push((format!("{prefix}{path}"), Some(*entry), None));
                 }
             }
             for (path, entry) in &b.files {
-                if a.files.get(path) != Some(entry) {
-                    out.push((format!("{prefix}{path}"), Some(*entry)));
+                let old = a.files.get(path);
+                if old != Some(entry) {
+                    out.push((format!("{prefix}{path}"), old.copied(), Some(*entry)));
                 }
             }
             return Ok(());
         }
-        for name in a.files.keys() {
+        for (name, entry) in &a.files {
             check_name(name)?;
             if !b.files.contains_key(name) {
-                out.push((format!("{prefix}{name}"), None));
+                out.push((format!("{prefix}{name}"), Some(*entry), None));
             }
         }
         for (name, entry) in &b.files {
             check_name(name)?;
-            if a.files.get(name) != Some(entry) {
-                out.push((format!("{prefix}{name}"), Some(*entry)));
+            let old = a.files.get(name);
+            if old != Some(entry) {
+                out.push((format!("{prefix}{name}"), old.copied(), Some(*entry)));
             }
         }
         let names: BTreeSet<&String> = a.dirs.keys().chain(b.dirs.keys()).collect();
@@ -711,7 +990,11 @@ impl Store {
             check_name(name)?;
             let (x, y) = (a.dirs.get(name), b.dirs.get(name));
             if x != y {
-                self.diff_dirs(x, y, &format!("{prefix}{name}/"), depth + 1, out)?;
+                let path = format!("{prefix}{name}/");
+                if let Some(id) = y {
+                    visit_dir(path.clone(), *id);
+                }
+                self.diff_dirs(x, y, &path, depth + 1, out, visit_dir)?;
             }
         }
         Ok(())
@@ -725,13 +1008,24 @@ impl Store {
         seen: &mut HashSet<ObjectId>,
         out: &mut Vec<ObjectId>,
     ) -> Result<()> {
-        self.walk_dir(id, 0, seen, out)
+        self.walk_dir(id, 0, true, seen, out)
+    }
+
+    /// Like [`Self::tree_objects`], only the directories.
+    pub fn tree_dirs(
+        &self,
+        id: &ObjectId,
+        seen: &mut HashSet<ObjectId>,
+        out: &mut Vec<ObjectId>,
+    ) -> Result<()> {
+        self.walk_dir(id, 0, false, seen, out)
     }
 
     fn walk_dir(
         &self,
         id: &ObjectId,
         depth: usize,
+        blobs: bool,
         seen: &mut HashSet<ObjectId>,
         out: &mut Vec<ObjectId>,
     ) -> Result<()> {
@@ -743,18 +1037,46 @@ impl Store {
         }
         out.push(*id);
         let dir: StoredTree = self.read_json(TREE, id)?;
-        for entry in dir.files.values() {
-            if seen.insert(entry.blob) {
-                out.push(entry.blob);
+        if blobs {
+            for entry in dir.files.values() {
+                if seen.insert(entry.blob) {
+                    out.push(entry.blob);
+                }
             }
         }
         if dir.v == 0 && depth == 0 {
             return Ok(());
         }
         for sub in dir.dirs.values() {
-            self.walk_dir(sub, depth + 1, seen, out)?;
+            self.walk_dir(sub, depth + 1, blobs, seen, out)?;
         }
         Ok(())
+    }
+}
+
+/// Light compression for objects written while working.
+fn shrink(raw: Vec<u8>) -> Vec<u8> {
+    if raw.len() < MIN_COMPRESS {
+        return raw;
+    }
+    let packed = pack::deflate(&raw, LOOSE_LEVEL);
+    if packed.len() < raw.len() {
+        packed
+    } else {
+        raw
+    }
+}
+
+/// An object's stored form, compressed if it was not yet and that helps.
+fn compressed(bytes: Vec<u8>) -> Vec<u8> {
+    if pack::is_deflated(&bytes) || bytes.starts_with(MAGIC) || bytes.len() < MIN_COMPRESS {
+        return bytes;
+    }
+    let packed = pack::deflate(&bytes, PACK_LEVEL);
+    if packed.len() < bytes.len() {
+        packed
+    } else {
+        bytes
     }
 }
 
@@ -772,6 +1094,24 @@ pub(crate) fn write_atomic(
     path: &Path,
     fill: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
 ) -> Result<()> {
+    write_replacing(path, true, fill)
+}
+
+/// Like [`write_atomic`], for files that can always be rebuilt: a crash may
+/// lose the latest version, which is fine, and skipping the sync keeps every
+/// command from waiting for the disk.
+pub(crate) fn write_cache(
+    path: &Path,
+    fill: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
+) -> Result<()> {
+    write_replacing(path, false, fill)
+}
+
+fn write_replacing(
+    path: &Path,
+    durable: bool,
+    fill: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
+) -> Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| Error::InvalidPath(path.display().to_string()))?;
@@ -781,7 +1121,9 @@ pub(crate) fn write_atomic(
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
         fill(&mut file)?;
-        file.sync_all()?;
+        if durable {
+            file.sync_all()?;
+        }
         drop(file);
         fs::rename(&tmp, path)
     })();
@@ -872,13 +1214,13 @@ mod tests {
         let mut keep: HashSet<ObjectId> = packed[..50].iter().copied().collect();
         keep.insert(loose_kept);
         // Nothing is old enough to prune yet: the garbage survives.
-        let first = store.repack(&keep, SystemTime::UNIX_EPOCH).unwrap();
+        let first = store.repack(&keep, &[], SystemTime::UNIX_EPOCH).unwrap();
         assert_eq!(first.packed, 51);
         assert!(store.has(&loose_garbage));
         assert!(store.has(&packed[99]), "the young pack with garbage stays");
 
         let later = SystemTime::now() + std::time::Duration::from_secs(60);
-        let second = store.repack(&keep, later).unwrap();
+        let second = store.repack(&keep, &[], later).unwrap();
         assert!(!store.has(&loose_garbage));
         assert!(!store.has(&packed[99]));
         assert_eq!(loose_files(dir.path()), 0);

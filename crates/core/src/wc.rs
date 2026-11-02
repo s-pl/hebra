@@ -3,14 +3,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::attributes::Rules;
 use crate::error::{Error, IoContext, Result};
 use crate::ids::ObjectId;
 use crate::model::{FileEntry, Tree};
-use crate::store::{BLOB, Store, write_atomic};
+use crate::store::{BLOB, Store, write_cache};
 
 /// Directory holding Hebra's own data inside every workspace.
 pub const DOT_DIR: &str = ".hebra";
@@ -20,6 +23,8 @@ pub const IGNORE_FILE: &str = ".hbignore";
 /// Files modified this recently are always re-read, because their mtime
 /// cannot yet tell apart two writes in quick succession.
 const RACY_WINDOW: Duration = Duration::from_secs(2);
+/// With fewer files than this, threads cost more than they save.
+const PARALLEL_FROM: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct CacheEntry {
@@ -47,6 +52,23 @@ pub struct WcCache {
     /// holds the commit each one is pinned at.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     gitlinks: BTreeMap<String, ObjectId>,
+    /// The tree of the working-copy commit this directory last matched. If
+    /// the commit's tree is another one, the view moved without the files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    synced: Option<ObjectId>,
+    /// Only these paths are on disk (empty means all): `hb sparse`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sparse: Vec<String>,
+    /// The tree id of the directory at the last snapshot, reused when
+    /// nothing changed so unchanged trees are not written again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    disk: Option<ObjectId>,
+    /// Whether the last snapshot found the directory as this cache knew it.
+    #[serde(skip)]
+    unchanged: bool,
+    /// Whether anything worth saving changed since this was loaded.
+    #[serde(skip)]
+    dirty: bool,
 }
 
 impl WcCache {
@@ -64,9 +86,83 @@ impl WcCache {
     }
 
     pub fn save(&self, root: &Path) -> Result<()> {
+        if !self.dirty {
+            return Ok(());
+        }
         let data = serde_json::to_vec(self)?;
-        write_atomic(&Self::path(root), |f| std::io::Write::write_all(f, &data))
+        write_cache(&Self::path(root), |f| std::io::Write::write_all(f, &data))
     }
+
+    /// The tree of the directory, if the last snapshot found no change.
+    #[must_use]
+    pub fn unchanged_tree(&self) -> Option<ObjectId> {
+        self.disk.filter(|_| self.unchanged)
+    }
+
+    pub fn set_disk_tree(&mut self, tree: ObjectId) {
+        self.dirty |= self.disk != Some(tree);
+        self.disk = Some(tree);
+    }
+
+    #[must_use]
+    pub fn sparse(&self) -> &[String] {
+        &self.sparse
+    }
+
+    #[must_use]
+    pub fn synced(&self) -> Option<ObjectId> {
+        self.synced
+    }
+
+    pub fn set_synced(&mut self, tree: ObjectId) {
+        self.dirty |= self.synced != Some(tree);
+        self.synced = Some(tree);
+    }
+}
+
+/// Keeps only `paths` of `tree` on disk (all of it if empty). Files that
+/// leave are deleted, so they must have been recorded first.
+pub fn set_sparse(root: &Path, store: &Store, tree: &Tree, paths: Vec<String>) -> Result<()> {
+    let mut cache = WcCache::load(root);
+    let empty = Tree::default();
+    let before = filtered(tree, &cache.sparse)?;
+    let after = filtered(tree, &paths)?;
+    cache.sparse = paths;
+    cache.disk = None;
+    cache.dirty = true;
+    cache.save(root)?;
+    checkout_exact(root, store, &before, &after)?;
+    let _ = empty;
+    Ok(())
+}
+
+/// The part of a tree a sparse workspace keeps.
+fn filtered(tree: &Tree, sparse: &[String]) -> Result<Tree> {
+    if sparse.is_empty() {
+        return Ok(tree.clone());
+    }
+    let spec = crate::history::PathSpec::new(sparse)?;
+    let mut out = tree.clone();
+    out.files.retain(|path, _| spec.matches(path));
+    Ok(out)
+}
+
+/// `tree` with what a sparse workspace does not keep taken from `current`.
+pub fn fill_sparse(root: &Path, disk: Tree, current: &Tree) -> Result<Tree> {
+    let cache = WcCache::load(root);
+    if cache.sparse.is_empty() {
+        return Ok(disk);
+    }
+    let spec = crate::history::PathSpec::new(&cache.sparse)?;
+    Ok(crate::history::take_paths(current, &disk, &spec))
+}
+
+/// Remembers that the directory matches `tree`.
+pub fn mark_synced(root: &Path, tree: ObjectId) -> Result<()> {
+    let mut cache = WcCache::load(root);
+    cache.set_synced(tree);
+    cache.dirty = true;
+    cache.save(root)
 }
 
 /// Whether bytes look binary (contain a NUL byte), like Git's heuristic.
@@ -89,6 +185,23 @@ pub fn normalize(data: Vec<u8>) -> Vec<u8> {
             continue;
         }
         out.push(b);
+    }
+    out
+}
+
+/// LF to CRLF in text, for files marked `eol=crlf`.
+fn to_crlf(data: Vec<u8>) -> Vec<u8> {
+    if is_binary(&data) {
+        return data;
+    }
+    let mut out = Vec::with_capacity(data.len() + data.len() / 32);
+    let mut previous = 0u8;
+    for &byte in &data {
+        if byte == b'\n' && previous != b'\r' {
+            out.push(b'\r');
+        }
+        out.push(byte);
+        previous = byte;
     }
     out
 }
@@ -157,8 +270,6 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
     let walker = ignore::WalkBuilder::new(root)
         .hidden(false)
         .parents(false)
-        .git_global(false)
-        .git_exclude(false)
         .require_git(false)
         .add_custom_ignore_filename(IGNORE_FILE)
         .filter_entry(move |entry| {
@@ -179,6 +290,7 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
     let mut fresh = BTreeMap::new();
     let mut links = BTreeSet::new();
     let mut executables = BTreeSet::new();
+    let mut pending = Vec::new();
     for entry in walker {
         let entry = entry?;
         let Some(file_type) = entry.file_type() else {
@@ -213,45 +325,221 @@ pub fn snapshot(root: &Path, store: &Store, cache: &mut WcCache) -> Result<Tree>
         if executable && !cfg!(unix) {
             executables.insert(path.clone());
         }
-
-        let cached = cache.entries.get(&path).copied().filter(|c| {
+        let known = cache.entries.get(&path).copied();
+        if let Some(c) = known.filter(|c| {
             c.size == size
                 && c.mtime_ns == mtime
                 && c.executable == executable
                 && mtime < racy_after
+        }) {
+            fresh.insert(path.clone(), c);
+            tree.files.insert(path, FileEntry::file(c.blob, executable));
+            continue;
+        }
+        pending.push(Pending {
+            full: entry.path().to_path_buf(),
+            path,
+            size,
+            mtime,
+            executable,
+            known: known.map(|c| c.blob),
         });
-        let blob = if let Some(c) = cached {
-            c.blob
-        } else {
-            let data = fs::read(entry.path()).at(entry.path())?;
-            store.write(BLOB, &normalize(data))?
-        };
+    }
+    let rules = if pending.is_empty() {
+        Rules::default()
+    } else {
+        Rules::load(root)
+    };
+    for (pending, blob) in store_files(store, &rules, pending)? {
         fresh.insert(
-            path.clone(),
+            pending.path.clone(),
             CacheEntry {
-                size,
-                mtime_ns: mtime,
+                size: pending.size,
+                mtime_ns: pending.mtime,
                 blob,
-                executable,
+                executable: pending.executable,
             },
         );
-        tree.files.insert(path, FileEntry::file(blob, executable));
+        tree.files
+            .insert(pending.path, FileEntry::file(blob, pending.executable));
     }
     // A submodule stays as long as its directory does.
     cache.gitlinks.retain(|path, _| root.join(path).is_dir());
     for (path, blob) in &cache.gitlinks {
         tree.files.insert(path.clone(), FileEntry::gitlink(*blob));
     }
+    cache.unchanged =
+        fresh == cache.entries && links == cache.links && executables == cache.executables;
+    cache.dirty |= !cache.unchanged;
     cache.entries = fresh;
     cache.links = links;
     cache.executables = executables;
     Ok(tree)
 }
 
+/// A file that has to be read.
+struct Pending {
+    full: PathBuf,
+    path: String,
+    size: u64,
+    mtime: u128,
+    executable: bool,
+    /// Its blob the last time it was seen.
+    known: Option<ObjectId>,
+}
+
+/// The blob of a file. Line endings are normalized, unless the file is
+/// tracked exactly like this (a CRLF file that came from Git must not show
+/// up as modified just because it was checked out) or `.gitattributes` says
+/// to leave it alone.
+fn store_file(store: &Store, rules: &Rules, file: &Pending) -> Result<ObjectId> {
+    let data = fs::read(&file.full).at(&file.full)?;
+    if let Some(known) = file.known
+        && ObjectId::hash(BLOB, &data) == known
+    {
+        return Ok(known);
+    }
+    if rules.of(&file.path).text == Some(false) {
+        return store.write(BLOB, &data);
+    }
+    store.write(BLOB, &normalize(data))
+}
+
+/// Reads and stores files, on several threads when there are many.
+fn store_files(
+    store: &Store,
+    rules: &Rules,
+    files: Vec<Pending>,
+) -> Result<Vec<(Pending, ObjectId)>> {
+    let workers = workers_for(files.len());
+    if workers <= 1 {
+        return files
+            .into_iter()
+            .map(|file| {
+                let blob = store_file(store, rules, &file)?;
+                Ok((file, blob))
+            })
+            .collect();
+    }
+    let next = AtomicUsize::new(0);
+    let files = &files;
+    let results: Vec<Result<Vec<(usize, ObjectId)>>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(file) = files.get(i) else {
+                            return Ok(out);
+                        };
+                        out.push((i, store_file(store, rules, file)?));
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(Error::InvalidArgument("a worker panicked".to_owned())))
+            })
+            .collect()
+    });
+    let mut blobs = BTreeMap::new();
+    for result in results {
+        blobs.extend(result?);
+    }
+    Ok(files
+        .iter()
+        .enumerate()
+        .filter_map(|(i, file)| {
+            blobs.get(&i).map(|blob| {
+                (
+                    Pending {
+                        full: file.full.clone(),
+                        path: file.path.clone(),
+                        size: file.size,
+                        mtime: file.mtime,
+                        executable: file.executable,
+                        known: file.known,
+                    },
+                    *blob,
+                )
+            })
+        })
+        .collect())
+}
+
+/// Threads worth using for this many files.
+fn workers_for(files: usize) -> usize {
+    if files < PARALLEL_FROM {
+        return 1;
+    }
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+}
+
+/// Registers a submodule at `path`, pinned at the commit stored in `blob`.
+pub fn add_gitlink(root: &Path, path: &str, blob: ObjectId) -> Result<()> {
+    let mut cache = WcCache::load(root);
+    cache.gitlinks.insert(path.to_owned(), blob);
+    cache.disk = None;
+    cache.dirty = true;
+    cache.save(root)
+}
+
+/// Ignored files in the directory, for `hb clean -x`.
+pub fn ignored_files(root: &Path) -> Result<Vec<String>> {
+    let tracked: BTreeSet<PathBuf> = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .parents(false)
+        .require_git(false)
+        .add_custom_ignore_filename(IGNORE_FILE)
+        .build()
+        .filter_map(std::result::Result::ok)
+        .map(ignore::DirEntry::into_path)
+        .collect();
+    let mut out = Vec::new();
+    let all = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .parents(false)
+        .ignore(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .filter_entry(|e| e.file_name() != DOT_DIR && e.file_name() != ".git")
+        .build();
+    for entry in all.filter_map(std::result::Result::ok) {
+        if entry.file_type().is_some_and(|t| t.is_file()) && !tracked.contains(entry.path()) {
+            let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
+            if let Some(path) = to_tree_path(rel) {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Updates the directory from `from` to `to`, keeping to the paths of a
+/// sparse workspace.
+pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<CheckoutStats> {
+    let sparse = WcCache::load(root).sparse;
+    if sparse.is_empty() {
+        return checkout_exact(root, store, from, to);
+    }
+    checkout_exact(
+        root,
+        store,
+        &filtered(from, &sparse)?,
+        &filtered(to, &sparse)?,
+    )
+}
+
 /// Updates the directory from `from` to `to`, touching only files that
 /// differ. Untracked and ignored files are left alone. Nothing is ever
 /// written through a symlink, so a tree cannot reach outside the workspace.
-pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<CheckoutStats> {
+fn checkout_exact(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<CheckoutStats> {
     let mut stats = CheckoutStats::default();
     for (path, old) in &from.files {
         let replaced = to
@@ -280,6 +568,8 @@ pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<Ch
     let mut kept_links = Vec::new();
     let mut kept_executables = Vec::new();
     let mut kept_gitlinks = Vec::new();
+    let mut files = Vec::new();
+    let mut dirs = BTreeSet::new();
     for (path, entry) in &to.files {
         if from.files.get(path) == Some(entry) {
             continue;
@@ -289,33 +579,51 @@ pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<Ch
             return Err(Error::InvalidPath(path.clone()));
         }
         if let Some(parent) = full.parent() {
-            fs::create_dir_all(parent).at(parent)?;
+            dirs.insert(parent.to_path_buf());
         }
         if entry.gitlink {
-            // An empty directory, filled by `git submodule update`.
-            fs::create_dir_all(&full).at(&full)?;
-            kept_gitlinks.push((path.clone(), entry.blob));
-            stats.written += 1;
+            kept_gitlinks.push((path.clone(), entry.blob, full));
             continue;
         }
-        let data = store.read(BLOB, &entry.blob)?;
+        if entry.symlink {
+            kept_links.push((path.clone(), entry.blob, full));
+            continue;
+        }
+        if entry.executable && !cfg!(unix) {
+            kept_executables.push(path.clone());
+        }
+        files.push((path.as_str(), *entry, full));
+    }
+    for dir in &dirs {
+        fs::create_dir_all(dir).at(dir)?;
+    }
+    // What is being written decides, not what happens to be on disk yet.
+    let rules = match to.files.get(".gitattributes") {
+        Some(entry) => Rules::parse(&String::from_utf8_lossy(&store.read(BLOB, &entry.blob)?)),
+        None => Rules::default(),
+    };
+    let written = write_files(store, &rules, &files)?;
+    stats.written += files.len();
+
+    let mut links_on_disk = Vec::new();
+    for (path, blob, full) in kept_links {
+        let data = store.read(BLOB, &blob)?;
         // Replace links instead of writing through them.
         if fs::symlink_metadata(&full).is_ok_and(|m| m.file_type().is_symlink()) {
             remove_entry(&full)?;
         }
-        if entry.symlink {
-            let target = String::from_utf8_lossy(&data).into_owned();
-            if !make_symlink(&full, &target) {
-                fs::write(&full, &data).at(&full)?;
-                kept_links.push(path.clone());
-            }
-        } else {
-            fs::write(&full, data).at(&full)?;
-            set_executable(&full, entry.executable)?;
-            if entry.executable && !cfg!(unix) {
-                kept_executables.push(path.clone());
-            }
+        let target = String::from_utf8_lossy(&data).into_owned();
+        if !make_symlink(&full, &target) {
+            fs::write(&full, &data).at(&full)?;
+            links_on_disk.push(path);
         }
+        stats.written += 1;
+    }
+    let mut gitlinks = Vec::new();
+    for (path, blob, full) in kept_gitlinks {
+        // An empty directory, filled by `git submodule update`.
+        fs::create_dir_all(&full).at(&full)?;
+        gitlinks.push((path, blob));
         stats.written += 1;
     }
     let forgotten: Vec<&String> = from
@@ -326,23 +634,103 @@ pub fn checkout(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<Ch
         })
         .map(|(path, _)| path)
         .collect();
-    let changed = !(kept_links.is_empty()
-        && kept_executables.is_empty()
-        && kept_gitlinks.is_empty()
-        && forgotten.is_empty());
-    if changed && root.join(DOT_DIR).is_dir() {
+    if root.join(DOT_DIR).is_dir() {
         let mut cache = WcCache::load(root);
         for path in forgotten {
             cache.links.remove(path);
             cache.executables.remove(path);
             cache.gitlinks.remove(path);
         }
-        cache.links.extend(kept_links);
+        for path in from.files.keys() {
+            if !to.files.contains_key(path) {
+                cache.entries.remove(path);
+            }
+        }
+        cache.links.extend(links_on_disk);
         cache.executables.extend(kept_executables);
-        cache.gitlinks.extend(kept_gitlinks);
+        cache.gitlinks.extend(gitlinks);
+        // Written just now and known exactly: the next snapshot need not
+        // read them (once they are old enough to trust their timestamps).
+        cache.entries.extend(written);
+        cache.disk = None;
+        cache.dirty = true;
         cache.save(root)?;
     }
     Ok(stats)
+}
+
+/// Writes regular files, on several threads when there are many, and
+/// returns what the cache should know about each.
+fn write_files(
+    store: &Store,
+    rules: &Rules,
+    files: &[(&str, FileEntry, PathBuf)],
+) -> Result<Vec<(String, CacheEntry)>> {
+    if store.is_partial() {
+        let blobs: Vec<ObjectId> = files.iter().map(|(_, e, _)| e.blob).collect();
+        store.prefetch(&blobs)?;
+    }
+    let write_one =
+        |(path, entry, full): &(&str, FileEntry, PathBuf)| -> Result<(String, CacheEntry)> {
+            let data = store.read(BLOB, &entry.blob)?;
+            // Replace links instead of writing through them.
+            if fs::symlink_metadata(full).is_ok_and(|m| m.file_type().is_symlink()) {
+                remove_entry(full)?;
+            }
+            let data = if rules.of(path).crlf == Some(true) {
+                to_crlf(data)
+            } else {
+                data
+            };
+            fs::write(full, &data).at(full)?;
+            set_executable(full, entry.executable)?;
+            let meta = fs::metadata(full).at(full)?;
+            Ok((
+                (*path).to_owned(),
+                CacheEntry {
+                    size: meta.len(),
+                    mtime_ns: mtime_ns(&meta),
+                    blob: entry.blob,
+                    executable: entry.executable,
+                },
+            ))
+        };
+    let workers = workers_for(files.len());
+    if workers <= 1 {
+        return files.iter().map(write_one).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let out = Mutex::new(Vec::with_capacity(files.len()));
+    let failure = Mutex::new(None);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(file) = files.get(i) else {
+                        return;
+                    };
+                    match write_one(file) {
+                        Ok(done) => {
+                            if let Ok(mut out) = out.lock() {
+                                out.push(done);
+                            }
+                        }
+                        Err(e) => {
+                            if let Ok(mut failure) = failure.lock() {
+                                *failure = Some(e);
+                            }
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+    if let Some(error) = failure.into_inner().ok().flatten() {
+        return Err(error);
+    }
+    Ok(out.into_inner().unwrap_or_default())
 }
 
 /// Whether a directory between `root` and `full` is a symlink.

@@ -108,6 +108,8 @@ pub struct Actor {
     pub kind: ActorKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_behalf_of: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 impl Actor {
@@ -117,6 +119,7 @@ impl Actor {
             name: name.into(),
             kind: ActorKind::Human,
             on_behalf_of: None,
+            email: None,
         }
     }
 
@@ -159,6 +162,8 @@ pub enum ConflictKind {
     /// Both sides changed a binary file, a symlink or a submodule; ours was
     /// kept.
     Binary,
+    /// Both sides renamed the file, to different names. Both were kept.
+    Rename,
 }
 
 /// A conflict recorded inside a commit. Conflicts never block work: they are
@@ -185,6 +190,64 @@ pub struct Commit {
     pub provenance: Provenance,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conflicts: Vec<Conflict>,
+    /// When the work was first written, if that differs from `timestamp`
+    /// (Git's author date).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authored_at: Option<String>,
+    /// Who wrote this version, when that is not the author (Git's committer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub committer: Option<Actor>,
+    /// A detached signature over this commit without this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// Set on the commit that carries an annotated tag to a server: it names
+    /// the tag, its only parent is the target and its description the message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+impl Commit {
+    /// A commit with only what every commit needs.
+    #[must_use]
+    pub fn new(
+        change_id: ChangeId,
+        parents: Vec<ObjectId>,
+        tree: ObjectId,
+        description: String,
+        author: Actor,
+        timestamp: String,
+    ) -> Self {
+        Self {
+            change_id,
+            parents,
+            predecessors: Vec::new(),
+            tree,
+            description,
+            author,
+            timestamp,
+            provenance: Provenance::default(),
+            conflicts: Vec::new(),
+            authored_at: None,
+            committer: None,
+            signature: None,
+            tag: None,
+        }
+    }
+}
+
+/// A tag: a fixed name for a commit. With a message it is what Git calls an
+/// annotated tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tag {
+    pub target: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tagger: Option<Actor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 /// A workspace: one working directory with its own working-copy change.
@@ -200,6 +263,10 @@ pub struct WorkspaceInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     pub created_at: String,
+    /// The bookmark this workspace is on: committing moves it forward, like
+    /// a Git branch that is checked out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmark: Option<String>,
 }
 
 /// The state of the repository after an operation: which commits are
@@ -213,4 +280,28 @@ pub struct View {
     /// Last known bookmarks of each remote (`main@origin`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub remotes: BTreeMap<String, BTreeMap<String, ObjectId>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tags: BTreeMap<String, Tag>,
+    /// Other targets of bookmarks that two concurrent operations moved to
+    /// different places, until someone sets the bookmark again.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bookmark_conflicts: BTreeMap<String, BTreeSet<ObjectId>>,
+    /// Stashed changes, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stashes: Vec<ObjectId>,
+}
+
+impl View {
+    /// Every commit this view keeps visible directly.
+    pub fn tips(&self) -> impl Iterator<Item = ObjectId> + '_ {
+        self.workspaces
+            .values()
+            .map(|w| w.wc)
+            .chain(self.bookmarks.values().copied())
+            .chain(self.heads.iter().copied())
+            .chain(self.remotes.values().flat_map(|b| b.values().copied()))
+            .chain(self.tags.values().map(|t| t.target))
+            .chain(self.bookmark_conflicts.values().flatten().copied())
+            .chain(self.stashes.iter().copied())
+    }
 }

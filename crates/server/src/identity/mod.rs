@@ -83,16 +83,19 @@ impl Principal {
                 name: d.agent.clone().unwrap_or_else(|| "agent".to_owned()),
                 kind: ActorKind::Agent,
                 on_behalf_of: Some(self.account.handle.clone()),
+                email: None,
             },
             None if self.account.kind == AccountKind::Human => Actor {
                 name: self.account.handle.clone(),
                 kind: ActorKind::Human,
                 on_behalf_of: None,
+                email: None,
             },
             None => Actor {
                 name: self.account.handle.clone(),
                 kind: ActorKind::Agent,
                 on_behalf_of: self.owner.as_ref().map(|o| o.handle.clone()),
+                email: None,
             },
         }
     }

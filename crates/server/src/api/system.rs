@@ -44,7 +44,7 @@ pub(crate) async fn capabilities(State(s): St) -> axum::Json<serde_json::Value> 
             "merge_queue": cloud,
             "cloud_runners": false,
             "billing": cloud && s.plans.is_some(),
-            "transparency_witness": cloud,
+            "transparency_witness": false,
         },
     }))
 }

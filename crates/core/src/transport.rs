@@ -82,6 +82,24 @@ pub fn closure(
     wants: &[ObjectId],
     haves: &HashSet<ObjectId>,
 ) -> Result<Vec<ObjectId>> {
+    walk(store, wants, haves, true)
+}
+
+/// Like [`closure`] without file contents, for partial clones.
+pub fn closure_without_blobs(
+    store: &Store,
+    wants: &[ObjectId],
+    haves: &HashSet<ObjectId>,
+) -> Result<Vec<ObjectId>> {
+    walk(store, wants, haves, false)
+}
+
+fn walk(
+    store: &Store,
+    wants: &[ObjectId],
+    haves: &HashSet<ObjectId>,
+    blobs: bool,
+) -> Result<Vec<ObjectId>> {
     let mut objects = Vec::new();
     let mut seen = HashSet::new();
     let mut queue: VecDeque<ObjectId> = wants.iter().copied().collect();
@@ -91,7 +109,11 @@ pub fn closure(
         }
         let commit: Commit = store.read_json(COMMIT, &id)?;
         objects.push(id);
-        store.tree_objects(&commit.tree, &mut seen, &mut objects)?;
+        if blobs {
+            store.tree_objects(&commit.tree, &mut seen, &mut objects)?;
+        } else {
+            store.tree_dirs(&commit.tree, &mut seen, &mut objects)?;
+        }
         queue.extend(commit.parents);
     }
     Ok(objects)

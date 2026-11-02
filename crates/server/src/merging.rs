@@ -174,6 +174,10 @@ pub fn write_merge(
             ..Provenance::default()
         },
         conflicts: Vec::new(),
+        authored_at: None,
+        committer: None,
+        signature: None,
+        tag: None,
     };
     store.write_json(COMMIT, &commit)
 }

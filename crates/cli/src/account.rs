@@ -31,7 +31,7 @@ struct Stored {
 }
 
 /// Where `hb` keeps its own settings (`HB_CONFIG_DIR` overrides).
-fn config_dir() -> Option<PathBuf> {
+pub(crate) fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("HB_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
     }

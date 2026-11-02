@@ -202,3 +202,140 @@ fn reviews_need_a_person_and_merge_on_the_server() {
     let listed = env.ok(&a, &["review", "list", "--all"], &[]);
     assert_eq!(listed["reviews"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn partial_clones_read_contents_as_they_need_them() {
+    let env = common::start_server();
+    let a = env.clone_dir("a", &env.human);
+    for (i, text) in ["one\n", "two\n", "three\n"].iter().enumerate() {
+        std::fs::write(a.join("f.txt"), text).unwrap();
+        std::fs::write(
+            a.join(format!("old-{i}.txt")),
+            format!(
+                "file {i}
+"
+            ),
+        )
+        .unwrap();
+        env.ok(&a, &["commit", "-m", &format!("v{i}")], &[]);
+    }
+    env.ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+
+    env.ok(
+        &env.root,
+        &[
+            "clone",
+            "--filter=blob:none",
+            "--token",
+            &env.human,
+            &env.url,
+            "partial",
+        ],
+        &[],
+    );
+    let dir = env.root.join("partial");
+    // The tip is there...
+    assert_eq!(
+        std::fs::read_to_string(dir.join("f.txt")).unwrap(),
+        "three\n"
+    );
+    // ...history is known without its contents...
+    let log = env.ok(&dir, &["log", "-n", "10", "main"], &[]);
+    assert_eq!(log["commits"].as_array().unwrap().len(), 4);
+    let before = env.ok(&dir, &["stats"], &[]);
+    // ...and old contents arrive when read.
+    let old = env.hb(&dir, &["cat", "main~2:f.txt"], &[]);
+    assert_eq!(String::from_utf8_lossy(&old.stdout), "one\n");
+    let after = env.ok(&dir, &["stats"], &[]);
+    assert!(after["loose_objects"].as_u64() > before["loose_objects"].as_u64());
+    env.ok(&dir, &["fsck"], &[]);
+
+    // Working and pushing from a partial clone is ordinary.
+    std::fs::write(dir.join("new.txt"), "from partial\n").unwrap();
+    env.ok(&dir, &["commit", "-m", "partial work"], &[]);
+    env.ok(&dir, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+    env.ok(&a, &["pull"], &[]);
+    env.ok(&a, &["new", "main"], &[]);
+    assert_eq!(
+        std::fs::read_to_string(a.join("new.txt")).unwrap(),
+        "from partial\n"
+    );
+}
+
+#[test]
+fn tags_travel_through_a_server_with_their_messages() {
+    let env = common::start_server();
+    let a = env.clone_dir("a", &env.human);
+    std::fs::write(a.join("f.txt"), "one\n").unwrap();
+    env.ok(&a, &["commit", "-m", "first"], &[]);
+    env.ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+    env.ok(&a, &["tag", "light"], &[]);
+    env.ok(&a, &["tag", "-a", "v1.0", "-m", "the first release"], &[]);
+    env.ok(&a, &["push", "--tags"], &[]);
+
+    let b = env.clone_dir("b", &env.human);
+    env.ok(&b, &["pull"], &[]);
+    let tags = env.ok(&b, &["tag", "-l"], &[]);
+    let names: Vec<&str> = tags["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["light", "v1.0"]);
+    let v1 = &tags["tags"][1]["tag"];
+    assert_eq!(v1["message"], "the first release");
+    let main = env.ok(&b, &["rev-parse", "main"], &[]);
+    assert_eq!(v1["target"], main["revisions"][0]);
+    assert_eq!(tags["tags"][0]["tag"]["target"], main["revisions"][0]);
+}
+
+#[test]
+fn the_server_answers_blame_compare_and_search() {
+    let env = common::start_server();
+    let a = env.clone_dir("a", &env.human);
+    std::fs::write(a.join("pay.rs"), "fn charge() {}\nfn refund() {}\n").unwrap();
+    env.ok(&a, &["commit", "-m", "payments"], &[]);
+    env.ok(&a, &["push", "--bookmark", "main", "-r", "@-"], &[]);
+    std::fs::write(a.join("pay.rs"), "fn charge() {}\nfn refund_all() {}\n").unwrap();
+    env.ok(&a, &["commit", "-m", "refund everything"], &[]);
+    env.ok(&a, &["push", "--bookmark", "topic", "-r", "@-"], &[]);
+
+    let repo = format!("/repos/{}", env.repo);
+    let (status, blame) = env.api(
+        "GET",
+        &format!("{repo}/blame/topic?path=pay.rs"),
+        &env.human,
+        None,
+    );
+    assert_eq!(status, 200, "{blame}");
+    let line = &blame["lines"][1];
+    assert_eq!(line["text"], "fn refund_all() {}");
+    let commit = line["commit"].as_str().unwrap();
+    assert_eq!(blame["commits"][commit]["description"], "refund everything");
+
+    let (status, compare) = env.api(
+        "GET",
+        &format!("{repo}/compare?base=main&head=topic"),
+        &env.human,
+        None,
+    );
+    assert_eq!(status, 200, "{compare}");
+    assert_eq!(compare["commits"].as_array().unwrap().len(), 1);
+    assert_eq!(compare["files"][0]["path"], "pay.rs");
+
+    let (status, search) = env.api(
+        "GET",
+        &format!("{repo}/search?q=REFUND&rev=main"),
+        &env.human,
+        None,
+    );
+    assert_eq!(status, 200, "{search}");
+    assert_eq!(search["matches"][0]["line"], 2);
+    assert_eq!(search["matches"][0]["path"], "pay.rs");
+    let (status, _) = env.api("GET", &format!("{repo}/search?q=x"), &env.eve, None);
+    assert_eq!(
+        status, 404,
+        "a private repository does not even exist for strangers"
+    );
+}

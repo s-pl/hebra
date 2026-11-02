@@ -24,6 +24,10 @@ pub enum Error {
     CorruptObject(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error(
+        "this repository was written by a newer version of hb (format {found}, this one reads up to {supported}); update hb"
+    )]
+    RepositoryTooNew { found: i64, supported: i64 },
     #[error("I/O error at {path}: {source}")]
     Io {
         path: PathBuf,
@@ -53,6 +57,7 @@ impl Error {
             Self::InvalidPath(_) => "invalid_path",
             Self::CorruptObject(_) => "corrupt_object",
             Self::InvalidArgument(_) => "invalid_argument",
+            Self::RepositoryTooNew { .. } => "repository_too_new",
             Self::Io { .. } => "io",
             Self::Db(_) => "database",
             Self::Json(_) => "serialization",

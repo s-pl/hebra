@@ -40,6 +40,7 @@ pub fn now() -> i64 {
 }
 
 pub(crate) fn upsert(conn: &Connection, claim: &Claim) -> Result<()> {
+    conn.execute("DELETE FROM claims WHERE expires_at <= ?1", [now()])?;
     conn.execute(
         "INSERT INTO claims (path, workspace, actor, note, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -72,13 +73,14 @@ pub(crate) fn release(conn: &Connection, workspace: &str, paths: &[String]) -> R
     Ok(released)
 }
 
-/// Active claims; expired ones are purged first.
+/// Active claims. Reading takes no lock: expired ones are simply skipped,
+/// and removed the next time someone claims something.
 pub(crate) fn active(conn: &Connection) -> Result<Vec<Claim>> {
-    conn.execute("DELETE FROM claims WHERE expires_at <= ?1", [now()])?;
     let mut stmt = conn.prepare(
-        "SELECT path, workspace, actor, note, created_at, expires_at FROM claims ORDER BY path, workspace",
+        "SELECT path, workspace, actor, note, created_at, expires_at FROM claims
+         WHERE expires_at > ?1 ORDER BY path, workspace",
     )?;
-    let rows = stmt.query_map([], |r| {
+    let rows = stmt.query_map([now()], |r| {
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,

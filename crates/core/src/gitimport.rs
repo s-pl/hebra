@@ -4,21 +4,45 @@
 //! history twice gives the same Hebra commits. Commits that were exported by
 //! Hebra (`Hebra-*` trailers) get their original change id and provenance
 //! back, so a round trip through Git loses nothing.
+//!
+//! Authors keep their email and date, committers are recorded when they are
+//! someone else, and every branch and tag in the stream comes along. Parents
+//! outside the stream (an incremental fetch) are looked up in `known`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::BufRead;
 
 use crate::error::{Error, Result};
 use crate::ids::{ChangeId, ObjectId};
-use crate::model::{Actor, ActorKind, Commit, FileEntry, Provenance, Tree};
+use crate::model::{Actor, ActorKind, Commit, FileEntry, Provenance, Tag, Tree};
 use crate::repo::Tx;
 use crate::store::BLOB;
+
+/// Flat trees kept in memory: parents are almost always recent, and anything
+/// older is read back from the store. Keeping one per commit would cost
+/// memory proportional to history times files.
+const RECENT_TREES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct ImportStats {
     pub commits: usize,
     pub blobs: usize,
     pub skipped_entries: usize,
+}
+
+/// What a stream contained.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Imported {
+    pub stats: ImportStats,
+    /// The commit of the last `commit` command, the tip for a single branch.
+    pub tip: Option<ObjectId>,
+    /// `refs/heads/...` and lightweight `refs/tags/...` as written in the
+    /// stream, with their commits.
+    pub refs: BTreeMap<String, ObjectId>,
+    /// Annotated tags, by name.
+    pub tags: BTreeMap<String, Tag>,
+    /// Git commit id of each commit imported (when the stream has them).
+    pub shas: Vec<(ObjectId, String)>,
 }
 
 fn bad(why: impl Into<String>) -> Error {
@@ -113,17 +137,38 @@ fn unquote(path: &[u8]) -> Result<String> {
     String::from_utf8(out).map_err(|_| bad("path is not UTF-8"))
 }
 
-/// Splits `Name <email> 1700000000 +0100` into the name and the time.
-fn parse_identity(line: &[u8]) -> (String, i64) {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Identity {
+    name: String,
+    email: Option<String>,
+    seconds: i64,
+}
+
+/// Splits `Name <email> 1700000000 +0100`.
+fn parse_identity(line: &[u8]) -> Identity {
     let text = String::from_utf8_lossy(line);
     let name = text.split('<').next().unwrap_or("").trim().to_owned();
+    let email = text
+        .split_once('<')
+        .and_then(|(_, rest)| rest.split_once('>'))
+        .map(|(email, _)| email.trim().to_owned())
+        .filter(|e| !e.is_empty());
     let seconds = text
         .rsplit('>')
         .next()
         .and_then(|rest| rest.split_whitespace().next())
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
-    (name, seconds)
+    Identity {
+        name,
+        email,
+        seconds,
+    }
+}
+
+fn rfc3339(seconds: i64) -> String {
+    jiff::Timestamp::from_second(seconds)
+        .map_or_else(|_| "1970-01-01T00:00:00Z".to_owned(), |t| t.to_string())
 }
 
 struct Message {
@@ -172,22 +217,59 @@ fn parse_message(raw: &[u8]) -> Message {
     msg
 }
 
-/// Imports a fast-export stream. Returns the stats and the Hebra commit of
-/// the last commit in the stream (the branch tip).
-pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Option<ObjectId>)> {
+/// Flat trees of recent commits.
+#[derive(Default)]
+struct RecentTrees {
+    order: VecDeque<ObjectId>,
+    trees: HashMap<ObjectId, Tree>,
+}
+
+impl RecentTrees {
+    fn insert(&mut self, id: ObjectId, tree: Tree) {
+        if self.trees.insert(id, tree).is_none() {
+            self.order.push_back(id);
+        }
+        if self.order.len() > RECENT_TREES
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.trees.remove(&oldest);
+        }
+    }
+}
+
+fn parent_tree(tx: &mut Tx<'_>, recent: &RecentTrees, parent: &ObjectId) -> Result<Tree> {
+    match recent.trees.get(parent) {
+        Some(tree) => Ok(tree.clone()),
+        None => tx.commit_tree(parent),
+    }
+}
+
+/// Imports a fast-export stream. `known` finds the Hebra commit of a Git
+/// commit imported earlier, for streams that continue existing history.
+#[allow(clippy::too_many_lines)]
+pub fn import(
+    tx: &mut Tx<'_>,
+    input: impl BufRead,
+    known: &dyn Fn(&str) -> Option<ObjectId>,
+) -> Result<Imported> {
     let mut p = Parser {
         input,
         peeked: None,
     };
     let mut blobs: HashMap<String, ObjectId> = HashMap::new();
     let mut commits: HashMap<String, ObjectId> = HashMap::new();
-    let mut trees: HashMap<ObjectId, Tree> = HashMap::new();
-    let mut stats = ImportStats {
-        commits: 0,
-        blobs: 0,
-        skipped_entries: 0,
+    let mut recent = RecentTrees::default();
+    let mut out = Imported {
+        stats: ImportStats {
+            commits: 0,
+            blobs: 0,
+            skipped_entries: 0,
+        },
+        tip: None,
+        refs: BTreeMap::new(),
+        tags: BTreeMap::new(),
+        shas: Vec::new(),
     };
-    let mut tip = None;
 
     while let Some(line) = p.line()? {
         if line.is_empty() || line.starts_with(b"feature ") || line.starts_with(b"progress ") {
@@ -209,7 +291,7 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                     if let Some(m) = mark.take() {
                         blobs.insert(m, id);
                     }
-                    stats.blobs += 1;
+                    out.stats.blobs += 1;
                     break;
                 } else {
                     return Err(bad(format!("in blob: {}", String::from_utf8_lossy(&l))));
@@ -217,30 +299,34 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
             }
             continue;
         }
-        if line.starts_with(b"reset ") {
+        if let Some(reference) = line.strip_prefix(b"reset ") {
+            let reference = String::from_utf8_lossy(reference).into_owned();
             if p.peek()?.is_some_and(|l| l.starts_with(b"from ")) {
-                p.line()?;
-            }
-            continue;
-        }
-        if line.starts_with(b"tag ") {
-            // Tags are not imported; skip their header and message.
-            while let Some(l) = p.line()? {
-                if l.starts_with(b"data ") {
-                    p.data(&l)?;
-                    break;
+                let from = p.line()?.unwrap_or_default();
+                let from = String::from_utf8_lossy(&from[5..]).into_owned();
+                if let Some(id) = commits.get(&from).copied().or_else(|| known(&from)) {
+                    out.refs.insert(reference, id);
                 }
             }
             continue;
         }
-        let Some(_branch) = line.strip_prefix(b"commit ") else {
+        if let Some(name) = line.strip_prefix(b"tag ") {
+            parse_tag(&mut p, name, &commits, known, &mut out)?;
+            continue;
+        }
+        let Some(branch) = line.strip_prefix(b"commit ") else {
             return Err(bad(String::from_utf8_lossy(&line).into_owned()));
         };
+        let branch = String::from_utf8_lossy(branch).into_owned();
 
         let mut mark = None;
         let mut original = None;
-        let mut author = (String::from("unknown"), 0i64);
-        let mut committer_time = 0i64;
+        let mut author = Identity {
+            name: "unknown".to_owned(),
+            email: None,
+            seconds: 0,
+        };
+        let mut committer = None;
         let message;
         loop {
             let l = p.line()?.ok_or_else(|| bad("eof in commit header"))?;
@@ -251,7 +337,7 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
             } else if let Some(a) = l.strip_prefix(b"author ") {
                 author = parse_identity(a);
             } else if let Some(c) = l.strip_prefix(b"committer ") {
-                committer_time = parse_identity(c).1;
+                committer = Some(parse_identity(c));
             } else if l.starts_with(b"encoding ") {
             } else if l.starts_with(b"gpgsig ") {
                 let data = p.line()?.ok_or_else(|| bad("eof in gpgsig"))?;
@@ -279,11 +365,13 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                 .or_else(|| l.strip_prefix(b"merge "))
             {
                 let key = String::from_utf8_lossy(from).into_owned();
-                let parent = *commits
+                let parent = commits
                     .get(&key)
+                    .copied()
+                    .or_else(|| known(&key))
                     .ok_or_else(|| bad(format!("unknown parent {key}")))?;
                 if first {
-                    tree = trees.get(&parent).cloned().unwrap_or_default();
+                    tree = parent_tree(tx, &recent, &parent)?;
                     first = false;
                 }
                 parents.push(parent);
@@ -314,7 +402,7 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                         let blob = tx.store.write(BLOB, dataref.as_bytes())?;
                         tree.files.insert(path, FileEntry::gitlink(blob));
                     }
-                    _ => stats.skipped_entries += 1,
+                    _ => out.stats.skipped_entries += 1,
                 }
             } else if let Some(path) = l.strip_prefix(b"D ") {
                 let path = unquote(path)?;
@@ -326,6 +414,7 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
                 }
             } else if l.starts_with(b"commit ")
                 || l.starts_with(b"reset ")
+                || l.starts_with(b"tag ")
                 || l == b"blob"
                 || l == b"done"
             {
@@ -346,45 +435,100 @@ pub fn import(tx: &mut Tx<'_>, input: impl BufRead) -> Result<(ImportStats, Opti
         let change_id = msg.change_id.unwrap_or_else(|| {
             ChangeId::derived_from(original.as_deref().unwrap_or(message.as_slice()))
         });
-        let (author_name, author_time) = author;
-        let author = match msg.agent {
+        let actor = match msg.agent {
             Some(agent) => Actor {
                 name: agent,
                 kind: ActorKind::Agent,
                 on_behalf_of: msg.on_behalf_of,
+                email: author.email.clone(),
             },
-            None => Actor::human(author_name),
+            None => Actor {
+                email: author.email.clone(),
+                ..Actor::human(author.name.clone())
+            },
         };
-        let seconds = if committer_time != 0 {
-            committer_time
+        let written = committer.as_ref().map_or(author.seconds, |c| c.seconds);
+        let timestamp = rfc3339(if written != 0 {
+            written
         } else {
-            author_time
-        };
-        let timestamp = jiff::Timestamp::from_second(seconds)
-            .map_or_else(|_| "1970-01-01T00:00:00Z".to_owned(), |t| t.to_string());
+            author.seconds
+        });
         let tree_id = tx.store.write_tree(&tree)?;
-        let id = tx.write_commit(Commit {
+        let mut commit = Commit::new(
             change_id,
             parents,
-            predecessors: Vec::new(),
-            tree: tree_id,
-            description: msg.description,
-            author,
+            tree_id,
+            msg.description,
+            actor,
             timestamp,
-            provenance: msg.provenance,
-            conflicts: Vec::new(),
-        })?;
-        trees.insert(id, tree);
+        );
+        commit.provenance = msg.provenance;
+        if written != author.seconds && author.seconds != 0 {
+            commit.authored_at = Some(rfc3339(author.seconds));
+        }
+        if let Some(c) = committer
+            && (c.name != author.name || c.email != author.email)
+        {
+            commit.committer = Some(Actor {
+                email: c.email,
+                ..Actor::human(c.name)
+            });
+        }
+        let id = tx.write_commit(commit)?;
+        recent.insert(id, tree);
         if let Some(m) = mark {
             commits.insert(m, id);
         }
         if let Some(o) = &original {
-            commits.insert(String::from_utf8_lossy(o).into_owned(), id);
+            let sha = String::from_utf8_lossy(o).into_owned();
+            commits.insert(sha.clone(), id);
+            out.shas.push((id, sha));
         }
-        stats.commits += 1;
-        tip = Some(id);
+        out.stats.commits += 1;
+        out.tip = Some(id);
+        out.refs.insert(branch, id);
     }
-    Ok((stats, tip))
+    Ok(out)
+}
+
+/// `tag <name>`, `mark`, `from`, `original-oid`, `tagger`, `data`.
+fn parse_tag<R: BufRead>(
+    p: &mut Parser<R>,
+    name: &[u8],
+    commits: &HashMap<String, ObjectId>,
+    known: &dyn Fn(&str) -> Option<ObjectId>,
+    out: &mut Imported,
+) -> Result<()> {
+    let name = String::from_utf8_lossy(name).into_owned();
+    let (mut target, mut tagger) = (None, None);
+    while let Some(l) = p.line()? {
+        if let Some(from) = l.strip_prefix(b"from ") {
+            let from = String::from_utf8_lossy(from).into_owned();
+            target = commits.get(&from).copied().or_else(|| known(&from));
+        } else if let Some(t) = l.strip_prefix(b"tagger ") {
+            tagger = Some(parse_identity(t));
+        } else if l.starts_with(b"data ") {
+            let message = String::from_utf8_lossy(&p.data(&l)?).trim_end().to_owned();
+            if let Some(target) = target {
+                let timestamp = tagger.as_ref().map(|t: &Identity| rfc3339(t.seconds));
+                out.tags.insert(
+                    name,
+                    Tag {
+                        target,
+                        message: Some(message),
+                        tagger: tagger.map(|t| Actor {
+                            email: t.email,
+                            ..Actor::human(t.name)
+                        }),
+                        timestamp,
+                        signature: None,
+                    },
+                );
+            }
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -417,7 +561,12 @@ mod tests {
     fn parses_identities() {
         assert_eq!(
             parse_identity(b"Ana Lopez <ana@x.dev> 1700000000 +0100"),
-            ("Ana Lopez".to_owned(), 1_700_000_000)
+            Identity {
+                name: "Ana Lopez".to_owned(),
+                email: Some("ana@x.dev".to_owned()),
+                seconds: 1_700_000_000
+            }
         );
+        assert_eq!(parse_identity(b"Bot <> 5 +0000").email, None);
     }
 }

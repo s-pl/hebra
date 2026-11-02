@@ -321,6 +321,7 @@ fn fixture() -> anyhow::Result<(ObjectId, ObjectId, Vec<u8>)> {
         name: "hebra-load".into(),
         kind: ActorKind::Agent,
         on_behalf_of: None,
+        email: None,
     };
     let mut commits = Vec::new();
     let mut parent = None;
@@ -344,13 +345,19 @@ fn fixture() -> anyhow::Result<(ObjectId, ObjectId, Vec<u8>)> {
             timestamp: jiff::Timestamp::now().to_string(),
             provenance: Provenance::default(),
             conflicts: Vec::new(),
+            authored_at: None,
+            committer: None,
+            signature: None,
+            tag: None,
         };
         let id = store.write_json(COMMIT, &commit)?;
-        objects.extend([
-            object(&store, &blob)?,
-            object(&store, &tree_id)?,
-            object(&store, &id)?,
-        ]);
+        // Trees have one object per directory: send them all.
+        let mut ids = Vec::new();
+        store.tree_objects(&tree_id, &mut std::collections::HashSet::new(), &mut ids)?;
+        ids.push(id);
+        for object_id in &ids {
+            objects.push(object(&store, object_id)?);
+        }
         commits.push(id);
         parent = Some(id);
     }
@@ -385,18 +392,22 @@ async fn http(
         .build()?;
     let base = urls[0].trim_end_matches('/').to_owned();
     let auth = format!("Bearer {token}");
-    let repo = format!("load-{}", jiff::Timestamp::now().as_second());
+    let name = format!("load-{}", jiff::Timestamp::now().as_second());
 
     // Repository with two commits; `main` at A.
-    check(
+    let created = check(
         client
             .post(format!("{base}/api/v1/repos"))
             .header("authorization", &auth)
-            .json_body(&json!({ "name": repo, "protect": [] }))
+            .json_body(&json!({ "name": name, "protect": [] }))
             .await?,
     )
     .await
     .context("creating the test repository (is the token admin?)")?;
+    let repo = created["full_name"]
+        .as_str()
+        .context("the server did not say the repository's full name")?
+        .to_owned();
     let (a, b, pack) = fixture()?;
     check(
         client

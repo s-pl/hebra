@@ -15,6 +15,7 @@ diffy.workspace = true
 hex.workspace = true
 ignore.workspace = true
 jiff.workspace = true
+miniz_oxide.workspace = true
 rand.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

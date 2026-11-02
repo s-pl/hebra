@@ -5,10 +5,12 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use hebra_core::model::{Actor, Provenance};
-use hebra_core::{ObjectId, Workspace, transport};
+use hebra_core::model::{Actor, Commit, Provenance, Tag};
+use hebra_core::store::Fetcher;
+use hebra_core::{ChangeId, ObjectId, Tx, Workspace, transport};
 use serde_json::{Value, json};
 
+use crate::bridge::Fetched;
 use crate::commands::{Output, own_changes};
 
 /// A remote: server base URL, repository name and token.
@@ -130,6 +132,42 @@ impl Remote {
     }
 }
 
+/// Gets file contents from the server as a partial clone needs them.
+struct RemoteObjects(Remote);
+
+impl Fetcher for RemoteObjects {
+    fn fetch(&self, ids: &[ObjectId]) -> std::io::Result<Vec<Vec<u8>>> {
+        const CHUNK: usize = 5000;
+        let mut out = Vec::with_capacity(ids.len());
+        for chunk in ids.chunks(CHUNK) {
+            let hex: Vec<String> = chunk.iter().map(ObjectId::hex).collect();
+            let body = json!({ "ids": hex }).to_string();
+            let pack = self
+                .0
+                .post("/objects/get", "application/json", body.as_bytes())
+                .map_err(|e| std::io::Error::other(format!("{e:#}")))?;
+            let objects =
+                transport::decode(&pack).map_err(|e| std::io::Error::other(e.to_string()))?;
+            out.extend(objects.into_iter().map(|(_, raw)| raw));
+        }
+        Ok(out)
+    }
+}
+
+/// In a partial clone, teaches the store where missing contents are.
+pub fn enable_partial(ws: &Workspace) -> Result<()> {
+    let config = ws.config_list()?;
+    let name = config.keys().find_map(|k| {
+        k.strip_prefix("remote.")
+            .and_then(|k| k.strip_suffix(".partial"))
+    });
+    if let Some(name) = name {
+        let remote = Remote::load(ws, name, Duration::from_secs(600))?;
+        ws.store.set_fetcher(Box::new(RemoteObjects(remote)));
+    }
+    Ok(())
+}
+
 // ------------------------------------------------------------ remote add
 
 pub fn add(ws: &Workspace, name: &str, url: &str, token: Option<String>) -> Result<Output> {
@@ -171,6 +209,8 @@ pub fn list(ws: &Workspace) -> Result<Output> {
 pub fn remove(ws: &Workspace, name: &str) -> Result<Output> {
     let removed = ws.config_unset(&format!("remote.{name}.url"))?;
     ws.config_unset(&format!("remote.{name}.token"))?;
+    ws.config_unset(&format!("remote.{name}.kind"))?;
+    ws.config_unset(&format!("remote.{name}.partial"))?;
     if !removed {
         bail!("no remote named `{name}`");
     }
@@ -180,7 +220,36 @@ pub fn remove(ws: &Workspace, name: &str) -> Result<Output> {
     ))
 }
 
+pub fn rename(ws: &Workspace, old: &str, new: &str) -> Result<Output> {
+    let prefix = format!("remote.{old}.");
+    let config = ws.config_list()?;
+    let keys: Vec<(&String, &String)> = config
+        .iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .collect();
+    if keys.is_empty() {
+        bail!("no remote named `{old}`");
+    }
+    for (key, value) in keys {
+        let suffix = &key[prefix.len()..];
+        ws.config_set(&format!("remote.{new}.{suffix}"), value)?;
+        ws.config_unset(key)?;
+    }
+    Ok(Output::new(
+        json!({ "renamed": old, "to": new }),
+        format!("Renamed remote {old} to {new}\n"),
+    ))
+}
+
 // ------------------------------------------------------------------ push
+
+/// What `hb push` was asked to send.
+pub struct PushWhat {
+    pub bookmark: Option<String>,
+    pub revision: Option<String>,
+    pub branches: Vec<String>,
+    pub tags: bool,
+}
 
 struct PushPlan {
     bookmark: String,
@@ -194,12 +263,25 @@ pub fn push(
     actor: &Actor,
     prov: &Provenance,
     remote_name: &str,
-    bookmark: Option<String>,
-    revision: Option<String>,
+    what: PushWhat,
 ) -> Result<Output> {
+    let PushWhat {
+        bookmark,
+        revision,
+        branches,
+        tags,
+    } = what;
     let remote = Remote::load(ws, remote_name, Duration::from_secs(600))?;
     let store = ws.store.clone();
     let remote_for_tx = remote_name.to_owned();
+    let server_tags: BTreeMap<String, ObjectId> = if tags {
+        server_bookmarks(&remote)?
+            .into_iter()
+            .filter(|(name, _)| name.starts_with(TAG_PREFIX))
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
 
     // 1. Decide what to send (and optionally point the bookmark at a revision).
     let plans: Vec<PushPlan> = ws.run(actor, prov, "push", |tx| {
@@ -216,6 +298,7 @@ pub fn push(
         let haves: HashSet<ObjectId> = tracking.values().copied().collect();
         let names: Vec<String> = match &bookmark {
             Some(b) => vec![b.clone()],
+            None if !branches.is_empty() => branches.to_vec(),
             None => tx
                 .view
                 .bookmarks
@@ -238,6 +321,29 @@ pub fn push(
                 tracked: tracking.get(&name).copied(),
                 objects: transport::collect(&store, &ids)?,
             });
+        }
+        if tags {
+            let all: Vec<(String, Tag)> = tx
+                .view
+                .tags
+                .iter()
+                .map(|(n, t)| (n.clone(), t.clone()))
+                .collect();
+            for (name, tag) in all {
+                let reference = format!("{TAG_PREFIX}{name}");
+                let local = tag_commit(tx, &name, &tag)?;
+                let old = server_tags.get(&reference).copied();
+                if old == Some(local) {
+                    continue;
+                }
+                let ids = transport::closure(&store, &[local], &haves)?;
+                plans.push(PushPlan {
+                    bookmark: reference,
+                    local,
+                    tracked: old,
+                    objects: transport::collect(&store, &ids)?,
+                });
+            }
         }
         Ok(plans)
     })?;
@@ -288,7 +394,9 @@ pub fn push(
     ws.run(actor, prov, "push", |tx| {
         let tracking = tx.view.remotes.entry(remote_for_tx).or_default();
         for plan in &plans {
-            tracking.insert(plan.bookmark.clone(), plan.local);
+            if !plan.bookmark.starts_with(TAG_PREFIX) {
+                tracking.insert(plan.bookmark.clone(), plan.local);
+            }
         }
         Ok(())
     })?;
@@ -298,35 +406,103 @@ pub fn push(
     ))
 }
 
-// ------------------------------------------------------------------ pull
+// ----------------------------------------------------------------- fetch
 
-pub fn pull(
-    ws: &mut Workspace,
-    actor: &Actor,
-    prov: &Provenance,
-    remote_name: &str,
-) -> Result<Output> {
-    let remote = Remote::load(ws, remote_name, Duration::from_secs(600))?;
+/// Tags live on servers as bookmarks under this name.
+const TAG_PREFIX: &str = "tags/";
+
+fn server_bookmarks(remote: &Remote) -> Result<BTreeMap<String, ObjectId>> {
     let info = remote.get_json("")?;
-    let mut server: BTreeMap<String, ObjectId> = BTreeMap::new();
+    let mut out = BTreeMap::new();
     if let Some(map) = info["bookmarks"].as_object() {
         for (name, target) in map {
-            server.insert(
+            out.insert(
                 name.clone(),
                 ObjectId::parse(target.as_str().unwrap_or_default())?,
             );
         }
     }
-    let store = ws.store.clone();
-    let tracking: BTreeMap<String, ObjectId> = ws.run(actor, prov, "pull", |tx| {
-        Ok(tx
-            .view
-            .remotes
-            .get(remote_name)
-            .cloned()
-            .unwrap_or_default())
-    })?;
+    Ok(out)
+}
 
+/// What a tag points at on a server: its target, or for an annotated tag a
+/// commit on top of it that carries the message.
+fn tag_commit(tx: &mut Tx<'_>, name: &str, tag: &Tag) -> hebra_core::Result<ObjectId> {
+    let Some(message) = &tag.message else {
+        return Ok(tag.target);
+    };
+    let tree = tx.commit(&tag.target)?.tree;
+    let mut commit = Commit::new(
+        ChangeId::derived_from(name.as_bytes()),
+        vec![tag.target],
+        tree,
+        message.clone(),
+        tag.tagger
+            .clone()
+            .unwrap_or_else(|| Actor::human("unknown")),
+        tag.timestamp
+            .clone()
+            .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned()),
+    );
+    commit.tag = Some(name.to_owned());
+    commit.signature.clone_from(&tag.signature);
+    tx.write_commit(commit)
+}
+
+/// The tag a server reference stands for.
+fn tag_from_server(tx: &mut Tx<'_>, id: ObjectId) -> hebra_core::Result<Tag> {
+    let commit = tx.commit(&id)?;
+    if commit.tag.is_some()
+        && let Some(target) = commit.parents.first()
+    {
+        return Ok(Tag {
+            target: *target,
+            message: Some(commit.description),
+            tagger: Some(commit.author),
+            timestamp: Some(commit.timestamp),
+            signature: commit.signature,
+        });
+    }
+    Ok(Tag {
+        target: id,
+        message: None,
+        tagger: None,
+        timestamp: None,
+        signature: None,
+    })
+}
+
+/// Downloads what the server has, and remembers it.
+pub fn fetch(
+    ws: &mut Workspace,
+    actor: &Actor,
+    prov: &Provenance,
+    remote_name: &str,
+) -> Result<Fetched> {
+    let partial = ws
+        .config_get(&format!("remote.{remote_name}.partial"))?
+        .is_some();
+    fetch_filtered(ws, actor, prov, remote_name, partial)
+}
+
+/// Like [`fetch`]; with `blobless`, file contents stay on the server until
+/// something reads them.
+pub fn fetch_filtered(
+    ws: &mut Workspace,
+    actor: &Actor,
+    prov: &Provenance,
+    remote_name: &str,
+    blobless: bool,
+) -> Result<Fetched> {
+    let remote = Remote::load(ws, remote_name, Duration::from_secs(600))?;
+    let mut server = server_bookmarks(&remote)?;
+    let store = ws.store.clone();
+    let tracking = ws
+        .view()?
+        .remotes
+        .get(remote_name)
+        .cloned()
+        .unwrap_or_default();
     let want: Vec<String> = server
         .values()
         .filter(|id| !store.has(id))
@@ -339,66 +515,70 @@ pub fn pull(
             .filter(|id| store.has(id))
             .map(ObjectId::hex)
             .collect();
-        let body = json!({ "want": want, "have": have });
+        let mut body = json!({ "want": want, "have": have });
+        if blobless {
+            body["filter"] = json!("blob:none");
+        }
         let pack = remote.post("/pack", "application/json", body.to_string().as_bytes())?;
         let objects = transport::decode(&pack)?;
         received = store.batch(|| transport::store_all(&store, &objects))?;
     }
-
+    let tags: BTreeMap<String, ObjectId> = server
+        .iter()
+        .filter_map(|(name, id)| {
+            name.strip_prefix(TAG_PREFIX)
+                .map(|tag| (tag.to_owned(), *id))
+        })
+        .collect();
+    server.retain(|name, _| !name.starts_with(TAG_PREFIX));
     let remote_for_tx = remote_name.to_owned();
-    let (updated, diverged) = ws.run(actor, prov, "pull", |tx| {
-        let old_tracking = tx
-            .view
-            .remotes
-            .get(&remote_for_tx)
-            .cloned()
-            .unwrap_or_default();
-        let mut updated = Vec::new();
-        let mut diverged = Vec::new();
-        for (name, new) in &server {
-            match tx.view.bookmarks.get(name).copied() {
-                None => {
-                    tx.view.bookmarks.insert(name.clone(), *new);
-                    updated.push(name.clone());
-                }
-                Some(local) if local == *new => {}
-                Some(local) => {
-                    let unchanged_locally = old_tracking.get(name) == Some(&local);
-                    if unchanged_locally || tx.is_ancestor(local, *new)? {
-                        tx.view.bookmarks.insert(name.clone(), *new);
-                        updated.push(name.clone());
-                    } else if !tx.is_ancestor(*new, local)? {
-                        diverged.push(name.clone());
-                    }
-                }
+    let bookmarks = server.clone();
+    ws.run(actor, prov, "fetch", |tx| {
+        tx.view.remotes.insert(remote_for_tx, bookmarks);
+        for (name, id) in tags {
+            if !tx.view.tags.contains_key(&name) {
+                let tag = tag_from_server(tx, id)?;
+                tx.view.tags.insert(name, tag);
             }
         }
-        tx.view
-            .remotes
-            .insert(remote_for_tx.clone(), server.clone());
-        Ok((updated, diverged))
+        Ok(())
     })?;
-
-    let mut text = format!(
-        "Pulled from {remote_name}: {} bookmark(s), {received} new object(s).\n",
-        server.len()
-    );
-    for name in &updated {
-        let _ = writeln!(text, "  {name} -> {}", server[name].short());
-    }
-    for name in &diverged {
-        let _ = writeln!(
-            text,
-            "  {name} has diverged: merge it with `hb merge {name}@{remote_name}`"
-        );
-    }
-    Ok(Output::new(
-        json!({ "remote": remote_name, "bookmarks": server.keys().collect::<Vec<_>>(), "updated": updated, "diverged": diverged, "objects": received }),
-        text,
-    ))
+    Ok(Fetched {
+        bookmarks: server,
+        objects: received,
+    })
 }
 
 // -------------------------------------------------------------- presence
+
+/// How long to leave a server alone after it failed to answer.
+const PRESENCE_BACKOFF_SECS: u64 = 60;
+
+fn presence_marker(ws: &Workspace) -> std::path::PathBuf {
+    ws.root.join(".hebra").join("presence-failed")
+}
+
+/// Whether `hb status` should talk to the server now: not if it was turned
+/// off (`presence.auto = false`) or failed a moment ago.
+pub fn presence_due(ws: &Workspace) -> bool {
+    if ws.config_get("presence.auto").ok().flatten().as_deref() == Some("false") {
+        return false;
+    }
+    std::fs::metadata(presence_marker(ws))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_none_or(|age| age.as_secs() >= PRESENCE_BACKOFF_SECS)
+}
+
+pub fn presence_answered(ws: &Workspace, ok: bool) {
+    let marker = presence_marker(ws);
+    if ok {
+        let _ = std::fs::remove_file(marker);
+    } else {
+        let _ = std::fs::write(marker, "");
+    }
+}
 
 fn client_id(ws: &Workspace) -> Result<String> {
     if let Some(id) = ws.config_get("client.id")? {
@@ -420,8 +600,8 @@ fn machine() -> String {
 /// Builds this machine's presence: every workspace with its changed paths
 /// and claims.
 fn local_presence(ws: &mut Workspace, actor: &Actor, prov: &Provenance) -> Result<Value> {
-    ws.snapshot_others(prov)?;
-    let workspaces = ws.run(actor, prov, "presence", |tx| {
+    ws.snapshot_others(prov, false)?;
+    let workspaces = ws.read(actor, prov, |tx| {
         let claims = tx.claims()?;
         let entries: Vec<(String, hebra_core::model::WorkspaceInfo)> = tx
             .view

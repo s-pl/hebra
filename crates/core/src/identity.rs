@@ -50,6 +50,7 @@ pub fn resolve_actor(
             name,
             kind,
             on_behalf_of,
+            email: None,
         };
     }
     if let Some(actor) = workspace.and_then(|w| w.actor.clone()) {
@@ -63,6 +64,7 @@ pub fn resolve_actor(
             name: (*name).to_owned(),
             kind: ActorKind::Agent,
             on_behalf_of: on_behalf_of.or(Some(user)),
+            email: None,
         };
     }
     Actor::human(user)
