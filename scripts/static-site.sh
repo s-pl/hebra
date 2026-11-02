@@ -12,6 +12,9 @@ set -euo pipefail
 OUT=${1:?usage: static-site.sh <out dir> [base path]}
 BASE=${2:-/}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The script changes directory, so a relative path is pinned down first.
+mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"
 WORK=$(mktemp -d)
 WEB_PORT=3100
 if command -v cygpath >/dev/null; then
