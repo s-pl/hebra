@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { CopyCommand } from "@/components/copy-command";
 import { CreditEstimator, PlanCards } from "@/components/pricing";
@@ -6,7 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SmartLink } from "@/components/smart-link";
 import { dollars, loadPlans, type Plan } from "@/lib/plans";
-import { SITE } from "@/lib/site";
+import { CLOUD, SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Pricing · Hebra",
@@ -45,7 +46,7 @@ const EDITIONS: { feature: string; community: ReactNode; cloud: ReactNode }[] = 
   { feature: "Mandates: narrowed, revocable agent credentials", community: <Tick on />, cloud: <Tick on /> },
   { feature: "Organizations, teams, roles", community: <Tick on />, cloud: <Tick on /> },
   { feature: "Checks on your own runners", community: <Tick on />, cloud: <Tick on /> },
-  { feature: "Signed transparency log", community: <Tick on />, cloud: <Tick on>with public witness</Tick> },
+  { feature: "Signed transparency log", community: <Tick on />, cloud: <Tick on /> },
   {
     feature: "Encryption at rest, Postgres, S3, NATS, Kubernetes",
     community: <Tick on>you run it</Tick>,
@@ -53,8 +54,7 @@ const EDITIONS: { feature: string; community: ReactNode; cloud: ReactNode }[] = 
   },
   { feature: "Agent verification against a contract", community: <Tick on={false} />, cloud: <Tick on /> },
   { feature: "Merge queue with batch bisection", community: <Tick on={false} />, cloud: <Tick on /> },
-  { feature: "Backups, point-in-time recovery, upgrades", community: <Tick on>your job</Tick>, cloud: <Tick on /> },
-  { feature: "Cloud runners", community: <Tick on={false} />, cloud: <span className="text-ink-3">coming soon</span> },
+  { feature: "Backups and upgrades", community: <Tick on>your job</Tick>, cloud: <Tick on>our job</Tick> },
 ];
 
 function cell(p: Plan, row: string): ReactNode {
@@ -77,12 +77,6 @@ function cell(p: Plan, row: string): ReactNode {
       return p.per_person ? `${n(p.agent_credits_per_person)} / person` : n(p.agent_credits);
     case "queue":
       return <Tick on={p.merge_queue} />;
-    case "sso":
-      return <Tick on={p.sso} />;
-    case "pitr":
-      return `${p.pitr_days} days`;
-    case "uptime":
-      return p.uptime ?? <Tick on={false} />;
     case "support":
       return p.support ?? "";
     default:
@@ -98,9 +92,6 @@ const ROWS = [
   ["storage", "Storage"],
   ["credits", "Agent credits / month"],
   ["queue", "Merge queue"],
-  ["sso", "SSO and audit export"],
-  ["pitr", "Point-in-time recovery"],
-  ["uptime", "Uptime commitment"],
   ["support", "Support"],
 ] as const;
 
@@ -115,15 +106,14 @@ const FAQ: { q: string; a: ReactNode }[] = [
   },
   {
     q: "Can I get a surprise bill?",
-    a: "No. Usage above your plan is charged only up to the spending limit you set, and that limit starts at $0. When the allowance runs out, agent checks are skipped until you raise it or the month renews. We email owners at 75% and 100%.",
+    a: "No. Usage above your plan is charged only up to the spending limit you set, and that limit starts at $0. When the allowance runs out, agent checks are skipped until you raise it or the month renews.",
   },
   {
     q: "Is the self-hosted version really free?",
     a: (
       <>
         Yes. Hebra Community is Apache 2.0: run it on your own machines, for any number of people, forever. It has
-        everything except the features that need us to operate them (agent verification, the merge queue and the public
-        log witness).
+        everything except the two features that need us to operate them: agent verification and the merge queue.
       </>
     ),
   },
@@ -142,6 +132,7 @@ const FAQ: { q: string; a: ReactNode }[] = [
 ];
 
 export default async function PricingPage() {
+  if (!CLOUD) notFound();
   const plans = await loadPlans();
   const visible = plans.plan;
 
@@ -196,8 +187,8 @@ export default async function PricingPage() {
                 <p className="font-mono text-[11.5px] text-accent">Hosted</p>
                 <h3 className="mt-2 font-semibold text-[24px] tracking-[-0.02em]">Hebra Cloud</h3>
                 <p className="mt-2 text-[14.5px] text-ink-2">
-                  Everything in Community, run by us, plus the features that need us to run them: agent verification
-                  against your contracts, a merge queue, and a public witness for the transparency log.
+                  Everything in Community, run by us, plus agent verification against your contracts and a merge queue.
+                  It is not open yet, and these prices may change.
                 </p>
                 <p className="mt-6 flex items-baseline gap-2">
                   <span className="font-semibold text-[40px] leading-none tracking-[-0.03em]">$0</span>
@@ -207,16 +198,10 @@ export default async function PricingPage() {
                 </p>
                 <div className="mt-auto flex flex-wrap gap-2 pt-6">
                   <SmartLink
-                    href="/login?plan=free"
-                    className="pressable inline-flex h-10 items-center rounded-md bg-ink px-5 font-medium text-[14px] text-bg"
-                  >
-                    Start free
-                  </SmartLink>
-                  <SmartLink
                     href="#plans"
                     className="pressable inline-flex h-10 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
                   >
-                    See plans
+                    See the plans
                   </SmartLink>
                 </div>
               </article>

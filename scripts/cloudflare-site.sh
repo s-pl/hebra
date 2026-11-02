@@ -48,7 +48,7 @@ echo "== web app against it"
 cd "$ROOT/apps/web"
 unset HEBRA_BASE_PATH
 npx -y pnpm@12.11.2 build >"$WORK/build.log" 2>&1 || { tail -40 "$WORK/build.log"; exit 1; }
-HEBRA_SERVER_URL=http://127.0.0.1:4600 npx -y pnpm@12.11.2 start -p "$WEB_PORT" >"$WORK/web.log" 2>&1 &
+HEBRA_SERVER_URL=http://127.0.0.1:4600 HEBRA_PUBLIC_SITE=1 npx -y pnpm@12.11.2 start -p "$WEB_PORT" >"$WORK/web.log" 2>&1 &
 pids+=($!)
 for _ in $(seq 1 60); do
   curl -sf -o /dev/null "http://127.0.0.1:$WEB_PORT/" && break

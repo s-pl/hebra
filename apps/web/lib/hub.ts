@@ -11,9 +11,9 @@ export const SERVER_URL = (process.env.HEBRA_SERVER_URL ?? "http://127.0.0.1:460
 
 // ------------------------------------------------------------------ types
 
-export type Actor = { name: string; kind: "human" | "agent"; on_behalf_of?: string };
+export type Actor = { name: string; kind: "human" | "agent"; on_behalf_of?: string; email?: string };
 export type Provenance = { task?: string; session?: string; prompt?: string };
-export type Conflict = { path: string; kind: "content" | "modify_delete" | "binary" };
+export type Conflict = { path: string; kind: "content" | "modify_delete" | "binary" | "rename" };
 
 export type CommitSummary = {
   commit_id: string;
@@ -22,6 +22,8 @@ export type CommitSummary = {
   description: string;
   author: Actor;
   timestamp: string;
+  /** When the work was written, if that differs from `timestamp`. */
+  authored_at?: string | null;
   provenance: Provenance;
   conflicts: Conflict[];
   bookmarks?: string[];
@@ -29,7 +31,8 @@ export type CommitSummary = {
 
 export type FileDiff = {
   path: string;
-  status: "added" | "modified" | "deleted";
+  status: "added" | "modified" | "deleted" | "renamed";
+  renamed_from?: string;
   additions: number;
   deletions: number;
   binary: boolean;

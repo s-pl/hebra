@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { type ReactNode, Suspense } from "react";
 import { NavProgress } from "@/components/hub/nav-progress";
 import { SITE } from "@/lib/site";
 import "./globals.css";
 
-const sans = Hanken_Grotesk({ subsets: ["latin"], variable: "--font-hanken" });
+const sans = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
@@ -25,13 +25,13 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#111113" },
-    { media: "(prefers-color-scheme: light)", color: "#e6e5df" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
   ],
 };
 
-// Applies a saved dark theme before first paint, so there is no flash.
-const themeScript = `try{if(localStorage.getItem("hebra-theme")==="dark"){document.documentElement.dataset.theme="dark"}}catch(e){}`;
+// Picks the theme before first paint, so there is no flash: the saved one, or the system's.
+const themeScript = `(function(){var t;try{t=localStorage.getItem("hebra-theme")}catch(e){}if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t})()`;
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Set by proxy.ts; the CSP only lets scripts with this nonce run.

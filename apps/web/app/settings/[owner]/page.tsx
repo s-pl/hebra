@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title: `${owner} · Settings · Hebra` };
 }
 
-const ROLES = ["member", "admin", "billing", "owner"] as const;
+const ROLES = ["member", "admin", "owner"] as const;
 
 function Row({ children }: { children: React.ReactNode }) {
   return <li className="flex flex-wrap items-center gap-3 px-4 py-3">{children}</li>;
@@ -89,7 +89,7 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
     return frame(
       <Card
         title="People"
-        sub="Owners manage everything, admins manage people and repositories, billing managers see invoices. Agents never take a seat."
+        sub={`Owners manage everything, admins manage people and repositories${ctx.caps?.features.billing ? ", billing managers see invoices" : ""}.`}
       >
         <List>
           {members.map((m) => (
@@ -120,7 +120,7 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
               </Field>
               <Field label="Role" htmlFor="role">
                 <Select id="role" name="role" defaultValue="member">
-                  {ROLES.map((r) => (
+                  {(ctx.caps?.features.billing ? ["member", "admin", "billing", "owner"] : ROLES).map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>

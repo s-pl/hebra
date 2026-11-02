@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cancelCheck, rerunChecks } from "@/app/hub/actions";
 import { CheckLog } from "@/components/hub/check-log";
-import { DotNumber } from "@/components/hub/console";
+import { Readout } from "@/components/hub/console";
 import { ActionButton } from "@/components/hub/forms";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { Card, Chip, ServerDown, StateBadge } from "@/components/hub/ui";
@@ -73,7 +73,7 @@ export default async function CheckPage({ params }: Params) {
       <div className="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
           {run.kind === "agent" && run.spec.contract ? (
-            <Card title="01 · Contract" sub="What the verifier was asked to confirm.">
+            <Card title="Contract" sub="What the verifier was asked to confirm.">
               <p className="whitespace-pre-wrap text-[14px] text-ink-2">{run.spec.contract}</p>
             </Card>
           ) : run.spec.run ? (
@@ -88,14 +88,7 @@ export default async function CheckPage({ params }: Params) {
         </div>
         <aside className="grid gap-4">
           {run.exit_code !== null ? (
-            <div className="flex items-end justify-between gap-3 rounded-lg border border-line bg-surface-2 p-3.5">
-              <span className="lbl">Exit code</span>
-              <DotNumber
-                value={run.exit_code}
-                label={`exit code ${run.exit_code}`}
-                color={run.exit_code === 0 ? "var(--text)" : "var(--err)"}
-              />
-            </div>
+            <Readout label="Exit code" value={run.exit_code} tone={run.exit_code === 0 ? undefined : "err"} />
           ) : null}
           <Card title="Run">
             <Row label="Commit">

@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forkRepository } from "@/app/hub/actions";
+import { type BarDay, type BarSeries, StackedBars } from "@/components/bencho/stacked-bars/StackedBars";
 import { CopyCommand } from "@/components/copy-command";
+import { ActivityList } from "@/components/hub/activity";
 import { Channel, Module, Readout } from "@/components/hub/console";
 import { ActionForm, Select, SubmitButton } from "@/components/hub/forms";
+import { threadColor } from "@/components/hub/glyph";
 import { GraphCell, graphWidth } from "@/components/hub/graph-cell";
 import { LiveRefresh } from "@/components/hub/live";
 import { Popover } from "@/components/hub/popover";
@@ -35,25 +38,62 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 const LIMIT = 40;
 const ROW = 52;
+/** How far back the activity chart looks, and how many people it names. */
+const DAYS = 20;
+const NAMED = 5;
+const HISTORY = 500;
 
-function describeEvent(e: HubEvent): { verb: string; target: string; href?: (full: string) => string } {
-  if (e.kind === "review" && e.detail.review !== undefined) {
-    return {
-      verb: `${e.detail.state ?? "opened"} review`,
-      target: `#${e.detail.review}`,
-      href: (f) => `/hub/${f}/reviews/${e.detail.review}`,
-    };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Changes per day and per hebra over the last days, with that day's conflicts.
+ * Nothing to draw (null) if all of it happened on one day.
+ */
+function activity(commits: CommitSummary[]): { series: BarSeries[]; days: BarDay[] } | null {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const dayOf = (c: CommitSummary) => {
+    const at = new Date(c.authored_at ?? c.timestamp);
+    at.setUTCHours(0, 0, 0, 0);
+    return Math.round((today.getTime() - at.getTime()) / 86_400_000);
+  };
+  const recent = commits.filter((c) => {
+    const d = dayOf(c);
+    return d >= 0 && d < DAYS;
+  });
+  if (new Set(recent.map(dayOf)).size < 2) return null;
+
+  const counts = new Map<string, { kind: "human" | "agent"; n: number }>();
+  for (const c of recent) {
+    const row = counts.get(c.author.name) ?? { kind: c.author.kind, n: 0 };
+    row.n++;
+    counts.set(c.author.name, row);
   }
-  if (e.kind === "task" && e.detail.task !== undefined) {
+  const top = [...counts].sort((a, b) => b[1].n - a[1].n);
+  const named = top.slice(0, NAMED);
+  const series: BarSeries[] = named.map(([name, { kind }]) => ({
+    name,
+    color: kind === "human" ? "var(--thread-5)" : threadColor(name, kind),
+  }));
+  if (top.length > NAMED) series.push({ name: "Others", color: "var(--wash-strong)" });
+  const place = new Map(named.map(([name], i) => [name, i]));
+
+  const days: BarDay[] = Array.from({ length: DAYS }, (_, i) => {
+    const at = new Date(today.getTime() - (DAYS - 1 - i) * 86_400_000);
     return {
-      verb: e.detail.state === "open" ? "created task" : `${e.detail.state} task`,
-      target: `#${e.detail.task}`,
-      href: (f) => `/hub/${f}/tasks/${e.detail.task}`,
+      label: `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}`,
+      vals: series.map(() => 0),
+      conflicts: 0,
     };
+  });
+  for (const c of recent) {
+    const day = days[DAYS - 1 - dayOf(c)];
+    if (!day) continue;
+    const k = place.get(c.author.name) ?? NAMED;
+    day.vals[k] = (day.vals[k] ?? 0) + 1;
+    day.conflicts += c.conflicts.length > 0 ? 1 : 0;
   }
-  if (e.kind === "fork") return { verb: "forked from", target: String((e.detail as { from?: string }).from ?? "") };
-  const verb = e.detail.new ? (e.detail.old ? "moved" : "created") : "deleted";
-  return { verb, target: e.detail.name ?? "", href: (f) => `/hub/${f}?rev=${encodeURIComponent(e.detail.name ?? "")}` };
+  return { series, days };
 }
 
 export default async function RepoPage({ params, searchParams }: Params) {
@@ -63,13 +103,15 @@ export default async function RepoPage({ params, searchParams }: Params) {
   if ("error" in loaded) return loaded.error;
   const { ctx } = loaded;
   const { full, info } = ctx;
-  const names = Object.keys(info.bookmarks).sort((a, b) => (a === "main" ? -1 : b === "main" ? 1 : a.localeCompare(b)));
+  const names = Object.keys(info.bookmarks)
+    .filter((b) => !b.startsWith("tags/"))
+    .sort((a, b) => (a === "main" ? -1 : b === "main" ? 1 : a.localeCompare(b)));
   const rev = wanted && info.bookmarks[wanted] ? wanted : names[0];
   ctx.shell.rev = rev;
   const head = rev ? info.bookmarks[rev] : undefined;
   const [log, events, checks, reviews, tasks] = await Promise.all([
     rev
-      ? hub<{ commits: CommitSummary[] }>(repoPath(full, `/log?rev=${encodeURIComponent(rev)}&limit=${LIMIT}`))
+      ? hub<{ commits: CommitSummary[] }>(repoPath(full, `/log?rev=${encodeURIComponent(rev)}&limit=${HISTORY}`))
       : Promise.resolve({ commits: [] as CommitSummary[] }),
     hub<{ events: HubEvent[] }>(repoPath(full, "/events?limit=12")).catch(() => ({ events: [] as HubEvent[] })),
     head
@@ -81,8 +123,9 @@ export default async function RepoPage({ params, searchParams }: Params) {
     hub<{ tasks: Task[] }>(repoPath(full, "/tasks?state=all")).catch(() => ({ tasks: [] as Task[] })),
   ]);
 
-  const commits = log.commits;
-  const graph = layoutGraph(commits, commits.length >= LIMIT);
+  const commits = log.commits.slice(0, LIMIT);
+  const chart = activity(log.commits);
+  const graph = layoutGraph(commits, log.commits.length > LIMIT);
   const lanes = Math.max(1, ...graph.map((r) => r.width));
   const gWidth = graphWidth(lanes);
   const agents = new Set(commits.filter((c) => c.author.kind === "agent").map((c) => c.author.name));
@@ -155,12 +198,12 @@ export default async function RepoPage({ params, searchParams }: Params) {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="flex flex-wrap items-center gap-2.5 font-semibold text-[24px] tracking-[-0.025em]">
+          <h1 className="flex flex-wrap items-center gap-2.5 font-medium text-[28px] tracking-[-0.02em]">
             {full}
             <Chip>{info.repo.public ? "public" : "private"}</Chip>
             {info.repo.open_contributions ? <Chip tone="accent">open to contributions</Chip> : null}
           </h1>
-          <p className="mt-1 text-[13.5px] text-ink-3">
+          <p className="mt-1.5 text-[14px] text-ink-3">
             {info.repo.description ? <span className="text-ink-2">{info.repo.description} · </span> : null}
             {info.repo.forked_from ? (
               <>
@@ -172,13 +215,13 @@ export default async function RepoPage({ params, searchParams }: Params) {
               </>
             ) : null}
             {people.size} {people.size === 1 ? "person" : "people"} and {agents.size} agent
-            {agents.size === 1 ? "" : "s"} on <span className="font-mono text-ink-2">{rev ?? "—"}</span>
+            {agents.size === 1 ? "" : "s"} on <span className="text-ink-2">{rev ?? "no bookmark yet"}</span>
             {info.role ? ` · you have ${info.role} access` : ""}
           </p>
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Readout label="Open reviews" value={reviews.reviews.length} href={`/hub/${full}/reviews`} />
         <Readout label="Tasks ready" value={ready.length} href={`/hub/${full}/tasks?state=ready`} />
         <Readout
@@ -195,28 +238,22 @@ export default async function RepoPage({ params, searchParams }: Params) {
         />
       </div>
 
-      {/* Channels: who is working now */}
-      <Module
-        n={1}
-        label="Channels"
-        className="mt-4"
-        action={<span className="lbl">{working.length ? `${working.length} working now` : "live"}</span>}
-      >
+      {/* Who is working now */}
+      <Module label="Working now" className="mt-3">
         {working.length === 0 ? (
-          <p className="rounded-md border border-line border-dashed bg-surface px-4 py-5 text-[13px] text-ink-3 leading-relaxed">
+          <p className="text-[14px] text-ink-3 leading-relaxed">
             Nobody is working right now. Workspaces show up here, live, when someone runs{" "}
             <code className="font-mono text-ink-2">hb status</code> or{" "}
             <code className="font-mono text-ink-2">hb watch</code> with this repository as origin.
           </p>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(230px,100%),1fr))] gap-2.5">
-            {working.map((w, i) => {
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(250px,100%),1fr))] gap-3">
+            {working.map((w) => {
               const who = actorFromLabel(w.actor);
               const clashes = w.changes.filter((p) => overlaps.includes(p));
               return (
                 <Channel
                   key={`${w.machine}-${w.name}-${w.actor}`}
-                  ch={i + 1}
                   name={who.name}
                   kind={who.kind}
                   state={clashes.length ? "overlap" : w.changes.length ? "working" : "idle"}
@@ -236,9 +273,9 @@ export default async function RepoPage({ params, searchParams }: Params) {
         )}
       </Module>
 
-      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Tape: the history of this bookmark */}
-        <Module n={2} label={`Tape · ${rev ?? "main"}`}>
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)] items-start gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* The history of this bookmark */}
+        <Module label={`History of ${rev ?? "main"}`}>
           {commits.length === 0 ? (
             <Empty title="Nothing pushed yet">
               <p>From a repository on your machine:</p>
@@ -248,15 +285,15 @@ export default async function RepoPage({ params, searchParams }: Params) {
               </div>
             </Empty>
           ) : (
-            <ol className="overflow-hidden rounded-md border border-line bg-surface">
+            <ol className="-mx-4 sm:-mx-5">
               {commits.map((c, i) => {
                 const row = graph[i];
                 return (
-                  <li key={c.commit_id} className={`border-line border-b last:border-b-0 ${fresh(c.timestamp)}`}>
+                  <li key={c.commit_id} className={fresh(c.timestamp)}>
                     <Link
                       href={`/hub/${full}/c/${c.commit_id}`}
                       prefetch={false}
-                      className="flex items-stretch transition-colors duration-100 hover:bg-surface-3"
+                      className="flex items-stretch transition-colors duration-100 hover:bg-wash"
                       style={{ height: ROW }}
                     >
                       {row ? (
@@ -265,7 +302,7 @@ export default async function RepoPage({ params, searchParams }: Params) {
                       <span className="flex min-w-0 flex-1 items-center gap-3 pr-4">
                         <span className="min-w-0 flex-1">
                           <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-[13.5px]">{firstLine(c.description)}</span>
+                            <span className="truncate text-[14px]">{firstLine(c.description)}</span>
                             {c.bookmarks?.map((b) => (
                               <Chip key={b} tone="accent">
                                 {b}
@@ -273,10 +310,10 @@ export default async function RepoPage({ params, searchParams }: Params) {
                             ))}
                             {c.conflicts.length > 0 ? <Chip tone="err">{c.conflicts.length} conflict</Chip> : null}
                           </span>
-                          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-ink-3">
+                          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-ink-3">
                             <ActorAvatar actor={c.author} size={12} />
                             <span className="truncate">
-                              <span className="font-mono text-ink-2">{c.author.name}</span>
+                              <span className="text-ink-2">{c.author.name}</span>
                               {c.author.kind === "agent" && c.author.on_behalf_of
                                 ? ` for ${c.author.on_behalf_of}`
                                 : ""}
@@ -285,8 +322,8 @@ export default async function RepoPage({ params, searchParams }: Params) {
                           </span>
                         </span>
                         <span className="hidden shrink-0 text-right font-mono sm:block">
-                          <span className="block text-[11.5px] text-ink-2">{c.change_id.slice(0, 8)}</span>
-                          <span className="block text-[11px] text-ink-3">{ago(c.timestamp)}</span>
+                          <span className="block text-[12px] text-ink-2">{c.change_id.slice(0, 8)}</span>
+                          <span className="block text-[12px] text-ink-3">{ago(c.timestamp)}</span>
                         </span>
                       </span>
                     </Link>
@@ -297,20 +334,31 @@ export default async function RepoPage({ params, searchParams }: Params) {
           )}
         </Module>
 
-        <div className="grid gap-4">
+        <div className="grid gap-3">
+          {chart ? (
+            <StackedBars
+              title="Changes"
+              sub={`Last ${DAYS} days on ${rev ?? "main"}`}
+              unit="changes"
+              series={chart.series}
+              days={chart.days}
+              gap={5}
+            />
+          ) : null}
+
           {/* Needs you */}
-          <Module n={3} label="Open work">
+          <Module label="Open work">
             {reviews.reviews.length === 0 && inProgress.length === 0 ? (
-              <p className="text-[13px] text-ink-3">No open reviews and no tasks in progress.</p>
+              <p className="text-[14px] text-ink-3">No open reviews and no tasks in progress.</p>
             ) : (
-              <div className="overflow-hidden rounded-md border border-line bg-surface">
+              <div className="-mx-4 sm:-mx-5">
                 <List>
                   {reviews.reviews.slice(0, 5).map((r) => (
                     <ListLink key={`r${r.id}`} href={`/hub/${full}/reviews/${r.id}`} className={fresh(r.updated_at)}>
                       <ActorAvatar actor={actorFromLabel(r.author)} size={22} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13.5px]">{r.title}</span>
-                        <span className="block truncate font-mono text-[11.5px] text-ink-3">
+                        <span className="block truncate text-[14px]">{r.title}</span>
+                        <span className="block truncate text-[13px] text-ink-3">
                           #{r.id} · {r.source} → {r.target}
                         </span>
                       </span>
@@ -321,8 +369,8 @@ export default async function RepoPage({ params, searchParams }: Params) {
                     <ListLink key={`t${t.id}`} href={`/hub/${full}/tasks/${t.id}`} className={fresh(t.updated_at)}>
                       <ActorAvatar actor={actorFromLabel(t.claimed_by ?? "?")} size={22} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13.5px]">{t.title}</span>
-                        <span className="block truncate text-[11.5px] text-ink-3">
+                        <span className="block truncate text-[14px]">{t.title}</span>
+                        <span className="block truncate text-[13px] text-ink-3">
                           #{t.id} · {t.claimed_by?.replace(/ \(.*\)$/, "")} is on it
                         </span>
                       </span>
@@ -335,37 +383,11 @@ export default async function RepoPage({ params, searchParams }: Params) {
           </Module>
 
           {/* Activity */}
-          <Module n={4} label="Activity">
+          <Module label="Activity">
             {events.events.length === 0 ? (
-              <p className="text-[13px] text-ink-3">Nothing yet.</p>
+              <p className="text-[14px] text-ink-3">Nothing yet.</p>
             ) : (
-              <ol className="grid font-mono text-[12px]">
-                {events.events.map((e) => {
-                  const d = describeEvent(e);
-                  const who = actorFromLabel(e.actor);
-                  return (
-                    <li
-                      key={`${e.at}-${e.actor}-${e.kind}-${d.target}`}
-                      className={`flex items-start gap-2 border-line border-t py-2 first:border-t-0 ${fresh(e.at)}`}
-                    >
-                      <span className="mt-[3px]">
-                        <ActorAvatar actor={who} size={12} />
-                      </span>
-                      <span className="min-w-0 flex-1 leading-snug">
-                        <span className="text-ink">{who.name}</span> <span className="text-ink-3">{d.verb}</span>{" "}
-                        {d.href ? (
-                          <Link href={d.href(full)} className="break-all text-ink-2 underline-offset-2 hover:underline">
-                            {d.target}
-                          </Link>
-                        ) : (
-                          <span className="break-all text-ink-2">{d.target}</span>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-ink-3">{ago(e.at)}</span>
-                    </li>
-                  );
-                })}
-              </ol>
+              <ActivityList events={events.events.map((event) => ({ full, event }))} />
             )}
           </Module>
         </div>

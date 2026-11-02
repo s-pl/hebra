@@ -51,13 +51,15 @@ function size(bytes: number) {
 }
 
 export default async function CodePage({ params }: Params) {
-  const { owner, repo: name, id, path = [] } = await params;
+  const { owner, repo: name, id: encodedId, path = [] } = await params;
+  // A branch name can hold slashes: it arrives encoded, as one segment.
+  const id = decodeURIComponent(encodedId);
   const loaded = await loadRepo(owner, name);
   if ("error" in loaded) return loaded.error;
   const { ctx } = loaded;
   const repo = ctx.full;
   const rel = path.map(decodeURIComponent).join("/");
-  const base = `/hub/${repo}/tree/${id}`;
+  const base = `/hub/${repo}/tree/${encodedId}`;
   const treeApi = (query: string) => repoPath(repo, `/tree/${encodeURIComponent(id)}?${query}`);
 
   let node: Node;
@@ -131,6 +133,16 @@ export default async function CodePage({ params }: Params) {
     <RepoFrame
       ctx={ctx}
       crumbs={crumbs}
+      actions={
+        node.kind === "file" && node.content !== null && !node.symlink ? (
+          <Link
+            href={`/hub/${repo}/blame/${encodedId}/${rel.split("/").map(encodeURIComponent).join("/")}`}
+            className="key"
+          >
+            Blame
+          </Link>
+        ) : undefined
+      }
       palette={files.map((f) => ({ group: "Files", label: f, href: treeHref(base, f) }))}
     >
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">

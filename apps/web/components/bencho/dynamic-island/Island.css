@@ -1,0 +1,133 @@
+/* Dynamic island, from Bencho (see ../README.md). The frame keeps the size of the
+   shut pill, so the page never moves; the pill opens over it. */
+.dyn {
+  position: relative;
+  flex: none;
+  font-family: var(--font-ui);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dyn-pill {
+  position: absolute;
+  top: 0;
+  z-index: 35;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: #17181a;
+  color: #ffffff;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+[data-theme="dark"] .dyn-pill {
+  background: #262626;
+}
+
+.dyn[data-align="right"] .dyn-pill {
+  right: 0;
+}
+.dyn[data-align="left"] .dyn-pill {
+  left: 0;
+}
+.dyn[data-align="center"] .dyn-pill {
+  left: 50%;
+  translate: -50% 0;
+}
+
+.dyn-compact,
+.dyn-open {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.dyn-compact {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.dyn-open {
+  flex-direction: column;
+  width: 300px;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.dyn-num {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.dyn-led {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.3);
+}
+.dyn-led[data-state="on"] {
+  background: #f2ae3e;
+}
+.dyn-led[data-state="clash"] {
+  background: #ef7ca2;
+}
+
+.dyn-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dyn-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.dyn-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 17px;
+}
+.dyn-who b {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dyn-who span {
+  overflow: hidden;
+  font-size: 12.5px;
+  color: rgb(255 255 255 / 0.6);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dyn-who span[data-clash] {
+  color: #ef7ca2;
+}
+
+.dyn-more,
+.dyn-empty {
+  font-size: 12.5px;
+  line-height: 24px;
+  color: rgb(255 255 255 / 0.6);
+}
+.dyn-empty {
+  align-self: center;
+  margin: auto 0;
+  white-space: nowrap;
+}

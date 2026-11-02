@@ -1,11 +1,22 @@
 import type { ReactNode } from "react";
+import { SmartLink } from "@/components/smart-link";
+import { DOCS } from "@/lib/docs";
+import { SITE } from "@/lib/site";
 
 /**
- * A small Markdown renderer for the site's own documents (the billing
- * policy): headings, paragraphs, lists, tables, rules, emphasis, code and
- * links. It builds React elements, never HTML strings, so text is always
- * escaped. Not meant for user content.
+ * A small Markdown renderer for the site's own documents: headings,
+ * paragraphs, lists, tables, rules, emphasis, code and links. It builds React
+ * elements, never HTML strings, so text is always escaped. Not meant for user
+ * content.
  */
+
+/** Links between documents stay on the site; other repository files go to GitHub. */
+function target(href: string) {
+  if (href.startsWith("../")) return `${SITE.repo}/blob/main/${href.replace(/^(\.\.\/)+/, "")}`;
+  const [, name, hash = ""] = /^([^/:#]+(?:\/[^/:#]+)*)\.md(#.*)?$/.exec(href) ?? [];
+  if (!name) return href;
+  return DOCS.some((d) => d.slug === name) ? `/docs/${name}${hash}` : `${SITE.repo}/blob/main/docs/${name}.md${hash}`;
+}
 
 function inline(text: string, key = "i"): ReactNode[] {
   const out: ReactNode[] = [];
@@ -20,21 +31,19 @@ function inline(text: string, key = "i"): ReactNode[] {
     if (token.startsWith("**")) out.push(<strong key={k}>{inline(token.slice(2, -2), k)}</strong>);
     else if (token.startsWith("`"))
       out.push(
-        <code key={k} className="rounded bg-surface-2 px-1 py-px font-mono text-[0.9em]">
+        <code key={k} className="rounded-md bg-wash px-1.5 py-0.5 font-mono text-[0.88em]">
           {token.slice(1, -1)}
         </code>,
       );
     else if (token.startsWith("[")) {
       const [, label = "", href = ""] = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token) ?? [];
-      // Links to repository files go to GitHub; only http(s) and site paths are kept.
-      const url = href.startsWith("../")
-        ? `https://github.com/s-pl/hebra/blob/main/${href.replace(/^(\.\.\/)+/, "")}`
-        : href;
+      // Only http(s) and site paths are kept.
+      const url = target(href);
       out.push(
         /^(https?:\/\/|\/|#)/.test(url) ? (
-          <a key={k} href={url} className="underline underline-offset-4 hover:text-ink">
+          <SmartLink key={k} href={url} className="text-ink underline underline-offset-4">
             {inline(label, k)}
-          </a>
+          </SmartLink>
         ) : (
           label
         ),
@@ -80,7 +89,7 @@ export function Markdown({ source, skipTitle = false }: { source: string; skipTi
     } else if (line.startsWith("# ")) {
       if (!skipTitle)
         blocks.push(
-          <h1 key={key} className="font-semibold text-[34px] tracking-[-0.03em]">
+          <h1 key={key} className="font-medium text-[36px] leading-[1.1] tracking-[-0.025em]">
             {inline(line.slice(2))}
           </h1>,
         );
@@ -88,11 +97,32 @@ export function Markdown({ source, skipTitle = false }: { source: string; skipTi
     } else if (line.startsWith("## ")) {
       const text = line.slice(3).trim();
       blocks.push(
-        <h2 key={key} id={slug(text)} className="mt-12 scroll-mt-24 font-semibold text-[22px] tracking-[-0.02em]">
+        <h2 key={key} id={slug(text)} className="mt-12 scroll-mt-20 font-medium text-[24px] tracking-[-0.02em]">
           {inline(text)}
         </h2>,
       );
       i++;
+    } else if (line.startsWith("### ")) {
+      const text = line.slice(4).trim();
+      blocks.push(
+        <h3 key={key} id={slug(text)} className="mt-8 scroll-mt-20 font-medium text-[17px] tracking-[-0.01em]">
+          {inline(text)}
+        </h3>,
+      );
+      i++;
+    } else if (line.startsWith("```")) {
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !(lines[i] ?? "").startsWith("```")) code.push(lines[i++] ?? "");
+      i++;
+      blocks.push(
+        <pre
+          key={key}
+          className="mt-4 overflow-x-auto rounded-xl bg-term p-4 font-mono text-[13px] text-term-text leading-[1.7]"
+        >
+          <code>{code.join("\n")}</code>
+        </pre>,
+      );
     } else if (/^-{3,}$/.test(line.trim())) {
       blocks.push(<hr key={key} className="my-10 border-line" />);
       i++;
@@ -101,13 +131,13 @@ export function Markdown({ source, skipTitle = false }: { source: string; skipTi
       while (i < lines.length && (lines[i] ?? "").startsWith("|")) rows.push(lines[i++] ?? "");
       const [head = "", , ...body] = rows;
       blocks.push(
-        <div key={key} className="mt-5 overflow-x-auto rounded-xl border border-line">
-          <table className="w-full min-w-[640px] text-left text-[13.5px]">
+        <div key={key} className="mt-5 overflow-x-auto rounded-xl bg-surface">
+          <table className="w-full min-w-[560px] text-left text-[14px]">
             <thead>
-              <tr className="border-line border-b bg-surface-2">
+              <tr className="border-line border-b">
                 {cells(head).map((c, j) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: static document
-                  <th key={j} scope="col" className="px-3 py-2 font-medium">
+                  <th key={j} scope="col" className="px-4 py-2.5 font-medium">
                     {inline(c)}
                   </th>
                 ))}
@@ -119,7 +149,7 @@ export function Markdown({ source, skipTitle = false }: { source: string; skipTi
                 <tr key={j} className="border-line border-b last:border-b-0">
                   {cells(r).map((c, k) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: static document
-                    <td key={k} className={`px-3 py-2 ${k === 0 ? "text-ink-2" : ""}`}>
+                    <td key={k} className={`px-4 py-2.5 ${k === 0 ? "text-ink-2" : ""}`}>
                       {inline(c)}
                     </td>
                   ))}
@@ -152,7 +182,7 @@ export function Markdown({ source, skipTitle = false }: { source: string; skipTi
     } else {
       // The first line always belongs to the paragraph, so the loop advances.
       const para: string[] = [(lines[i++] ?? "").replace(/^#+ /, "").trim()];
-      while (i < lines.length && (lines[i] ?? "").trim() && !/^(#|\||- |\d+\. |-{3,})/.test(lines[i] ?? ""))
+      while (i < lines.length && (lines[i] ?? "").trim() && !/^(#|\||- |\d+\. |-{3,}|```)/.test(lines[i] ?? ""))
         para.push((lines[i++] ?? "").trim());
       blocks.push(
         <p key={key} className="mt-4 text-[15.5px] text-ink-2 leading-relaxed">

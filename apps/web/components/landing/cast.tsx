@@ -134,7 +134,7 @@ function Figure({
   onPick: () => void;
 }) {
   const bubble =
-    "absolute bottom-[calc(100%+14px)] whitespace-nowrap rounded-[3px] border px-2 py-1 font-medium font-mono text-[11.5px]";
+    "absolute bottom-[calc(100%+14px)] whitespace-nowrap rounded-full border px-2 py-1 font-medium font-mono text-[11.5px]";
   const fill = m.kind === "human" ? "#F2F1EC" : BUBBLE[m.hue];
   return (
     <button
@@ -170,7 +170,7 @@ function Figure({
         <Weave cols={m.patch.cols} rows={m.patch.rows} hues={m.patch.hues} px={14} />
         {rose ? <span className="led-live absolute inset-0 bg-[#EF7CA2]/45" /> : null}
         <span
-          className={`absolute top-1 left-1/2 w-max -translate-x-1/2 rounded-[3px] bg-[#141414] px-1.5 py-0.5 font-mono text-[10.5px] text-[#F2F1EC] transition-opacity duration-150 ${
+          className={`absolute top-1 left-1/2 w-max -translate-x-1/2 rounded-full bg-[#141414] px-1.5 py-0.5 font-mono text-[10.5px] text-[#F2F1EC] transition-opacity duration-150 ${
             active ? "opacity-100" : "opacity-0 group-hover:opacity-90 group-focus-visible:opacity-90"
           }`}
         >
@@ -245,7 +245,7 @@ export function Cast() {
           {holders.length > 0 ? (
             <p
               aria-live="polite"
-              className={`px-drop flex items-center gap-1.5 rounded-[3px] border px-2 py-1 font-mono text-[11.5px] ${
+              className={`px-drop flex items-center gap-1.5 rounded-full border px-2 py-1 font-mono text-[11.5px] ${
                 contested ? "border-[#9E2550] bg-[#EF7CA2] text-[#141414]" : "border-line-strong bg-surface-3 text-ink"
               }`}
             >

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import pkg from "./package.json" with { type: "json" };
 
 /** Sent with every response, static files included (the CSP is in proxy.ts). */
 const securityHeaders = [
@@ -22,7 +23,7 @@ const config: NextConfig = {
   // Served under a path prefix (the static preview on GitHub Pages: /hebra).
   basePath: process.env.HEBRA_BASE_PATH || undefined,
   // Plain asset URLs (stickers) need the prefix too; Next adds it to links only.
-  env: { NEXT_PUBLIC_BASE_PATH: process.env.HEBRA_BASE_PATH ?? "" },
+  env: { NEXT_PUBLIC_BASE_PATH: process.env.HEBRA_BASE_PATH ?? "", NEXT_PUBLIC_VERSION: pkg.version },
   // `next dev` opened from another device (a phone on the LAN): HEBRA_DEV_ORIGINS=192.168.1.16
   allowedDevOrigins: (process.env.HEBRA_DEV_ORIGINS ?? "").split(",").filter(Boolean),
   async headers() {

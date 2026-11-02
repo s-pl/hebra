@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title: `${id.slice(0, 8)} · ${owner}/${repo} · Hebra` };
 }
 
-const STATUS_LETTER = { added: "A", modified: "M", deleted: "D" } as const;
+const STATUS_LETTER = { added: "A", modified: "M", deleted: "D", renamed: "R" } as const;
 
 export default async function ChangePage({ params }: Params) {
   const { owner, repo: name, id } = await params;
@@ -87,7 +87,7 @@ export default async function ChangePage({ params }: Params) {
         {rest ? <p className="mt-3 max-w-3xl whitespace-pre-wrap text-[15px] text-ink-2">{rest}</p> : null}
 
         {/* Provenance */}
-        <Module n={1} label="Provenance" className="mt-6">
+        <Module label="Provenance" className="mt-6">
           <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
             <div className="flex items-center gap-3 bg-surface p-4">
               <ActorAvatar actor={c.author} size={38} />
@@ -104,7 +104,7 @@ export default async function ChangePage({ params }: Params) {
             {c.provenance.prompt ? (
               <div className="bg-surface p-4 sm:col-span-2 xl:col-span-4">
                 <p className="lbl">Prompt</p>
-                <p className="mt-2 rounded-[4px] bg-term px-3 py-2.5 font-mono text-[13px] text-term-text">
+                <p className="mt-2 rounded-sm bg-term px-3 py-2.5 font-mono text-[13px] text-term-text">
                   <span className="select-none text-signal">&gt; </span>
                   {c.provenance.prompt}
                 </p>

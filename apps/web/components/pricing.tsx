@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { SmartLink } from "@/components/smart-link";
 import { dollars, type Plan } from "@/lib/plans";
+import { SITE } from "@/lib/site";
 
 type Period = "month" | "year";
 
@@ -47,9 +48,6 @@ function features(p: Plan): string[] {
     credits,
     storage,
     ...(p.merge_queue ? ["Merge queue"] : []),
-    ...(p.sso ? ["SSO (SAML, OIDC) and audit export"] : []),
-    `${p.pitr_days}-day point-in-time recovery`,
-    ...(p.uptime ? [`${p.uptime} uptime commitment`] : []),
   ];
 }
 
@@ -130,16 +128,9 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
                   </span>
                 ) : null}
               </p>
-              <SmartLink
-                href={`/login?plan=${p.id}&period=${period}`}
-                className={`pressable mt-5 inline-flex h-10 items-center justify-center rounded-md font-medium text-[14px] ${
-                  featured
-                    ? "bg-accent text-on-accent hover:bg-accent-strong"
-                    : "border border-line hover:border-line-strong"
-                }`}
-              >
-                {p.price_cents === 0 ? "Start free" : `Choose ${p.name}`}
-              </SmartLink>
+              <p className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-line border-dashed font-medium text-[14px] text-ink-3">
+                Not open yet
+              </p>
               <ul className="mt-6 grid gap-2.5 border-line border-t pt-5 text-[13.5px]">
                 {features(p).map((f) => (
                   <li key={f} className="flex gap-2.5">
@@ -158,15 +149,14 @@ export function PlanCards({ plans }: { plans: Plan[] }) {
           <div>
             <h3 className="font-semibold text-[17px]">{enterprise.name}</h3>
             <p className="mt-1 max-w-xl text-[13.5px] text-ink-2">
-              Custom allowances, a 99.95% commitment, dedicated support, data residency and invoicing. Or run Hebra
-              Community on your own infrastructure with a support contract.
+              Larger teams can already run Hebra Community on their own machines. If you need something more, say so.
             </p>
           </div>
           <SmartLink
-            href="mailto:hello@hebra.dev?subject=Hebra%20Enterprise"
+            href={`${SITE.repo}/issues`}
             className="pressable inline-flex h-10 shrink-0 items-center rounded-md border border-line px-5 font-medium text-[14px] hover:border-line-strong"
           >
-            Talk to us
+            Open an issue
           </SmartLink>
         </div>
       ) : null}
