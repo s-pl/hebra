@@ -1,6 +1,6 @@
 /** Site-wide constants. Repository lives at github.com/s-pl/hebra. */
 export const SITE = {
-  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://hebra.samuelponceluna.workers.dev",
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://s-pl.github.io/hebra",
   repo: "https://github.com/s-pl/hebra",
   description:
     "Hebra is open-source version control for people and coding agents. Each agent gets its own workspace, overlapping edits are flagged early, and every change records who asked for it. It speaks Git and has its own server and web.",
