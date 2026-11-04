@@ -78,7 +78,7 @@ jobs:
           persist-credentials: false
       # rustup installs the exact toolchain pinned in rust-toolchain.toml.
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-nextest
@@ -112,7 +112,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-nextest
@@ -167,7 +167,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --locked -p hebra-server -p hebra-cli
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -191,7 +191,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --locked -p hebra-cli
       # Both images, then the whole compose stack: PostgreSQL, NATS, S3, two
       # server replicas, the web app and Caddy, with a real push over HTTPS.
