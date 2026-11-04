@@ -57,7 +57,7 @@ pub(crate) async fn deliver(
     for attempt in 1..=attempts {
         let started = Instant::now();
         let result = s
-            .http
+            .outbound
             .post(&hook.url)
             .timeout(Duration::from_secs(10))
             .header("Content-Type", "application/json")

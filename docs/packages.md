@@ -91,4 +91,11 @@ const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers
 ```
 
 A delivery that fails is tried three times, waiting longer each time. Every
-try is kept with its status and time, and shown under the webhook.
+try is kept for 30 days with its status and time, and shown under the
+webhook.
+
+Webhooks only reach the public internet: an address on a private network
+(`localhost`, `10.0.0.0/8`, `192.168.0.0/16`, a cloud metadata address…) is
+refused when it is added, and again when its name resolves there at
+delivery. Redirects are not followed. The server's operator can allow private
+networks with `HEBRA_ALLOW_PRIVATE_URLS`.

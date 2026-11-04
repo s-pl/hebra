@@ -165,7 +165,7 @@ The claim answer carries the run, its secrets (only names the check asks for, ne
 | GET | `…/webhooks/{id}/deliveries` | The last deliveries: status, time, payload. |
 | POST | `…/webhooks/{id}/ping` | Sends a `ping` now. |
 
-Deliveries are `POST`s of `{ "event", "repo", "data", "at" }` with `X-Hebra-Event`, `X-Hebra-Delivery` and `X-Hebra-Signature-256: sha256=<HMAC-SHA256 of the body with the secret>`. A failed delivery is tried three times.
+Webhook addresses must be on the public internet unless the server allows private networks (`HEBRA_ALLOW_PRIVATE_URLS`). Deliveries are `POST`s of `{ "event", "repo", "data", "at" }` with `X-Hebra-Event`, `X-Hebra-Delivery` and `X-Hebra-Signature-256: sha256=<HMAC-SHA256 of the body with the secret>`. A failed delivery is tried three times.
 
 ## Packages
 

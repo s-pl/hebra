@@ -203,6 +203,94 @@ impl Files {
         }
     }
 
+    /// Stored files last written before `before`, as hex digests.
+    pub async fn stored_before(&self, before: std::time::SystemTime) -> ApiResult<Vec<String>> {
+        let mut out = Vec::new();
+        match &self.root {
+            Root::Local(dir) => {
+                let mut outer = tokio::fs::read_dir(dir).await.map_err(io)?;
+                while let Some(prefix) = outer.next_entry().await.map_err(io)? {
+                    let head = prefix.file_name().to_string_lossy().into_owned();
+                    if head.len() != 2 || !prefix.file_type().await.map_err(io)?.is_dir() {
+                        continue;
+                    }
+                    let mut inner = tokio::fs::read_dir(prefix.path()).await.map_err(io)?;
+                    while let Some(file) = inner.next_entry().await.map_err(io)? {
+                        let hex = format!("{head}{}", file.file_name().to_string_lossy());
+                        let old = file
+                            .metadata()
+                            .await
+                            .and_then(|m| m.modified())
+                            .is_ok_and(|t| t < before);
+                        if old && hex_of(&hex).is_some() {
+                            out.push(hex);
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "s3")]
+            Root::S3(s3) => {
+                use futures_util::TryStreamExt;
+                let before_ms = before
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+                let prefix = object_store::path::Path::from("files/sha256");
+                let mut listed = s3.list(Some(&prefix));
+                while let Some(meta) = listed.try_next().await.map_err(io)? {
+                    let hex: String = meta
+                        .location
+                        .as_ref()
+                        .trim_start_matches("files/sha256/")
+                        .replace('/', "");
+                    if meta.last_modified.timestamp_millis() < before_ms && hex_of(&hex).is_some() {
+                        out.push(hex);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Removes a stored file (gone already is fine).
+    pub async fn remove(&self, hex: &str) -> ApiResult<()> {
+        if hex_of(hex).is_none() {
+            return Err(ApiError::bad("not a digest"));
+        }
+        match &self.root {
+            Root::Local(dir) => match tokio::fs::remove_file(Self::local_path(dir, hex)).await {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(io(e)),
+                _ => Ok(()),
+            },
+            #[cfg(feature = "s3")]
+            Root::S3(s3) => {
+                use object_store::ObjectStoreExt;
+                match s3.delete(&Self::key(hex)).await {
+                    Ok(()) | Err(object_store::Error::NotFound { .. }) => Ok(()),
+                    Err(e) => Err(io(e)),
+                }
+            }
+        }
+    }
+
+    /// Removes uploads that never finished, last written before `before`.
+    pub async fn sweep_uploads(&self, before: std::time::SystemTime) -> usize {
+        let Ok(mut dir) = tokio::fs::read_dir(&self.tmp).await else {
+            return 0;
+        };
+        let mut removed = 0;
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            let old = entry
+                .metadata()
+                .await
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t < before);
+            if old && tokio::fs::remove_file(entry.path()).await.is_ok() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+
     /// A whole small file (manifests, metadata) in memory.
     pub async fn read(&self, hex: &str, max: u64) -> ApiResult<Option<Vec<u8>>> {
         let Some((size, mut stream)) = self.get(hex).await? else {
@@ -309,5 +397,24 @@ mod tests {
         assert_eq!(hex_of(&format!("sha256:{hex}")), Some(hex.as_str()));
         assert_eq!(hex_of("sha256:XYZ"), None);
         assert!(files.upload_path("../x").is_none());
+    }
+
+    #[tokio::test]
+    async fn stored_files_can_be_listed_by_age_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let files =
+            Files::open(&ObjectsConfig::Local(dir.path().join("repos")), dir.path()).unwrap();
+        let (hex, _) = files.put_bytes(b"left behind".to_vec()).await.unwrap();
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        assert!(
+            files.stored_before(past).await.unwrap().is_empty(),
+            "too young to go"
+        );
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        assert_eq!(files.stored_before(later).await.unwrap(), vec![hex.clone()]);
+        files.remove(&hex).await.unwrap();
+        files.remove(&hex).await.unwrap();
+        assert_eq!(files.size(&hex).await.unwrap(), None);
+        assert!(files.remove("../../etc/passwd").await.is_err());
     }
 }

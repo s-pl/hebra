@@ -36,6 +36,7 @@ mod merging;
 pub mod metrics;
 pub mod names;
 pub mod objects;
+pub mod outbound;
 mod queue;
 pub mod ratelimit;
 mod sealing;

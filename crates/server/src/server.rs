@@ -64,6 +64,11 @@ pub struct Server {
     pub(crate) bus: Bus,
     pub(crate) authority: Authority,
     pub(crate) http: reqwest::Client,
+    /// For addresses people give (webhooks, provider APIs): public only,
+    /// unless `allow_private_urls`.
+    pub(crate) outbound: reqwest::Client,
+    pub(crate) allow_private_urls: bool,
+    pub(crate) artifact_days: u32,
     pub(crate) limiter: RateLimiter,
     pub(crate) metrics: Metrics,
     pub(crate) hsts: bool,
@@ -142,6 +147,9 @@ impl Server {
                 .timeout(Duration::from_secs(120))
                 .user_agent(concat!("hebra-server/", env!("CARGO_PKG_VERSION")))
                 .build()?,
+            outbound: crate::outbound::client(config.allow_private_urls)?,
+            allow_private_urls: config.allow_private_urls,
+            artifact_days: config.artifact_days,
             limiter: RateLimiter::new(config.limits, config.trust_proxy),
             metrics: Metrics::default(),
             hsts: config.hsts,
@@ -362,7 +370,7 @@ impl Server {
             self.run_merge_queue().await?;
         }
         // One replica: the runner fleets, every 5 s.
-        if self.db.acquire_lease("fleets", replica, 120_000).await? {
+        if self.db.acquire_lease("fleets", replica, 30_000).await? {
             self.run_fleets().await?;
         }
         // One replica: usage to Stripe, every minute.
@@ -375,6 +383,16 @@ impl Server {
         {
             crate::billing::stripe::report_usage(&self.http, stripe, &self.db).await?;
         }
+        // One replica: old artifacts and files nothing points at, every hour.
+        if round % 720 == 7
+            && self
+                .db
+                .acquire_lease("files-gc", replica, 3_600_000)
+                .await?
+        {
+            self.collect_files(std::time::Duration::from_secs(86_400))
+                .await?;
+        }
         // One replica: storage, every hour (recorded once a day).
         if round % 720 == 1
             && self.plans.is_some()
@@ -386,6 +404,39 @@ impl Server {
             self.meter_storage().await?;
         }
         Ok(())
+    }
+
+    /// Forgets artifacts past their days and old delivery and fleet logs,
+    /// then removes stored files that nothing points at. Files younger than
+    /// `grace` stay: an upload is written before the row that names it.
+    /// Returns the files and the unfinished uploads removed.
+    pub async fn collect_files(&self, grace: std::time::Duration) -> ApiResult<(u64, usize)> {
+        if self.artifact_days > 0 {
+            let days = i64::from(self.artifact_days);
+            let pruned = self
+                .db
+                .prune_artifacts(db::now_ms() - days * 86_400_000)
+                .await?;
+            if pruned > 0 {
+                tracing::info!(pruned, "forgot old artifacts");
+            }
+        }
+        // Webhook deliveries for 30 days, fleet decisions for 90.
+        self.db.prune_logs(db::now_ms() - 30 * 86_400_000).await?;
+        let grace = std::time::SystemTime::now() - grace;
+        let uploads = self.files.sweep_uploads(grace).await;
+        let referenced = self.db.referenced_files().await?;
+        let mut removed = 0u64;
+        for hex in self.files.stored_before(grace).await? {
+            if !referenced.contains(&hex) {
+                self.files.remove(&hex).await?;
+                removed += 1;
+            }
+        }
+        if removed > 0 || uploads > 0 {
+            tracing::info!(removed, uploads, "removed files nothing points at");
+        }
+        Ok((removed, uploads))
     }
 
     /// Records each owner's storage for today (GB, rounded up).
@@ -418,4 +469,48 @@ fn spawn_invalidation(bus: &Bus, bookmarks: Arc<TtlCache<Arc<BTreeMap<String, St
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn collecting_keeps_what_packages_point_at_and_removes_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = Server::open(Config::local(dir.path())).await.unwrap();
+        let owner = server
+            .db
+            .create_account("acme", crate::db::AccountKind::Org, "Acme", None, None)
+            .await
+            .unwrap();
+        let (kept, size) = server.files.put_bytes(b"a tarball".to_vec()).await.unwrap();
+        let (orphan, _) = server
+            .files
+            .put_bytes(b"deleted long ago".to_vec())
+            .await
+            .unwrap();
+        let package = server
+            .db
+            .package_or_create(&owner.id, "npm", "@acme/ui")
+            .await
+            .unwrap();
+        server
+            .db
+            .add_version(
+                &package.id,
+                "1.0.0",
+                &kept,
+                size,
+                &serde_json::json!({}),
+                "acme",
+            )
+            .await
+            .unwrap();
+
+        let (removed, _) = server.collect_files(Duration::ZERO).await.unwrap();
+        assert_eq!(removed, 1);
+        assert!(server.files.size(&kept).await.unwrap().is_some());
+        assert_eq!(server.files.size(&orphan).await.unwrap(), None);
+    }
 }

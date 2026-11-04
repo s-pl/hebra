@@ -82,7 +82,7 @@ pub(crate) struct FleetBody {
     credentials: Option<String>,
 }
 
-fn validate(provider: &str, config: &Value) -> ApiResult<()> {
+fn validate(provider: &str, config: &Value, allow_private: bool) -> ApiResult<()> {
     if !providers::KINDS.contains(&provider) {
         return Err(ApiError::bad(format!(
             "the provider is one of {}",
@@ -105,6 +105,9 @@ fn validate(provider: &str, config: &Value) -> ApiResult<()> {
         .is_some_and(|x| x < 0.0)
     {
         return Err(ApiError::bad("the spending limit cannot be negative"));
+    }
+    if let Some(url) = config["api_url"].as_str().filter(|u| !u.is_empty()) {
+        crate::outbound::check_url(url, allow_private)?;
     }
     if let Some(url) = config["server_url"].as_str()
         && !url.is_empty()
@@ -129,7 +132,7 @@ pub(crate) async fn put(
     } else {
         body.config
     };
-    validate(&body.provider, &config)?;
+    validate(&body.provider, &config, s.allow_private_urls)?;
     let sealed = match body.credentials.as_deref().map(str::trim) {
         Some(token) if !token.is_empty() => Some(
             s.sealer

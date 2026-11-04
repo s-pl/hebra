@@ -72,6 +72,48 @@ pub struct QueuedRun {
 }
 
 impl Db {
+    /// Forgets artifacts made before `before_ms`; their files go with the
+    /// next sweep. Returns how many.
+    pub async fn prune_artifacts(&self, before_ms: i64) -> ApiResult<u64> {
+        Ok(sqlx::query("DELETE FROM artifacts WHERE created_at < $1")
+            .bind(before_ms)
+            .execute(self.pool())
+            .await?
+            .rows_affected())
+    }
+
+    /// Forgets webhook deliveries and fleet events older than `before_ms`.
+    pub async fn prune_logs(&self, before_ms: i64) -> ApiResult<u64> {
+        let deliveries = sqlx::query("DELETE FROM webhook_deliveries WHERE at < $1")
+            .bind(before_ms)
+            .execute(self.pool())
+            .await?
+            .rows_affected();
+        let events = sqlx::query("DELETE FROM fleet_events WHERE at < $1 AND kind <> 'settings'")
+            .bind(before_ms - 60 * 86_400_000)
+            .execute(self.pool())
+            .await?
+            .rows_affected();
+        Ok(deliveries + events)
+    }
+
+    /// Every stored file something still points at (artifacts, packages,
+    /// image layers, release files), as hex digests.
+    pub async fn referenced_files(&self) -> ApiResult<std::collections::HashSet<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT digest FROM artifacts
+             UNION SELECT digest FROM package_versions
+             UNION SELECT digest FROM package_blobs
+             UNION SELECT digest FROM release_assets",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(d,)| crate::files::hex_of(&d).map(str::to_owned))
+            .collect())
+    }
+
     // --------------------------------------------------------------- secrets
 
     pub async fn put_secret(

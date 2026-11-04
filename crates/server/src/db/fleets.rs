@@ -303,7 +303,8 @@ impl Db {
     /// What finished machines cost since `since_ms`, plus running ones so far.
     pub async fn fleet_cost_since(&self, owner_id: &str, since_ms: i64) -> ApiResult<i64> {
         let total: Option<i64> = sqlx::query_scalar(
-            "SELECT SUM(cost_micros) FROM machines WHERE owner_id = $1 AND (ended_at IS NULL OR ended_at >= $2)",
+            // SUM is NUMERIC on PostgreSQL: cast it back to an integer.
+            "SELECT CAST(COALESCE(SUM(cost_micros), 0) AS BIGINT) FROM machines WHERE owner_id = $1 AND (ended_at IS NULL OR ended_at >= $2)",
         )
         .bind(owner_id)
         .bind(since_ms)

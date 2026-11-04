@@ -86,6 +86,38 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo nextest run --workspace --locked
 
+  postgres:
+    # The platform's integration tests again, with metadata in PostgreSQL as
+    # in a cluster: each test server gets a database of its own.
+    name: Rust on PostgreSQL
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: hebra
+          POSTGRES_PASSWORD: hebra
+          POSTGRES_DB: hebra
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hebra"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      HEBRA_TEST_DATABASE_URL: postgres://hebra:hebra@127.0.0.1:5432/hebra
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run -p hebra-cli -p hebra-server --locked
+
   deny:
     name: cargo-deny
     needs: changes
@@ -121,6 +153,32 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+
+  hub:
+    # The built web app against a real server with seeded data: every page
+    # of the hub answers and shows what it should.
+    name: Hub smoke test
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo build --locked -p hebra-server -p hebra-cli
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/web
+      - run: pnpm build
+        working-directory: apps/web
+      - run: scripts/hub-smoke.sh
 
   docker:
     name: Docker platform

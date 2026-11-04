@@ -3,6 +3,10 @@
 //! Like production: objects encrypted, and, when these variables are set (CI
 //! does), metadata in PostgreSQL, objects in S3 and live events over NATS:
 //! HEBRA_TEST_DATABASE_URL, HEBRA_TEST_S3_BUCKET, HEBRA_TEST_NATS_URL.
+//!
+//! With PostgreSQL each test server gets a database of its own, made from the
+//! one in HEBRA_TEST_DATABASE_URL: servers of different tests must not share
+//! leases (one replica runs the fleets) or keys (each seals its secrets).
 
 #![allow(dead_code)]
 
@@ -44,8 +48,9 @@ fn config(data: &Path, edition: Edition) -> Config {
     let mut config = Config::local(data);
     config.edition = edition;
     config.encryption_keys = vec![Key::from_hex(&Key::generate_hex()).unwrap()];
-    config.database_url = std::env::var("HEBRA_TEST_DATABASE_URL").ok();
-    if config.database_url.is_some() {
+    // Webhook receivers and provider mocks listen on 127.0.0.1.
+    config.allow_private_urls = true;
+    if config.database_url.is_some() || std::env::var_os("HEBRA_TEST_DATABASE_URL").is_some() {
         config.mandate_key = Some(hebra_mandate::Authority::generate().to_hex());
     }
     if let Ok(bucket) = std::env::var("HEBRA_TEST_S3_BUCKET") {
@@ -58,6 +63,25 @@ fn config(data: &Path, edition: Edition) -> Config {
             ..NatsConfig::default()
         });
     config
+}
+
+/// A database of its own for one test server, when tests run on PostgreSQL.
+async fn test_database(suffix: &str) -> Option<String> {
+    use sqlx::Connection;
+    let base = std::env::var("HEBRA_TEST_DATABASE_URL").ok()?;
+    let name = format!("hb_{suffix}");
+    let mut admin = sqlx::PgConnection::connect(&base).await.unwrap();
+    // The name is made of lowercase letters and digits (`unique`).
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
+        .execute(&mut admin)
+        .await
+        .unwrap();
+    let (prefix, rest) = base.rsplit_once('/').unwrap();
+    let query = rest
+        .split_once('?')
+        .map(|(_, q)| format!("?{q}"))
+        .unwrap_or_default();
+    Some(format!("{prefix}/{name}{query}"))
 }
 
 /// A unique suffix from the random temp dir, so tests can share a database.
@@ -96,6 +120,7 @@ pub fn start_with(edition: Edition, gateway: Option<hebra_server::ModelGateway>)
         rt.block_on(async move {
             let _ = rustls::crypto::ring::default_provider().install_default();
             let mut cfg = config(&data, edition);
+            cfg.database_url = test_database(&suffix).await;
             cfg.gateway = gateway;
             let server = Server::open(cfg).await.unwrap();
             let db = server.db();

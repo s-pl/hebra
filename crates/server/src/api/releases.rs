@@ -326,11 +326,10 @@ pub(crate) async fn create_hook(
     axum::Json(body): axum::Json<HookBody>,
 ) -> ApiResult<axum::Json<Value>> {
     let (repo, who) = s.access(&headers, &owner, &name, Action::Admin).await?;
-    if !(body.url.starts_with("https://") || body.url.starts_with("http://"))
-        || body.url.len() > 2000
-    {
-        return Err(ApiError::bad("the URL starts with https:// (or http://)"));
+    if body.url.len() > 2000 {
+        return Err(ApiError::bad("that address is too long"));
     }
+    crate::outbound::check_url(&body.url, s.allow_private_urls)?;
     let events = if body.events.is_empty() {
         vec![
             "push".to_owned(),

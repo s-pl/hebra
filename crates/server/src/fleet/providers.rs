@@ -403,12 +403,13 @@ impl Cloud {
                     let Some(hourly) = number(&s["price_hourly"]) else {
                         continue;
                     };
+                    // Droplets are billed by the second (a minute at least) since 2026.
                     out.push(kind(
                         s["slug"].as_str().unwrap_or_default().to_owned(),
                         u32::try_from(s["vcpus"].as_u64().unwrap_or(1)).unwrap_or(1),
                         u32::try_from(s["memory"].as_u64().unwrap_or(1024) / 1024).unwrap_or(1),
                         hourly,
-                        self.billing(Billing::Hour),
+                        self.billing(Billing::Second),
                         50.0,
                     ));
                 }

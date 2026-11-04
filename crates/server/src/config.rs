@@ -84,6 +84,12 @@ pub struct Config {
     pub plans: Option<PathBuf>,
     pub stripe: Option<Stripe>,
     pub gateway: Option<ModelGateway>,
+    /// Let webhooks and provider API addresses reach private networks
+    /// (loopback, 10/8, 192.168/16, cloud metadata…). Off: only the public
+    /// internet. For tests and closed networks.
+    pub allow_private_urls: bool,
+    /// Days check artifacts are kept (0: forever).
+    pub artifact_days: u32,
 }
 
 impl Config {
@@ -111,6 +117,8 @@ impl Config {
             plans: None,
             stripe: None,
             gateway: None,
+            allow_private_urls: false,
+            artifact_days: 90,
         }
     }
 }

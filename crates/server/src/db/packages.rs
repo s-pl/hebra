@@ -289,8 +289,8 @@ impl Db {
     /// Bytes of an owner's packages (blobs counted once per image).
     pub async fn package_bytes(&self, package_id: &str) -> ApiResult<i64> {
         let n: Option<i64> = sqlx::query_scalar(
-            "SELECT (SELECT COALESCE(SUM(size), 0) FROM package_blobs WHERE package_id = $1)
-                  + (SELECT COALESCE(SUM(size), 0) FROM package_versions WHERE package_id = $1)",
+            "SELECT CAST((SELECT COALESCE(SUM(size), 0) FROM package_blobs WHERE package_id = $1)
+                  + (SELECT COALESCE(SUM(size), 0) FROM package_versions WHERE package_id = $1) AS BIGINT)",
         )
         .bind(package_id)
         .fetch_one(self.pool())

@@ -133,7 +133,7 @@ impl Server {
             ),
             None => None,
         };
-        Provider::new(&fleet.provider, &fleet.config, token, self.http.clone())
+        Provider::new(&fleet.provider, &fleet.config, token, self.outbound.clone())
     }
 
     /// The machine types a fleet may use, with the provider's prices.

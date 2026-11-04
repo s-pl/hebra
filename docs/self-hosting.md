@@ -47,6 +47,8 @@ Caddy uses its own local CA for `localhost`; point `hb` at it with `HB_CA_CERT` 
 | `HEBRA_GITHUB_CLIENT_ID`, `HEBRA_GITHUB_CLIENT_SECRET` | Sign in with GitHub. |
 | `HEBRA_TRUST_PROXY`, `HEBRA_HSTS` | Behind a reverse proxy that terminates HTTPS. |
 | `HEBRA_METRICS_ADDR` | Prometheus metrics on an internal address. |
+| `HEBRA_ARTIFACT_DAYS` | Days check artifacts are kept (90; 0 keeps them forever). |
+| `HEBRA_ALLOW_PRIVATE_URLS` | Let webhooks and fleet provider addresses reach private networks. Off by default: the server only calls the public internet, so nobody can point a webhook at it, its database or a cloud metadata address. |
 
 Run `hebra-server --help` for the full list (rate limits, CORS, TLS, NATS credentials, cache size).
 
@@ -59,6 +61,14 @@ Back up three things, and test restoring them:
 - **Keys.** `HEBRA_ENCRYPTION_KEYS` and `HEBRA_MANDATE_KEY`, somewhere other than the backups. Without the encryption keys the objects cannot be read, and without the mandate key every issued credential stops working.
 
 Copy metadata before objects. An object with no metadata pointing at it is harmless; the other way around is a missing commit.
+
+### Storage that cleans itself
+
+Files (artifacts, package tarballs, image layers, release files) are stored
+once by their SHA-256. Every hour one replica forgets artifacts older than
+`HEBRA_ARTIFACT_DAYS`, webhook deliveries older than 30 days and fleet
+decisions older than 90, and removes stored files that no row points at any
+more, once they are a day old. `hebra-server gc` does the same now.
 
 To restore, put back the objects, then the metadata, and start the server with the same keys. Then check a repository with `hb clone URL` and `hb fsck`.
 

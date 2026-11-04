@@ -6,7 +6,7 @@ Thanks for helping. Hebra is young and moves fast, so open an issue before a lar
 
 - Rust: the toolchain in `rust-toolchain.toml` (rustup installs it on first use).
 - Node and pnpm for the web app: the versions in `.node-version` and `package.json` (`packageManager`).
-- Git, for the Git bridge tests. Docker, only for `scripts/compose-smoke.sh`.
+- Git, for the Git bridge tests. Docker, only for `scripts/compose-smoke.sh`. Node and pnpm for the web and `scripts/hub-smoke.sh`.
 
 ## Before opening a pull request
 
@@ -23,6 +23,10 @@ Heavier checks, which CI runs too:
 ```sh
 scripts/github-roundtrip.sh            # real GitHub histories: import, export, identical trees
 scripts/compose-smoke.sh               # the whole Docker platform with a push over HTTPS
+scripts/hub-smoke.sh                   # the built web app against a seeded server: every hub page
+
+# The integration tests on PostgreSQL (each test server gets its own database):
+HEBRA_TEST_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/hebra cargo test -p hebra-cli
 scripts/stress.sh                      # many agents committing at once
 ```
 

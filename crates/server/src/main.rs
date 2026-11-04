@@ -136,6 +136,13 @@ struct ServeArgs {
     /// Send HSTS (set when HTTPS terminates at the ingress).
     #[arg(long, env = "HEBRA_HSTS")]
     hsts: bool,
+    /// Let webhooks and fleet provider addresses reach private networks
+    /// (only the public internet otherwise).
+    #[arg(long, env = "HEBRA_ALLOW_PRIVATE_URLS", value_parser = clap::builder::BoolishValueParser::new(), action = clap::ArgAction::SetTrue)]
+    allow_private_urls: bool,
+    /// Days check artifacts are kept; 0 keeps them forever.
+    #[arg(long, env = "HEBRA_ARTIFACT_DAYS", default_value_t = 90)]
+    artifact_days: u32,
     /// Browser origins allowed to call the API directly (comma separated).
     #[arg(long, env = "HEBRA_CORS_ORIGINS", value_delimiter = ',')]
     cors_origins: Vec<String>,
@@ -226,6 +233,16 @@ enum Command {
     /// Mandates (credentials for people, agents and automation).
     #[command(subcommand)]
     Mandate(MandateCommand),
+    /// Remove stored files nothing points at, and artifacts past their days
+    /// (the server does this every hour on its own).
+    Gc {
+        /// Days check artifacts are kept; 0 keeps them forever.
+        #[arg(long, env = "HEBRA_ARTIFACT_DAYS", default_value_t = 90)]
+        artifact_days: u32,
+        /// Leave files written in the last hours (uploads still landing).
+        #[arg(long, default_value_t = 24)]
+        older_than_hours: u64,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -358,6 +375,8 @@ async fn serve(mut config: Config, args: ServeArgs) -> anyhow::Result<()> {
         key: args.live.nats_key,
     });
     config.trust_proxy = args.trust_proxy;
+    config.allow_private_urls = args.allow_private_urls;
+    config.artifact_days = args.artifact_days;
     config.hsts = args.hsts || args.tls_cert.is_some();
     config.cors_origins = args.cors_origins;
     config.limits = Limits {
@@ -552,6 +571,20 @@ async fn main() -> anyhow::Result<()> {
                 .await)?;
             server.create_objects(&repo.id)?;
             println!("Created {full_name} (protected: {})", protect.join(", "));
+        }
+        Command::Gc {
+            artifact_days,
+            older_than_hours,
+        } => {
+            let mut config = config;
+            config.artifact_days = artifact_days;
+            let server = Server::open(config).await?;
+            let (files, uploads) = api(server
+                .collect_files(std::time::Duration::from_secs(older_than_hours * 3600))
+                .await)?;
+            println!(
+                "Removed {files} file(s) nothing points at and {uploads} unfinished upload(s)."
+            );
         }
         Command::Mandate(cmd) => {
             let server = Server::open(config).await?;
