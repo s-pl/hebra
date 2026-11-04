@@ -30,6 +30,9 @@ impl ApiError {
     pub(crate) fn payment(message: impl Into<String>) -> Self {
         Self::new(StatusCode::PAYMENT_REQUIRED, "plan_limit", message)
     }
+    pub(crate) fn too_large(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", message)
+    }
     pub(crate) fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, "conflict", message)
     }

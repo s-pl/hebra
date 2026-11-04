@@ -139,6 +139,34 @@ pub fn encode(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
     (out.len() < target.len()).then_some(out)
 }
 
+/// Builds a delta from instructions decided elsewhere (a Git delta being
+/// carried over, for instance).
+pub(crate) struct Writer {
+    out: Vec<u8>,
+}
+
+impl Writer {
+    pub(crate) fn new(target_len: usize) -> Self {
+        let mut out = Vec::new();
+        put_varint(&mut out, target_len);
+        Self { out }
+    }
+
+    pub(crate) fn copy(&mut self, offset: usize, len: usize) {
+        self.out.push(COPY);
+        put_varint(&mut self.out, offset);
+        put_varint(&mut self.out, len);
+    }
+
+    pub(crate) fn insert(&mut self, bytes: &[u8]) {
+        flush_insert(&mut self.out, bytes);
+    }
+
+    pub(crate) fn finish(self) -> Vec<u8> {
+        self.out
+    }
+}
+
 /// Rebuilds the target. `None` means the delta is corrupt.
 #[must_use]
 pub fn apply(base: &[u8], delta: &[u8]) -> Option<Vec<u8>> {

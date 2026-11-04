@@ -350,3 +350,140 @@ fn status_agrees_with_git_on_random_edits() {
         git(&dir, &["rev-parse", "HEAD^{tree}"])
     );
 }
+
+fn hb_with(cwd: &Path, env: &[(&str, &str)], args: &[&str]) -> Value {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hb"));
+    cmd.current_dir(cwd)
+        .env_remove("CLAUDECODE")
+        .env_remove("HB_ACTOR")
+        .env_remove("HB_ACTOR_KIND")
+        .env_remove("HB_JSON")
+        .env_remove("HB_GIT_FAST_EXPORT")
+        .env("USER", "tester")
+        .env("USERNAME", "tester");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd
+        .arg("--json")
+        .args(args)
+        .output()
+        .expect("failed to run hb");
+    assert!(
+        out.status.success(),
+        "hb {args:?} failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("stdout is not JSON")
+}
+
+/// Commit ids reachable from everything, and the tags, of a clone.
+fn fingerprint(repo: &Path) -> (Vec<String>, Value) {
+    let log = hb(repo, &["log", "--all"]);
+    let mut ids: Vec<String> = log["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| !c["current"].as_bool().unwrap_or(false))
+        .map(|c| format!("{} {}", c["commit_id"].as_str().unwrap(), c["description"]))
+        .collect();
+    ids.sort();
+    (ids, hb(repo, &["tag"])["tags"].clone())
+}
+
+#[test]
+fn reading_git_objects_directly_gives_the_same_commits_as_fast_export() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = tmp.path().join("source");
+    tricky_history(&source);
+    // Tags of both kinds, provenance trailers, someone else committing, an
+    // empty commit, a Latin-1 message, a second root and a signed-looking tag.
+    git(&source, &["tag", "light"]);
+    git(
+        &source,
+        &["tag", "-a", "v1.0", "-m", "Version 1.0\n\nNotes."],
+    );
+    write(&source, "agent.txt", b"by an agent\n");
+    git(&source, &["add", "-A"]);
+    git(
+        &source,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "agent work\n\nHebra-Change: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\nHebra-Agent: claude-code\nHebra-On-Behalf-Of: ana\nHebra-Task: demo",
+        ],
+    );
+    let mut other = git_command(&source);
+    other
+        .env("GIT_COMMITTER_NAME", "Bot")
+        .env("GIT_COMMITTER_EMAIL", "bot@example.com")
+        .args(["commit", "-q", "--allow-empty", "-m", "empty, by a bot"]);
+    assert!(other.status().unwrap().success());
+    git(&source, &["config", "i18n.commitEncoding", "ISO-8859-1"]);
+    let mut latin = git_command(&source);
+    latin
+        .args(["commit", "-q", "--allow-empty", "-F", "-"])
+        .stdin(Stdio::piped());
+    let mut child = latin.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"caf\xe9 au lait\n")
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+    git(&source, &["checkout", "-q", "--orphan", "pages"]);
+    git(&source, &["rm", "-q", "-r", "--cached", "."]);
+    write(&source, "index.html", b"<h1>pages</h1>\n");
+    git(&source, &["add", "index.html"]);
+    git(&source, &["commit", "-q", "-m", "a second root"]);
+    git(&source, &["checkout", "-q", "-f", "main"]);
+    // Packed, plus some loose objects on top, as a working repository is.
+    git(&source, &["gc", "-q"]);
+    write(&source, "loose.txt", b"not packed yet\n");
+    commit_all(&source, "after gc");
+
+    let url = format!("file://{}", source.display().to_string().replace('\\', "/"));
+    let direct = tmp.path().join("direct");
+    let stream = tmp.path().join("stream");
+    let strict = [("HB_GIT_OBJECTS_STRICT", "1")];
+    hb_with(
+        tmp.path(),
+        &strict,
+        &["clone", "--git", &url, direct.to_str().unwrap()],
+    );
+    hb_with(
+        tmp.path(),
+        &[("HB_GIT_FAST_EXPORT", "1")],
+        &["clone", "--git", &url, stream.to_str().unwrap()],
+    );
+    let (a, b) = (fingerprint(&direct), fingerprint(&stream));
+    assert!(a.0.len() >= 13, "{:?}", a.0);
+    assert_eq!(a, b);
+    assert!(a.0.iter().any(|c| c.contains("café au lait")), "{:?}", a.0);
+
+    // And the clone is a working repository: status is clean, files are there.
+    assert_eq!(
+        hb(&direct, &["status"])["changes"],
+        Value::Array(Vec::new())
+    );
+    assert_eq!(
+        fs::read(direct.join("loose.txt")).unwrap(),
+        b"not packed yet\n"
+    );
+
+    // `hb git import` takes the same path.
+    let imported = tmp.path().join("imported");
+    fs::create_dir_all(&imported).unwrap();
+    hb(&imported, &["init"]);
+    let stats = hb_with(
+        &imported,
+        &strict,
+        &["git", "import", source.to_str().unwrap()],
+    );
+    assert_eq!(stats["stats"]["skipped_entries"], 0);
+    let tip = hb(&imported, &["log", "-n", "1", "main"])["commits"][0]["commit_id"].clone();
+    let cloned = hb(&direct, &["log", "-n", "1", "main"])["commits"][0]["commit_id"].clone();
+    assert_eq!(tip, cloned);
+}

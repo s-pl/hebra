@@ -171,8 +171,16 @@ fn ensure_mirror(ws: &Workspace, name: &str) -> Result<PathBuf> {
     Ok(mirror)
 }
 
-/// `(ref, commit)` of every reference in the mirror, tags peeled.
-fn mirror_refs(mirror: &Path) -> Result<Vec<(String, String)>> {
+/// A reference of the mirror: the commit it names (tags peeled) and the
+/// object it points at (the tag itself, for annotated tags).
+#[derive(Debug, Clone)]
+struct MirrorRef {
+    name: String,
+    commit: String,
+    object: String,
+}
+
+fn mirror_refs(mirror: &Path) -> Result<Vec<MirrorRef>> {
     let listing = git(
         mirror,
         &[
@@ -184,11 +192,57 @@ fn mirror_refs(mirror: &Path) -> Result<Vec<(String, String)>> {
     for line in listing.lines() {
         let mut parts: Vec<&str> = line.split_whitespace().collect();
         let Some(name) = parts.pop() else { continue };
-        if let Some(sha) = parts.last() {
-            out.push((name.to_owned(), (*sha).to_owned()));
+        if let (Some(object), Some(commit)) = (parts.first(), parts.last()) {
+            out.push(MirrorRef {
+                name: name.to_owned(),
+                commit: (*commit).to_owned(),
+                object: (*object).to_owned(),
+            });
         }
     }
     Ok(out)
+}
+
+/// Cuts a mirror's history down to the commits its references name: once
+/// Hebra has the history, Git only needs the tips to fetch more and to push
+/// on top of them. Without this, a repository cloned from Git would keep
+/// every Git object twice. History comes back if a push needs it.
+fn compact_mirror(mirror: &Path) -> Result<()> {
+    let mut tips: Vec<String> = mirror_refs(mirror)?.into_iter().map(|r| r.commit).collect();
+    tips.sort();
+    tips.dedup();
+    if tips.is_empty() {
+        return Ok(());
+    }
+    let mut text = tips.join("\n");
+    text.push('\n');
+    std::fs::write(mirror.join("shallow"), text)?;
+    git(mirror, &["repack", "-a", "-d", "-q"])?;
+    git(mirror, &["prune", "--expire=now"])?;
+    Ok(())
+}
+
+/// Compacts the mirror of every Git remote (`hb gc`).
+pub fn compact_mirrors(ws: &Workspace) -> Result<usize> {
+    let dir = ws.repo_dir.join("git");
+    let mut done = 0;
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.join("HEAD").is_file() {
+            compact_mirror(&path)?;
+            done += 1;
+        }
+    }
+    Ok(done)
+}
+
+/// Makes the mirror whole again (a push built on a commit older than the
+/// tips it kept).
+fn unshallow(mirror: &Path, url: &str) -> Result<()> {
+    if mirror.join("shallow").is_file() {
+        git(mirror, &["fetch", "--quiet", "--unshallow", "--", url])?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -196,21 +250,62 @@ pub struct Fetched {
     /// Branches of the remote, as Hebra commits.
     pub bookmarks: BTreeMap<String, ObjectId>,
     pub objects: usize,
+    /// Whether the new objects are already compacted (read straight from
+    /// Git's packs, with its deltas), so a clone needs no `hb gc`.
+    pub compact: bool,
+}
+
+/// What an import of Git objects brought in.
+struct MirrorImport {
+    commits: usize,
+    tags: BTreeMap<String, Tag>,
+    compact: bool,
+}
+
+/// Imports Git history by reading its objects directly when that works
+/// (much faster for whole histories), else through `git fast-export`.
+/// Both give the same commits.
+pub fn import_git_objects(
+    tx: &mut Tx<'_>,
+    git_dir: &Path,
+    refs: &[(String, String)],
+) -> hebra_core::Result<Option<gitimport::Imported>> {
+    if !hebra_core::gitodb::readable(git_dir) || std::env::var_os("HB_GIT_FAST_EXPORT").is_some() {
+        return Ok(None);
+    }
+    let db = tx.db();
+    let known = |sha: &str| git_commit(db, sha);
+    let store = tx.store;
+    match store.batch(|| gitimport::import_objects(tx, git_dir, refs, &known)) {
+        Ok(imported) => Ok(Some(imported)),
+        // Something this reader does not handle: fall back (unless asked
+        // not to, to find out why).
+        Err(hebra_core::Error::InvalidArgument(_))
+            if std::env::var_os("HB_GIT_OBJECTS_STRICT").is_none() =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn import_mirror(
     tx: &mut Tx<'_>,
     mirror: &Path,
     remote: &str,
-    refs: &[(String, String)],
-) -> Coded<(usize, BTreeMap<String, Tag>)> {
+    refs: &[MirrorRef],
+) -> Coded<MirrorImport> {
     let io = |source: std::io::Error| hebra_core::Error::Io {
         path: "git fast-export".into(),
         source,
     };
     let db = tx.db();
-    if refs.iter().all(|(_, sha)| git_commit(db, sha).is_some()) {
-        return Ok((0, BTreeMap::new()));
+    if refs.iter().all(|r| git_commit(db, &r.commit).is_some()) {
+        return Ok(MirrorImport {
+            commits: 0,
+            tags: BTreeMap::new(),
+            compact: false,
+        });
     }
     let tips: Vec<ObjectId> = tx
         .view
@@ -220,6 +315,22 @@ fn import_mirror(
         .flat_map(|r| r.values().copied())
         .chain(tx.view.tags.values().map(|t| t.target))
         .collect();
+    // A first fetch reads the whole history: straight from the packs.
+    if tips.is_empty() {
+        let wanted: Vec<(String, String)> = refs
+            .iter()
+            .map(|r| (r.name.clone(), r.object.clone()))
+            .collect();
+        if let Some(imported) = import_git_objects(tx, mirror, &wanted)? {
+            tx.git_map_insert(&imported.shas)?;
+            return Ok(MirrorImport {
+                commits: imported.stats.commits,
+                tags: imported.tags,
+                compact: true,
+            });
+        }
+    }
+    let db = tx.db();
     let mut excluded = BTreeSet::new();
     for id in tips {
         if let Some(sha) = git_sha(db, &id)? {
@@ -256,7 +367,11 @@ fn import_mirror(
         )));
     }
     tx.git_map_insert(&imported.shas)?;
-    Ok((imported.stats.commits, imported.tags))
+    Ok(MirrorImport {
+        commits: imported.stats.commits,
+        tags: imported.tags,
+        compact: false,
+    })
 }
 
 fn fetch_git(
@@ -288,10 +403,16 @@ fn fetch_git(
     let refs = mirror_refs(&mirror)?;
     let remote = name.to_owned();
     ws.run(actor, prov, "fetch", |tx| {
-        let (objects, annotated) = import_mirror(tx, &mirror, &remote, &refs)?;
+        let imported = import_mirror(tx, &mirror, &remote, &refs)?;
+        let (objects, annotated, compact) = (imported.commits, imported.tags, imported.compact);
         let db = tx.db();
         let mut bookmarks = BTreeMap::new();
-        for (reference, sha) in &refs {
+        for MirrorRef {
+            name: reference,
+            commit: sha,
+            ..
+        } in &refs
+        {
             let Some(id) = git_commit(db, sha) else {
                 continue;
             };
@@ -309,7 +430,11 @@ fn fetch_git(
             }
         }
         tx.view.remotes.insert(remote.clone(), bookmarks.clone());
-        Ok(Fetched { bookmarks, objects })
+        Ok(Fetched {
+            bookmarks,
+            objects,
+            compact,
+        })
     })
     .map_err(Into::into)
 }
@@ -325,6 +450,29 @@ fn git_default_branch(url: &str, cwd: &Path) -> Option<String> {
 }
 
 fn push_git(
+    ws: &mut Workspace,
+    actor: &Actor,
+    prov: &Provenance,
+    name: &str,
+    bookmarks: &[String],
+    force: bool,
+    tags: bool,
+) -> Result<Output> {
+    match push_git_once(ws, actor, prov, name, bookmarks, force, tags) {
+        // A compacted mirror lacks a commit this push builds on.
+        Err(e) if format!("{e:#}").contains("fast-import") => {
+            let mirror = ensure_mirror(ws, name)?;
+            if !mirror.join("shallow").is_file() {
+                return Err(e);
+            }
+            unshallow(&mirror, &url_of(ws, name)?)?;
+            push_git_once(ws, actor, prov, name, bookmarks, force, tags)
+        }
+        other => other,
+    }
+}
+
+fn push_git_once(
     ws: &mut Workspace,
     actor: &Actor,
     prov: &Provenance,
@@ -480,7 +628,11 @@ fn fetch_local(
         for (name, tag) in tags {
             tx.view.tags.entry(name).or_insert(tag);
         }
-        Ok(Fetched { bookmarks, objects })
+        Ok(Fetched {
+            bookmarks,
+            objects,
+            compact: false,
+        })
     })
     .map_err(Into::into)
 }
@@ -814,6 +966,11 @@ pub fn clone(args: &CloneArgs, cwd: &Path) -> Result<Output> {
         .single_branch
         .then_some(args.branch.as_deref())
         .flatten();
+    // Which branch the remote calls its default: asked while fetching.
+    let probe = (found == Kind::Git).then(|| {
+        let (url, dest) = (url.clone(), dest.clone());
+        std::thread::spawn(move || git_default_branch(&url, &dest))
+    });
     let fetched = match found {
         Kind::Git => fetch_git(&mut ws, &actor, &prov, &name, args.depth, single)?,
         Kind::Local => fetch_local(&mut ws, &actor, &prov, &name)?,
@@ -828,9 +985,7 @@ pub fn clone(args: &CloneArgs, cwd: &Path) -> Result<Output> {
             crate::remote::fetch_filtered(&mut ws, &actor, &prov, &name, args.filter.is_some())?
         }
     };
-    let found_default = (found == Kind::Git)
-        .then(|| git_default_branch(&url, &dest))
-        .flatten();
+    let found_default = probe.and_then(|p| p.join().ok().flatten());
     let branch = default_branch(args.branch.as_deref(), found_default, &fetched.bookmarks);
     let summary = ws.run(&actor, &prov, "clone", |tx| {
         let Some(branch) = &branch else {
@@ -844,8 +999,11 @@ pub fn clone(args: &CloneArgs, cwd: &Path) -> Result<Output> {
         porcelain::follow(tx, target, branch)?;
         Ok(Some(target))
     })?;
+    if fetched.compact && found == Kind::Git {
+        compact_mirror(&mirror_path(&ws, &name))?;
+    }
     // A clone starts compact: everything is in one delta-compressed pack.
-    if found != Kind::Hebra || args.filter.is_none() {
+    if !fetched.compact && (found != Kind::Hebra || args.filter.is_none()) {
         let _ = ws.gc(std::time::SystemTime::now(), None);
     }
     if args.recurse_submodules {

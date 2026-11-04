@@ -45,6 +45,8 @@ export function ownerTabs(owner: string, org: boolean, billing: boolean) {
       : []),
     { key: "agents", label: "Agents", href: `/settings/${owner}?tab=agents` },
     { key: "runners", label: "Runners", href: `/settings/${owner}?tab=runners` },
+    { key: "heddle", label: "Heddle", href: `/settings/${owner}?tab=heddle` },
+    { key: "secrets", label: "Secrets", href: `/settings/${owner}?tab=secrets` },
     ...(billing ? [{ key: "billing", label: "Plan and usage", href: `/settings/${owner}/billing` }] : []),
   ];
 }

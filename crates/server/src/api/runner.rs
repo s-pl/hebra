@@ -2,6 +2,7 @@
 //! runner speaks: claim a run, renew its lease, stream the log, report the
 //! result, and — for agent checks — talk to the model gateway.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::extract::{Path as UrlPath, State};
@@ -73,17 +74,32 @@ pub(crate) async fn register(
     if body.labels.len() > 20 || body.labels.iter().any(|l| l.is_empty() || l.len() > 50) {
         return Err(ApiError::bad("up to 20 labels of 1–50 characters"));
     }
+    let (id, mandate) = create(&s, &owner, &body.name, &body.labels, &who.account.handle).await?;
+    Ok(axum::Json(
+        json!({ "id": id, "name": body.name, "labels": body.labels, "mandate": mandate }),
+    ))
+}
+
+/// Creates a runner (an account of kind runner owned by `owner`) and its
+/// mandate: `(runner id, mandate)`.
+pub(crate) async fn create(
+    s: &Server,
+    owner: &Account,
+    name: &str,
+    labels: &[String],
+    issued_by: &str,
+) -> ApiResult<(String, String)> {
     let account =
         s.db.create_account(
-            &format!("{}-runner-{}", owner.handle, body.name),
+            &format!("{}-runner-{name}", owner.handle),
             AccountKind::Runner,
-            &body.name,
+            name,
             None,
             Some(&owner.id),
         )
         .await?;
     let id =
-        s.db.create_runner(&owner.id, &account.id, &body.name, &body.labels)
+        s.db.create_runner(&owner.id, &account.id, name, labels)
             .await?;
     let expires = jiff::Timestamp::now().as_second() + RUNNER_MANDATE_SECS;
     let (mandate, root) = s
@@ -94,13 +110,11 @@ pub(crate) async fn register(
         &root,
         &account.id,
         "runner",
-        Some(&who.account.handle),
+        Some(issued_by),
         Some(expires * 1000),
     )
     .await?;
-    Ok(axum::Json(
-        json!({ "id": id, "name": body.name, "labels": body.labels, "mandate": mandate }),
-    ))
+    Ok((id, mandate))
 }
 
 pub(crate) async fn remove(
@@ -125,7 +139,7 @@ pub(crate) async fn remove(
 // -------------------------------------------------------------- protocol
 
 /// The runner behind a request (runner mandates only).
-async fn runner(s: &Server, headers: &HeaderMap) -> ApiResult<(Arc<Principal>, Runner)> {
+pub(crate) async fn runner(s: &Server, headers: &HeaderMap) -> ApiResult<(Arc<Principal>, Runner)> {
     let who = s.require_principal(headers).await?;
     if who.account.kind != AccountKind::Runner {
         return Err(ApiError::forbidden(
@@ -140,7 +154,7 @@ async fn runner(s: &Server, headers: &HeaderMap) -> ApiResult<(Arc<Principal>, R
     Ok((who, runner))
 }
 
-async fn held_run(s: &Server, runner: &Runner, id: &str) -> ApiResult<CheckRun> {
+pub(crate) async fn held_run(s: &Server, runner: &Runner, id: &str) -> ApiResult<CheckRun> {
     s.db.run(id)
         .await?
         .filter(|r| r.runner_id.as_deref() == Some(runner.id.as_str()) && r.state == "running")
@@ -176,10 +190,40 @@ pub(crate) async fn claim(
         "check",
         json!({ "id": run.id, "name": run.name, "state": "running" }),
     );
+    // Secrets go to the runner with the run, never into its record.
+    let names: Vec<String> = run.spec["secrets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|n| n.as_str().map(str::to_owned))
+        .collect();
+    let environment = run.spec["environment"].as_str();
+    let secrets = if names.is_empty() {
+        BTreeMap::new()
+    } else {
+        super::pipelines::run_secrets(&s, &repo, environment, &names).await?
+    };
+    // Artifacts of the runs this one needs, to fetch before starting.
+    let mut inputs = Vec::new();
+    let needs = s.db.run_needs(&run.id).await?;
+    if !needs.is_empty() {
+        for dep in s.db.runs_for_commit(&repo.id, &run.commit).await? {
+            if needs.iter().any(|n| crate::db::belongs_to(&dep.name, n)) {
+                for a in s.db.artifacts(&dep.id).await? {
+                    inputs.push(
+                        json!({ "run": dep.id, "check": dep.name, "name": a.name, "size": a.size }),
+                    );
+                }
+            }
+        }
+    }
     Ok(axum::Json(json!({
         "run": run,
         "repo": repo.full_name,
         "lease_ms": LEASE_MS,
+        "secrets": secrets,
+        "artifacts": inputs,
+        "ephemeral": runner.ephemeral,
     })))
 }
 
@@ -248,14 +292,31 @@ pub(crate) async fn complete(
     {
         return Err(ApiError::conflict("this run is no longer yours"));
     }
+    // A failed run with retries left goes back to the queue.
+    let retries = run.spec["retries"].as_i64().unwrap_or(0);
+    let retried =
+        body.state != "success" && run.attempt <= retries && s.db.requeue_run(&run.id).await?;
+    if retried {
+        s.db.append_log(
+            &run.id,
+            &format!("\n--- attempt {} failed; trying again ---\n", run.attempt),
+            MAX_LOG_BYTES,
+        )
+        .await?;
+    }
     if let Some(repo) = s.db.repo_by_id(&run.repo_id).await? {
+        let state = if retried {
+            "queued"
+        } else {
+            body.state.as_str()
+        };
         s.notify(
             &repo,
             "check",
-            json!({ "id": run.id, "name": run.name, "state": body.state, "commit": run.commit }),
+            json!({ "id": run.id, "name": run.name, "state": state, "commit": run.commit }),
         );
     }
-    Ok(axum::Json(json!({ "ok": true })))
+    Ok(axum::Json(json!({ "ok": true, "retried": retried })))
 }
 
 #[derive(Deserialize)]

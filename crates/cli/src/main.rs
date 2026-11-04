@@ -9,6 +9,7 @@ mod commands;
 mod extras;
 mod fmt;
 mod global;
+mod heddle;
 mod hooks;
 mod inspect;
 mod mcp;

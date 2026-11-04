@@ -23,6 +23,10 @@ pub struct Runner {
     pub last_seen_at: Option<String>,
     pub version: Option<String>,
     pub online: bool,
+    /// Takes one run and goes (machines an orchestrator starts).
+    pub ephemeral: bool,
+    /// The provider's id of the machine, for orchestrated runners.
+    pub machine: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +55,12 @@ pub struct CheckRun {
     pub summary: Option<String>,
     pub log_bytes: i64,
     pub credits: i64,
+    /// Checks it waits for.
+    pub needs: Vec<String>,
+    /// Where it deploys to.
+    pub environment: Option<String>,
+    /// The passing run whose result it took (same inputs).
+    pub reused_from: Option<String>,
 }
 
 pub struct NewCheckRun<'a> {
@@ -77,7 +87,8 @@ macro_rules! run_select {
     ($tail:literal) => {
         concat!(
             "SELECT id, repo_id, commit_id, name, kind, spec, labels, cause, review_id, required, state, runner_id,
-                    attempt, created_at, started_at, finished_at, exit_code, summary, log_bytes, credits
+                    attempt, created_at, started_at, finished_at, exit_code, summary, log_bytes, credits,
+                    needs, environment, reused_from
              FROM check_runs ",
             $tail
         )
@@ -107,6 +118,12 @@ fn run_row(r: &AnyRow) -> Result<CheckRun, sqlx::Error> {
         summary: r.try_get("summary")?,
         log_bytes: r.try_get("log_bytes")?,
         credits: r.try_get("credits")?,
+        needs: r
+            .try_get::<Option<String>, _>("needs")?
+            .and_then(|n| serde_json::from_str(&n).ok())
+            .unwrap_or_default(),
+        environment: r.try_get("environment")?,
+        reused_from: r.try_get("reused_from")?,
     })
 }
 
@@ -116,7 +133,7 @@ const ONLINE_MS: i64 = 90_000;
 macro_rules! runner_select {
     ($tail:literal) => {
         concat!(
-            "SELECT id, owner_id, account_id, name, labels, created_at, last_seen_at, version FROM runners ",
+            "SELECT id, owner_id, account_id, name, labels, created_at, last_seen_at, version, ephemeral, machine FROM runners ",
             $tail
         )
     };
@@ -134,6 +151,8 @@ fn runner_row(r: &AnyRow, now: i64) -> Result<Runner, sqlx::Error> {
         last_seen_at: last_seen.map(rfc3339),
         version: r.try_get("version")?,
         online: last_seen.is_some_and(|s| now - s < ONLINE_MS),
+        ephemeral: r.try_get::<i64, _>("ephemeral")? != 0,
+        machine: r.try_get("machine")?,
     })
 }
 
@@ -286,19 +305,54 @@ impl Db {
             Dialect::Postgres => " FOR UPDATE OF c SKIP LOCKED",
             Dialect::Sqlite => "",
         };
-        let candidates: Vec<(String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT c.id, c.labels FROM check_runs c JOIN repos r ON r.id = c.repo_id
-             WHERE r.owner_id = $1 AND c.state = 'queued'
-             ORDER BY c.created_at LIMIT 50{lock}"
-        )))
-        .bind(&runner.owner_id)
-        .fetch_all(&mut *tx)
-        .await?;
-        let chosen = candidates.into_iter().find(|(_, labels)| {
-            serde_json::from_str::<Vec<String>>(labels)
-                .is_ok_and(|need| need.iter().all(|l| runner.labels.contains(l)))
-        });
-        let Some((id, _)) = chosen else {
+        let candidates: Vec<(String, String, Option<String>, String, String)> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT c.id, c.labels, c.needs, c.repo_id, c.commit_id FROM check_runs c
+                 JOIN repos r ON r.id = c.repo_id
+                 WHERE r.owner_id = $1 AND c.state = 'queued'
+                 ORDER BY c.created_at LIMIT 100{lock}"
+            )))
+            .bind(&runner.owner_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let mut chosen = None;
+        let mut blocked = Vec::new();
+        for (id, labels, needs, repo_id, commit) in candidates {
+            let fits = serde_json::from_str::<Vec<String>>(&labels)
+                .is_ok_and(|need| need.iter().all(|l| runner.labels.contains(l)));
+            if !fits {
+                continue;
+            }
+            // Runs that wait for others start once those passed.
+            let needs: Vec<String> = needs
+                .and_then(|n| serde_json::from_str(&n).ok())
+                .unwrap_or_default();
+            if !needs.is_empty() {
+                let runs = self.runs_for_commit(&repo_id, &commit).await?;
+                match super::readiness(&needs, &runs) {
+                    super::Readiness::Ready => {}
+                    super::Readiness::Waiting => continue,
+                    super::Readiness::Blocked => {
+                        blocked.push(id);
+                        continue;
+                    }
+                }
+            }
+            chosen = Some(id);
+            break;
+        }
+        for id in &blocked {
+            sqlx::query(
+                "UPDATE check_runs SET state = 'skipped', finished_at = $1,
+                        summary = 'skipped: a check it needs did not pass'
+                 WHERE id = $2 AND state = 'queued'",
+            )
+            .bind(now)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        let Some(id) = chosen else {
             tx.commit().await?;
             return Ok(None);
         };

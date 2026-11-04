@@ -162,4 +162,53 @@ impl Client {
     pub fn post(&self, path: &str, body: &Value) -> Result<Value> {
         self.send("POST", path, body)
     }
+
+    /// POSTs raw bytes (artifacts, package files) and reads a JSON answer.
+    pub fn post_raw(&self, path: &str, bytes: Vec<u8>) -> Result<Value> {
+        self.upload("POST", path, "application/octet-stream", bytes)
+    }
+
+    /// Sends raw bytes with a method and content type.
+    pub fn upload(
+        &self,
+        method: &str,
+        path: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<Value> {
+        let url = self.url(path);
+        let agent = http_agent(Some(Duration::from_secs(3600)));
+        let mut req = match method {
+            "PUT" => agent.put(&url),
+            _ => agent.post(&url),
+        }
+        .header("Content-Type", content_type);
+        if let Some(t) = &self.token {
+            req = req.header("Authorization", format!("Bearer {t}"));
+        }
+        let resp = req
+            .send(&bytes[..])
+            .with_context(|| format!("connecting to {}", self.base))?;
+        self.finish(resp)
+    }
+
+    /// GETs a raw body (artifacts), up to 4 GiB.
+    pub fn get_raw(&self, path: &str) -> Result<Vec<u8>> {
+        let agent = http_agent(Some(Duration::from_secs(3600)));
+        let mut req = agent.get(self.url(path));
+        if let Some(t) = &self.token {
+            req = req.header("Authorization", format!("Bearer {t}"));
+        }
+        let mut resp = req
+            .call()
+            .with_context(|| format!("connecting to {}", self.base))?;
+        if !resp.status().is_success() {
+            return self.finish(resp).map(|_| Vec::new());
+        }
+        Ok(resp
+            .body_mut()
+            .with_config()
+            .limit(4 * 1024 * 1024 * 1024)
+            .read_to_vec()?)
+    }
 }

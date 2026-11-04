@@ -997,6 +997,11 @@ impl Tx<'_> {
         self.tree(&tree)
     }
 
+    /// Keeps a commit written by other means (bulk imports) at hand.
+    pub fn remember_commit(&mut self, id: ObjectId, commit: Commit) {
+        self.commits.insert(id, commit);
+    }
+
     pub fn write_commit(&mut self, commit: Commit) -> Result<ObjectId> {
         let id = self.store.write_json(COMMIT, &commit)?;
         self.commits.insert(id, commit);

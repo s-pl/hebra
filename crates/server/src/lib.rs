@@ -26,6 +26,7 @@ pub mod checks;
 pub mod config;
 pub mod db;
 mod error;
+pub mod files;
 mod gateway;
 pub mod headers;
 pub mod identity;
@@ -35,6 +36,7 @@ pub mod names;
 pub mod objects;
 mod queue;
 pub mod ratelimit;
+mod sealing;
 pub mod serve;
 mod server;
 

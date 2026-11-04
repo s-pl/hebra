@@ -55,6 +55,10 @@ pub struct Server {
     pub(crate) plans: Option<Plans>,
     pub(crate) db: Db,
     pub(crate) objects: Objects,
+    /// Large files: artifacts, packages, image layers.
+    pub(crate) files: crate::files::Files,
+    /// Seals secrets kept in the database.
+    pub(crate) sealer: crate::sealing::Sealer,
     pub(crate) bus: Bus,
     pub(crate) authority: Authority,
     pub(crate) http: reqwest::Client,
@@ -97,6 +101,9 @@ impl Server {
             config.encryption_keys.clone(),
             config.cache_bytes,
         )?;
+        let files = crate::files::Files::open(&config.objects, &config.data)?;
+        let authority = authority(&config)?;
+        let sealer = crate::sealing::Sealer::from_signing_key(&authority.to_hex());
         let bus = match &config.nats {
             Some(nats) => Bus::nats(nats).await?,
             None => Bus::local(),
@@ -122,9 +129,11 @@ impl Server {
             stripe: config.stripe.clone(),
             gateway: config.gateway.clone(),
             plans,
-            authority: authority(&config)?,
+            authority,
             db,
             objects,
+            files,
+            sealer,
             bus,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(120))

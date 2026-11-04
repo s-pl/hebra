@@ -8,8 +8,10 @@ mod auth;
 mod billing;
 mod bookmarks;
 mod checks;
+mod environments;
 mod history;
 mod live;
+mod pipelines;
 mod presence;
 mod repos;
 mod reviews;
@@ -58,6 +60,14 @@ pub fn router(server: Arc<Server>) -> Router {
     let transfer = Router::new()
         .route(&r("/pack"), post(transfer::pack))
         .route(&r("/objects/get"), post(transfer::objects))
+        .route(
+            &r("/checks/{id}/artifacts/{artifact}"),
+            get(pipelines::download_artifact),
+        )
+        .route(
+            "/api/v1/runner/runs/{id}/artifacts",
+            post(pipelines::upload_artifact).layer(DefaultBodyLimit::disable()),
+        )
         .route(
             &r("/objects"),
             post(transfer::receive_objects).layer(DefaultBodyLimit::max(MAX_PUSH_BYTES)),
@@ -126,6 +136,19 @@ pub fn router(server: Arc<Server>) -> Router {
             "/api/v1/accounts/{handle}/runners/{name}",
             delete(runner::remove),
         )
+        .route(
+            "/api/v1/accounts/{handle}/runner-tokens",
+            post(pipelines::create_runner_token),
+        )
+        .route("/api/v1/accounts/{handle}/queue", get(pipelines::queue))
+        .route(
+            "/api/v1/accounts/{handle}/secrets",
+            get(pipelines::account_secrets),
+        )
+        .route(
+            "/api/v1/accounts/{handle}/secrets/{secret}",
+            put(pipelines::put_account_secret).delete(pipelines::delete_account_secret),
+        )
         .route("/api/v1/accounts/{handle}/billing", get(billing::overview))
         .route(
             "/api/v1/accounts/{handle}/billing/checkout",
@@ -149,6 +172,11 @@ pub fn router(server: Arc<Server>) -> Router {
         .route("/api/v1/runner/runs/{id}/log", post(runner::log))
         .route("/api/v1/runner/runs/{id}/complete", post(runner::complete))
         .route("/api/v1/runner/runs/{id}/agent", post(runner::agent))
+        .route(
+            "/api/v1/runner/register",
+            post(pipelines::register_with_token),
+        )
+        .route("/api/v1/runner/self", delete(pipelines::deregister))
         // Repositories
         .route("/api/v1/repos", get(repos::list).post(repos::create))
         .route(
@@ -197,6 +225,31 @@ pub fn router(server: Arc<Server>) -> Router {
         .route(&r("/checks/{id}"), get(checks::show))
         .route(&r("/checks/{id}/log"), get(checks::log))
         .route(&r("/checks/{id}/cancel"), post(checks::cancel))
+        .route(&r("/checks/{id}/artifacts"), get(pipelines::artifacts))
+        .route(&r("/insights"), get(pipelines::repo_insights))
+        .route(&r("/checks/{id}/approve"), post(environments::approve))
+        .route(&r("/environments"), get(environments::list))
+        .route(
+            &r("/environments/{env}"),
+            put(environments::put).delete(environments::remove),
+        )
+        .route(
+            &r("/environments/{env}/deployments"),
+            get(environments::deployments),
+        )
+        .route(
+            &r("/environments/{env}/secrets"),
+            get(environments::secrets),
+        )
+        .route(
+            &r("/environments/{env}/secrets/{secret}"),
+            put(environments::put_secret).delete(environments::delete_secret),
+        )
+        .route(&r("/secrets"), get(pipelines::repo_secrets))
+        .route(
+            &r("/secrets/{secret}"),
+            put(pipelines::put_repo_secret).delete(pipelines::delete_repo_secret),
+        )
         .layer(timeout(REQUEST_TIMEOUT))
         .layer(tower_http::compression::CompressionLayer::new());
     let live = Router::new().route(&r("/stream"), get(live::stream));

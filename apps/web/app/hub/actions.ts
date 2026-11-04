@@ -289,6 +289,134 @@ export async function cancelCheck(full: string, id: string): Promise<ActionResul
   return call(repoPath(full, `/checks/${encodeURIComponent(id)}/cancel`), "POST", {}, "Cancelled.", `/hub/${full}`);
 }
 
+export async function approveDeployment(full: string, id: string): Promise<ActionResult> {
+  return call(repoPath(full, `/checks/${encodeURIComponent(id)}/approve`), "POST", {}, "Approved.", `/hub/${full}`);
+}
+
+// ------------------------------------------------- secrets and environments
+
+export async function setRepoSecret(full: string, _prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const name = text(form, "name").toUpperCase();
+  return call(
+    repoPath(full, `/secrets/${encodeURIComponent(name)}`),
+    "PUT",
+    { value: String(form.get("value") ?? "") },
+    `Saved ${name}. Its value is sealed and never shown again.`,
+    `/hub/${full}/settings`,
+  );
+}
+
+export async function deleteRepoSecret(full: string, name: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/secrets/${encodeURIComponent(name)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/hub/${full}/settings`,
+  );
+}
+
+export async function saveEnvironment(full: string, _prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const name = text(form, "name").toLowerCase();
+  return call(
+    repoPath(full, `/environments/${encodeURIComponent(name)}`),
+    "PUT",
+    {
+      required_approvals: Number(text(form, "approvals") || "0"),
+      branches: list(form, "branches"),
+      runner_labels: list(form, "labels"),
+      url: text(form, "url") || null,
+    },
+    `Saved ${name}.`,
+    `/hub/${full}`,
+  );
+}
+
+export async function deleteEnvironment(full: string, name: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/environments/${encodeURIComponent(name)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/hub/${full}`,
+  );
+}
+
+export async function setEnvironmentSecret(
+  full: string,
+  env: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  const name = text(form, "name").toUpperCase();
+  return call(
+    repoPath(full, `/environments/${encodeURIComponent(env)}/secrets/${encodeURIComponent(name)}`),
+    "PUT",
+    { value: String(form.get("value") ?? "") },
+    `Saved ${name} for ${env}.`,
+    `/hub/${full}`,
+  );
+}
+
+export async function deleteEnvironmentSecret(full: string, env: string, name: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/environments/${encodeURIComponent(env)}/secrets/${encodeURIComponent(name)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/hub/${full}`,
+  );
+}
+
+export async function setAccountSecret(
+  owner: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  const name = text(form, "name").toUpperCase();
+  return call(
+    account(owner, `/secrets/${encodeURIComponent(name)}`),
+    "PUT",
+    { value: String(form.get("value") ?? "") },
+    `Saved ${name} for every repository of ${owner}.`,
+    `/settings/${owner}`,
+  );
+}
+
+export async function deleteAccountSecret(owner: string, name: string): Promise<ActionResult> {
+  return call(
+    account(owner, `/secrets/${encodeURIComponent(name)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/settings/${owner}`,
+  );
+}
+
+/** A one-time token a VPS (or an orchestrator's machine) registers with. */
+export async function createRunnerToken(
+  owner: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  const result = await call(
+    account(owner, "/runner-tokens"),
+    "POST",
+    {
+      labels: list(form, "labels"),
+      ephemeral: form.get("ephemeral") === "on",
+      uses: Number(text(form, "uses") || "1"),
+      ttl_secs: Number(text(form, "hours") || "24") * 3600,
+    },
+    "Token ready. Copy it now: it is not shown again.",
+  );
+  // `SecretOnce` shows `data.mandate`; the token goes there.
+  if (result.ok && result.data && typeof result.data === "object" && "token" in result.data) {
+    result.data = { ...result.data, mandate: (result.data as { token: string }).token };
+  }
+  return result;
+}
+
 // ------------------------------------------------------- people and accounts
 
 export async function createOrganization(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {

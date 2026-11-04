@@ -903,6 +903,7 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
         | Command::Whoami { .. }
         | Command::Mandate(_)
         | Command::Runner(_)
+        | Command::Heddle(_)
         | Command::Org(_)
         | Command::Agent(_)
         | Command::Repo(_) => {
@@ -1386,11 +1387,17 @@ fn gc(ws: &mut Workspace, prune: &str, expire_ops: &str) -> Result<Output> {
         Some((jiff::Timestamp::now() - jiff::SignedDuration::from_secs(age)).to_string())
     };
     let stats = ws.gc(prune_before, expire.as_deref())?;
-    let text = format!(
+    let mirrors = crate::bridge::compact_mirrors(ws)?;
+    let mut text = format!(
         "Packed {} object(s); removed {} loose file(s) and {} old pack(s); dropped {} unreachable object(s).\n",
         stats.packed, stats.loose_removed, stats.packs_removed, stats.pruned
     );
-    Ok(Output::new(json!(stats), text))
+    if mirrors > 0 {
+        let _ = writeln!(text, "Compacted {mirrors} Git mirror(s).");
+    }
+    let mut json = json!(stats);
+    json["git_mirrors"] = json!(mirrors);
+    Ok(Output::new(json, text))
 }
 
 fn op_log(ws: &Workspace, limit: usize) -> Result<Output> {
@@ -1706,6 +1713,15 @@ fn git_import(
             dir.display()
         )));
     }
+    let head = git(dir, &["rev-parse", "--verify", "--quiet", &reference])?;
+    let head = String::from_utf8_lossy(&head.stdout).trim().to_owned();
+    let git_dir = git(dir, &["rev-parse", "--absolute-git-dir"])?;
+    let git_dir = std::path::PathBuf::from(String::from_utf8_lossy(&git_dir.stdout).trim());
+    if let Some(imported) =
+        crate::bridge::import_git_objects(tx, &git_dir, &[(reference.clone(), head)])?
+    {
+        return git_imported(tx, dir, bookmark, imported.stats, imported.tip);
+    }
     let mut child = Process::new("git")
         .arg("-C")
         .arg(dir)
@@ -1734,7 +1750,18 @@ fn git_import(
     if !out.status.success() {
         return Err(git_error("git fast-export", &out));
     }
-    let tip = tip.ok_or_else(|| Error::InvalidArgument(format!("branch `{branch}` is empty")))?;
+    git_imported(tx, dir, bookmark, stats, tip)
+}
+
+fn git_imported(
+    tx: &mut Tx<'_>,
+    dir: &Path,
+    bookmark: &str,
+    stats: hebra_core::gitimport::ImportStats,
+    tip: Option<hebra_core::ObjectId>,
+) -> hebra_core::Result<Output> {
+    let tip =
+        tip.ok_or_else(|| Error::InvalidArgument(format!("bookmark `{bookmark}` would be empty")))?;
     tx.view.bookmarks.insert(bookmark.to_owned(), tip);
     let commit = tx.commit(&tip)?;
     let mut text = format!(

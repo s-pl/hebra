@@ -2094,3 +2094,40 @@ fn external_diff_and_merge_tools_get_the_files() {
         0
     );
 }
+
+#[test]
+fn a_clone_keeps_only_the_tips_in_git_and_still_pushes_on_old_commits() {
+    let lab = Lab::new();
+    let bare = lab.github();
+    let url = bare.to_string_lossy().into_owned();
+    hb(&lab.root, &["clone", "--git", &url, "copy"]);
+    let copy = lab.root.join("copy");
+    let mirror = copy.join(".hebra/repo/git/origin.git");
+    let shallow = fs::read_to_string(mirror.join("shallow")).unwrap();
+    assert_eq!(shallow.lines().count(), 1, "{shallow}");
+    assert_eq!(git(&mirror, &["rev-list", "--all", "--count"]), "1");
+
+    // Work on top of the first commit, which the mirror no longer has.
+    hb(&copy, &["switch", "-c", "old-fix", "main~1"]);
+    write(&copy, "fix.txt", "fixed\n");
+    hb(&copy, &["commit", "-m", "fix on the first commit"]);
+    hb(&copy, &["push", "origin", "old-fix"]);
+    assert_eq!(
+        git(&bare, &["rev-parse", "old-fix~1"]),
+        git(&bare, &["rev-parse", "main~1"])
+    );
+    git(&bare, &["fsck", "--strict"]);
+
+    // Fetching more still works on the compacted mirror.
+    let other = lab.root.join("other");
+    git(&lab.root, &["clone", "-q", &url, other.to_str().unwrap()]);
+    write(&other, "more.txt", "more\n");
+    git(&other, &["add", "."]);
+    git(&other, &["commit", "-qm", "more"]);
+    git(&other, &["push", "-q", "origin", "main"]);
+    hb(&copy, &["fetch", "origin"]);
+    let main = hb(&copy, &["log", "-n", "1", "origin/main"]);
+    assert_eq!(main["commits"][0]["description"], "more");
+    let gc = hb(&copy, &["gc"]);
+    assert_eq!(gc["git_mirrors"], 1);
+}

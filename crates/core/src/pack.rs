@@ -79,7 +79,8 @@ pub(crate) struct Pack {
     pub pack_path: PathBuf,
     /// Sorted entries of the index, as on disk.
     index: Vec<u8>,
-    file: Mutex<Option<(File, u8)>>,
+    /// Opened on first read; read at offsets, so threads never wait.
+    file: std::sync::OnceLock<(File, u8)>,
     bases: Mutex<BaseCache>,
 }
 
@@ -110,7 +111,7 @@ impl Pack {
             idx_path: idx_path.to_path_buf(),
             pack_path: idx_path.with_extension("hbp"),
             index,
-            file: Mutex::new(None),
+            file: std::sync::OnceLock::new(),
             bases: Mutex::new(BaseCache::default()),
         })
     }
@@ -150,11 +151,7 @@ impl Pack {
 
     /// The pack's format version and the body at this span.
     fn body(&self, offset: u64, len: u64) -> io::Result<(u8, Vec<u8>)> {
-        let mut guard = self
-            .file
-            .lock()
-            .map_err(|_| io::Error::other("pack lock poisoned"))?;
-        if guard.is_none() {
+        if self.file.get().is_none() {
             let mut file = File::open(&self.pack_path)?;
             let mut magic = [0u8; 8];
             file.read_exact(&mut magic)?;
@@ -165,15 +162,15 @@ impl Pack {
             } else {
                 return Err(invalid("invalid pack"));
             };
-            *guard = Some((file, version));
+            let _ = self.file.set((file, version));
         }
-        let (file, version) = guard
-            .as_mut()
+        let (file, version) = self
+            .file
+            .get()
             .ok_or_else(|| io::Error::other("pack not open"))?;
-        file.seek(SeekFrom::Start(offset))?;
         let len = usize::try_from(len).map_err(|_| io::Error::other("object too large"))?;
         let mut buf = vec![0; len];
-        file.read_exact(&mut buf)?;
+        read_exact_at(file, &mut buf, offset)?;
         Ok((*version, buf))
     }
 
@@ -228,6 +225,26 @@ impl Pack {
         }
         Ok(plain)
     }
+}
+
+/// Reads exactly `buf.len()` bytes at `offset`, without moving a shared
+/// cursor, so several threads can read one file at once.
+fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+    while !buf.is_empty() {
+        #[cfg(unix)]
+        let n = std::os::unix::fs::FileExt::read_at(file, buf, offset)?;
+        #[cfg(windows)]
+        let n = std::os::windows::fs::FileExt::seek_read(file, buf, offset)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "pack ends early",
+            ));
+        }
+        buf = &mut buf[n..];
+        offset += n as u64;
+    }
+    Ok(())
 }
 
 /// The packs of one object directory. Nothing is read until the first
@@ -346,7 +363,10 @@ impl PackSet {
 #[derive(Debug)]
 pub(crate) struct PackBuilder {
     tmp: PathBuf,
-    file: File,
+    /// Buffered: a batch can hold a million small objects.
+    file: io::BufWriter<File>,
+    /// Whether a read moved the file away from its end.
+    moved: bool,
     offset: u64,
     entries: BTreeMap<Id, (u64, u64)>,
 }
@@ -366,7 +386,8 @@ impl PackBuilder {
         file.write_all(PACK_MAGIC)?;
         Ok(Self {
             tmp,
-            file,
+            file: io::BufWriter::with_capacity(1 << 20, file),
+            moved: false,
             offset: PACK_MAGIC.len() as u64,
             entries: BTreeMap::new(),
         })
@@ -386,7 +407,10 @@ impl PackBuilder {
         }
         let len: usize = parts.iter().map(|p| p.len()).sum();
         let len = len as u64;
-        self.file.seek(SeekFrom::Start(self.offset))?;
+        if self.moved {
+            self.file.get_mut().seek(SeekFrom::Start(self.offset))?;
+            self.moved = false;
+        }
         self.file.write_all(&id)?;
         self.file.write_all(&len.to_le_bytes())?;
         for part in parts {
@@ -409,18 +433,44 @@ impl PackBuilder {
         self.entry(id, &[&[DELTA], base, delta])
     }
 
+    /// An object of this batch, as the store keeps it (plain bytes when it
+    /// was written as a delta).
     pub fn get(&mut self, id: &Id) -> io::Result<Option<Vec<u8>>> {
+        self.get_at(id, 0)
+    }
+
+    fn get_at(&mut self, id: &Id, depth: usize) -> io::Result<Option<Vec<u8>>> {
         let Some(&(offset, len)) = self.entries.get(id) else {
             return Ok(None);
         };
-        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.flush()?;
+        self.moved = true;
+        let file = self.file.get_mut();
+        file.seek(SeekFrom::Start(offset))?;
         let mut buf = vec![0; usize::try_from(len).map_err(|_| io::Error::other("too large"))?];
-        self.file.read_exact(&mut buf)?;
-        if buf.first() != Some(&STORED) {
-            return Err(invalid("a pack being written holds only stored objects"));
+        file.read_exact(&mut buf)?;
+        match buf.first().copied() {
+            Some(STORED) => {
+                buf.remove(0);
+                Ok(Some(buf))
+            }
+            Some(DELTA) if buf.len() > 33 && depth <= MAX_DEPTH + 8 => {
+                let base: Id = buf[1..33].try_into().map_err(|_| invalid("delta base"))?;
+                let base = self
+                    .get_at(&base, depth + 1)?
+                    .ok_or_else(|| invalid("delta base missing from its pack"))?;
+                let base = if is_deflated(&base) {
+                    inflate(&base)?
+                } else {
+                    base
+                };
+                let instructions = inflate(&buf[33..])?;
+                delta::apply(&base, &instructions)
+                    .map(Some)
+                    .ok_or_else(|| invalid("corrupt delta"))
+            }
+            _ => Err(invalid("invalid pack entry")),
         }
-        buf.remove(0);
-        Ok(Some(buf))
     }
 
     /// Every object, for writing a small batch as loose files instead.
@@ -452,6 +502,7 @@ impl PackBuilder {
         let Self {
             tmp, file, entries, ..
         } = self;
+        let file = file.into_inner().map_err(io::IntoInnerError::into_error)?;
         file.sync_all()?;
         drop(file);
         let mut idx = Vec::with_capacity(IDX_HEADER + entries.len() * IDX_ENTRY);

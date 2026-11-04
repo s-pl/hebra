@@ -570,12 +570,13 @@ fn checkout_exact(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<
     let mut kept_gitlinks = Vec::new();
     let mut files = Vec::new();
     let mut dirs = BTreeSet::new();
+    let mut safe_dirs = std::collections::HashSet::new();
     for (path, entry) in &to.files {
         if from.files.get(path) == Some(entry) {
             continue;
         }
         let full = safe_join(root, path)?;
-        if inside_symlink(root, &full) {
+        if inside_symlink_cached(root, &full, &mut safe_dirs) {
             return Err(Error::InvalidPath(path.clone()));
         }
         if let Some(parent) = full.parent() {
@@ -603,6 +604,7 @@ fn checkout_exact(root: &Path, store: &Store, from: &Tree, to: &Tree) -> Result<
         None => Rules::default(),
     };
     let written = write_files(store, &rules, &files)?;
+
     stats.written += files.len();
 
     let mut links_on_disk = Vec::new();
@@ -734,6 +736,29 @@ fn write_files(
 }
 
 /// Whether a directory between `root` and `full` is a symlink.
+/// [`inside_symlink`], remembering directories found to be real ones: a
+/// checkout writes many files into few directories.
+fn inside_symlink_cached(
+    root: &Path,
+    full: &Path,
+    safe: &mut std::collections::HashSet<PathBuf>,
+) -> bool {
+    let mut dir = full.parent();
+    let mut checked = Vec::new();
+    while let Some(d) = dir {
+        if d == root || safe.contains(d) {
+            break;
+        }
+        if fs::symlink_metadata(d).is_ok_and(|m| m.file_type().is_symlink()) {
+            return true;
+        }
+        checked.push(d.to_path_buf());
+        dir = d.parent();
+    }
+    safe.extend(checked);
+    false
+}
+
 fn inside_symlink(root: &Path, full: &Path) -> bool {
     let mut dir = full.parent();
     while let Some(d) = dir {

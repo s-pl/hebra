@@ -168,6 +168,33 @@ impl FsBackend {
         }
     }
 
+    /// Adds `id` to the current batch as a delta (already compressed)
+    /// against `base`. Only when `base` is in the same batch: a pack never
+    /// points outside itself. Returns whether it was added.
+    fn put_delta(
+        &self,
+        id: &ObjectId,
+        base: &ObjectId,
+        delta: &[u8],
+        pending: bool,
+    ) -> std::io::Result<bool> {
+        let mut batch = self.batch()?;
+        if batch.depth == 0 {
+            return Ok(false);
+        }
+        if batch.builder.is_none() && pending {
+            batch.builder = Some(PackBuilder::create(&self.dir)?);
+        }
+        let Some(builder) = batch.builder.as_mut() else {
+            return Ok(false);
+        };
+        if !pending && !builder.contains(base.as_bytes()) {
+            return Ok(false);
+        }
+        builder.put_delta(*id.as_bytes(), base.as_bytes(), delta)?;
+        Ok(true)
+    }
+
     fn stats(&self) -> StoreStats {
         let mut stats = StoreStats::default();
         for (key, _) in self.loose() {
@@ -465,21 +492,19 @@ impl Backend for FsBackend {
     }
 
     fn exists(&self, key: &str) -> std::io::Result<bool> {
-        if self.dir.join(key).is_file() {
-            return Ok(true);
-        }
-        let Some(id) = pack::key_id(key) else {
-            return Ok(false);
-        };
-        if self
-            .batch()?
-            .builder
-            .as_ref()
-            .is_some_and(|b| b.contains(&id))
+        // What is in memory first: a file check costs a system call, and
+        // imports ask for every directory of every commit.
+        if let Some(id) = pack::key_id(key)
+            && (self
+                .batch()?
+                .builder
+                .as_ref()
+                .is_some_and(|b| b.contains(&id))
+                || self.packs.contains(&self.dir, &id))
         {
             return Ok(true);
         }
-        Ok(self.packs.contains(&self.dir, &id))
+        Ok(self.dir.join(key).is_file())
     }
 
     fn begin_batch(&self) {
@@ -756,6 +781,54 @@ impl Store {
             .put(&key, &bytes)
             .map_err(|e| io_error(&id, e))?;
         Ok(id)
+    }
+
+    /// Stores an object whose id the caller already computed
+    /// (`ObjectId::hash(kind, data)`), compressed as for a pack. For bulk
+    /// imports, where every object is new.
+    pub fn put_object(&self, id: &ObjectId, kind: &str, data: &[u8]) -> Result<()> {
+        let mut raw = Vec::with_capacity(kind.len() + 1 + data.len());
+        raw.extend_from_slice(kind.as_bytes());
+        raw.push(0);
+        raw.extend_from_slice(data);
+        let bytes = self.seal(id, compressed(raw))?;
+        self.backend
+            .put(&key_of(id), &bytes)
+            .map_err(|e| io_error(id, e))
+    }
+
+    /// Stores `id` as a delta against `base` (see [`crate::delta`]; both
+    /// are whole objects, kind and NUL included), when that is possible: a
+    /// local, unencrypted store inside [`Self::batch`] that already wrote
+    /// `base` in the same batch. Returns whether it did; if not, the caller
+    /// stores the object whole.
+    pub fn put_delta(&self, id: &ObjectId, base: &ObjectId, delta: &[u8]) -> Result<bool> {
+        self.put_delta_inner(id, base, delta, false)
+    }
+
+    /// Like [`Self::put_delta`] when `base` is not written yet but will be,
+    /// in this same batch, before it ends (writers working in parallel).
+    pub fn put_delta_pending(&self, id: &ObjectId, base: &ObjectId, delta: &[u8]) -> Result<bool> {
+        self.put_delta_inner(id, base, delta, true)
+    }
+
+    fn put_delta_inner(
+        &self,
+        id: &ObjectId,
+        base: &ObjectId,
+        delta: &[u8],
+        pending: bool,
+    ) -> Result<bool> {
+        let Some(local) = self.local.as_ref() else {
+            return Ok(false);
+        };
+        if !self.keys.is_empty() {
+            return Ok(false);
+        }
+        let packed = pack::deflate(delta, PACK_LEVEL);
+        local
+            .put_delta(id, base, &packed, pending)
+            .map_err(|e| io_error(id, e))
     }
 
     pub fn read(&self, kind: &str, id: &ObjectId) -> Result<Vec<u8>> {

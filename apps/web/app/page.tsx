@@ -8,6 +8,7 @@ import { CopyCommand } from "@/components/copy-command";
 import { HebraGlyph, threadColor } from "@/components/hub/glyph";
 import { Cast } from "@/components/landing/cast";
 import { ConflictBlock } from "@/components/landing/conflict-block";
+import { HeddleScene } from "@/components/landing/heddle-scene";
 import type { TermLine } from "@/components/landing/term";
 import { TypedTerm } from "@/components/landing/typed-term";
 import { SiteFooter } from "@/components/site-footer";
@@ -106,13 +107,57 @@ const NUMBERS: [string, string, string][] = [
 ];
 
 const GAPS = [
-  "Structural merge covers Rust, TypeScript, JavaScript, Python, Go and Java. Other files merge by lines",
-  "Cloning from Git is slow: 21.6 s for tokio, where git clone takes 0.5 s",
-  "A repository cloned from Git keeps a Git mirror beside it, about twice the disk",
+  "Structural merge has grammars for 18 languages (30 with the extra-grammars build). Everything else merges by its layout: indentation, brackets, headings",
+  "A clone from Git keeps the Git commits at its bookmarks and tags, to push on top of them. Repositories with hundreds of tags keep more",
+  "Heddle starts machines as Docker containers on one computer. Cloud providers come next",
   "Commits signed in Hebra reach Git remotes unsigned",
   "Search is by text. Search by meaning is a proposal",
   "Nobody hosts a public Hebra server yet, so you run your own",
 ];
+
+const HEDDLE_RULES: [string, string][] = [
+  [
+    "Same inputs, same result",
+    "Hebra's trees are Merkle trees, so the files a check reads are one hash. When that hash and the check match a run that passed, the result is reused and nothing runs.",
+  ],
+  [
+    "Wait or boot",
+    "A machine that frees up in 8 seconds beats one that boots in 30. Heddle starts a machine only when the wait would be longer than a boot, and longer than you said is fine.",
+  ],
+  [
+    "The right size",
+    "A 20-minute build gets a bigger machine when the time saved is worth more than the price. On the cheap goal, everything takes the smallest that fits.",
+  ],
+  [
+    "Keep or stop",
+    "An hourly machine finishes the hour already paid for. It stays warm into the next one only if the last hour of pushes says work is coming.",
+  ],
+];
+
+/* hb heddle simulate --days 5, 4 November 2026, the example catalog. */
+const HEDDLE_NUMBERS: [string, string, string][] = [
+  ["1.39", "machine cost, cheap goal", "A team's week: 2.75 with a 5-minute autoscaler, 1.53 with one machine per job"],
+  ["0 s", "median wait", "Same week: 22 s with the autoscaler, 25 s with a machine per job"],
+  [
+    "~3×",
+    "less, counting time",
+    "Balanced goal: machines plus the hours people wait, 2.7× to 3.4× lower on team, agent and steady loads",
+  ],
+];
+
+const PIPELINE_TOML = `[[check]]
+name = "test"
+matrix = { os = ["linux", "windows"] }
+labels = ["\${{ matrix.os }}"]
+run = "cargo test"
+inputs = ["crates/**", "Cargo.lock"]
+
+[[check]]
+name = "deploy"
+needs = ["test"]
+environment = "production"
+secrets = ["DEPLOY_KEY"]
+run = "./deploy.sh"`;
 
 const AGENT_LIST: AgentId[] = ["claude-code", "codex", "cursor", "gemini-cli", "copilot"];
 
@@ -401,6 +446,72 @@ export default function Home() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        {/* Heddle */}
+        <section id="heddle" aria-labelledby="heddle-title" className={`${PAGE} scroll-mt-14`}>
+          <Heading
+            id="heddle-title"
+            title={
+              <>
+                Heddle<sup className="align-super text-[0.45em]">™</sup> decides what runs, where, and on how many
+                machines.
+              </>
+            }
+            intro="In a loom, the heddles choose which threads lift on each pass. Heddle does that for your checks: it skips the ones whose inputs did not change, and starts and stops runner machines for the rest, weighing what they cost against how long people wait."
+          />
+          <div className="rounded-2xl bg-surface p-5 sm:p-7">
+            <HeddleScene />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {HEDDLE_RULES.map(([title, body], i) => (
+              <div key={title} className="rounded-2xl bg-surface p-6">
+                <p className="flex items-center gap-2.5 text-[14px] text-ink-3">
+                  <span className="cap">{i + 1}</span>
+                </p>
+                <h3 className="mt-3 font-medium text-[16px]">{title}</h3>
+                <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">{body}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-2xl bg-surface p-6">
+              <h3 className="font-medium text-[16px]">Pipelines and deployments, in one file</h3>
+              <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">
+                Steps, a matrix, checks that wait for others, containers with services, secrets masked in logs,
+                artifacts, caches and retries. An environment adds approvals, the bookmarks that may deploy, its own
+                runners and secrets.
+              </p>
+              <pre className="mt-4 overflow-x-auto rounded-xl bg-term px-4 py-3 font-mono text-[12.5px] text-term-text leading-relaxed">
+                {PIPELINE_TOML}
+              </pre>
+            </div>
+            <div className="grid gap-3">
+              <div className="rounded-2xl bg-surface p-6">
+                <h3 className="font-medium text-[16px]">A VPS becomes a runner with one command</h3>
+                <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">
+                  Make a token in the hub, run this on the machine. It registers itself and installs a service, so it
+                  comes back after reboots. Nobody signs in on it.
+                </p>
+                <div className="mt-4 grid [&>*]:min-w-0">
+                  <CopyCommand command="hb runner register --server https://hebra.example.com --token hbr_… --name vps-1 --install" />
+                </div>
+              </div>
+              <dl className="grid gap-3 sm:grid-cols-3">
+                {HEDDLE_NUMBERS.map(([value, what, detail]) => (
+                  <div key={what} className="rounded-2xl bg-surface p-5">
+                    <dd className="tnum font-medium text-[30px] leading-none tracking-[-0.03em]">{value}</dd>
+                    <dt className="mt-2 font-medium text-[13.5px]">{what}</dt>
+                    <dd className="mt-1 text-[12.5px] text-ink-3 leading-snug">{detail}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="px-1 text-[12.5px] text-ink-3">
+                From <code className="font-mono">hb heddle simulate</code> on made-up workloads and an example price
+                list, 4 November 2026. Run it with your own prices.
+              </p>
+            </div>
           </div>
         </section>
 

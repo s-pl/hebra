@@ -546,6 +546,7 @@ pub fn fetch_filtered(
     Ok(Fetched {
         bookmarks: server,
         objects: received,
+        compact: false,
     })
 }
 

@@ -253,6 +253,23 @@ body {
   }
 }
 
+/* Work flowing along a pipeline connector: dashes that travel forward. */
+.flow {
+  background-image: linear-gradient(90deg, var(--border-strong) 50%, transparent 0);
+  background-size: 8px 1.5px;
+  background-repeat: repeat-x;
+  background-position: 0 50%;
+}
+.flow-live {
+  background-image: linear-gradient(90deg, var(--signal) 50%, transparent 0);
+  animation: flow 700ms linear infinite;
+}
+@keyframes flow {
+  to {
+    background-position: 8px 50%;
+  }
+}
+
 /* --------------------------------------------------------------- landing */
 
 /*
@@ -535,6 +552,7 @@ body {
   .fresh,
   .live-dot::after,
   .led-live,
+  .flow-live,
   .caret {
     animation: none;
   }

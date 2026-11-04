@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { approveChecks } from "@/app/hub/actions";
+import { approveChecks, approveDeployment } from "@/app/hub/actions";
 import { CopyCommand } from "@/components/copy-command";
 import { ActionButton } from "@/components/hub/forms";
 import { LiveRefresh } from "@/components/hub/live";
 import { Stagger, StaggerItem } from "@/components/hub/motion";
+import { Pipeline } from "@/components/hub/pipeline";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
-import { Chip, Empty, PageTitle, ServerDown, StateBadge } from "@/components/hub/ui";
-import { ago, atLeast, type CheckRun, duration, fresh, HubError, hub, repoPath } from "@/lib/hub";
+import { Chip, Empty, PageTitle, ServerDown } from "@/components/hub/ui";
+import { atLeast, type CheckRun, HubError, hub, repoPath } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +59,8 @@ export default async function ChecksPage({ params }: Params) {
         title="Checks"
         sub={
           <>
-            {ctx.caps?.features.agent_verification ? "Commands and agent verifications" : "Commands"} from{" "}
-            <code className="font-mono">.hb/checks.toml</code>, run on your own machines.
+            {ctx.caps?.features.agent_verification ? "Pipelines and agent verifications" : "Pipelines"} from{" "}
+            <code className="font-mono">.hb/checks.toml</code>, on your own machines. Heddle skips what did not change.
           </>
         }
       />
@@ -79,10 +80,10 @@ export default async function ChecksPage({ params }: Params) {
       ) : (
         <Stagger as="ol" className="mt-6 grid gap-4">
           {[...groups].map(([commit, list]) => {
-            const waiting = list.some((r) => r.state === "waiting");
+            const waiting = list.some((r) => r.state === "waiting" && !r.environment);
             return (
-              <StaggerItem key={commit} className="overflow-hidden rounded-lg border border-line bg-surface">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b bg-surface-2 px-4 py-2.5">
+              <StaggerItem key={commit} className="overflow-hidden rounded-2xl bg-surface">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-2.5">
                   <span className="flex min-w-0 items-center gap-2 text-[13px]">
                     <Link href={`/hub/${full}/c/${commit}`} className="font-mono text-ink-2 hover:text-ink">
                       {commit.slice(0, 12)}
@@ -108,36 +109,26 @@ export default async function ChecksPage({ params }: Params) {
                     </ActionButton>
                   ) : null}
                 </div>
-                <ul>
-                  {list.map((r) => (
-                    <li
-                      key={r.id}
-                      className={`border-line border-b last:border-b-0 ${fresh(r.finished_at ?? r.started_at ?? r.created_at)}`}
-                    >
-                      <Link
-                        href={`/hub/${full}/checks/${r.id}`}
-                        className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-surface-2"
-                      >
-                        <StateBadge state={r.state} />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <span className="truncate font-medium text-[14px]">{r.name}</span>
-                            {r.kind === "agent" ? <Chip>agent</Chip> : null}
-                            {r.required ? <Chip>required</Chip> : null}
-                          </span>
-                          {r.summary ? (
-                            <span className="mt-0.5 block truncate text-[12.5px] text-ink-3">{r.summary}</span>
-                          ) : null}
-                        </span>
-                        <span className="hidden shrink-0 text-right font-mono text-[11.5px] text-ink-3 sm:block">
-                          {duration(r)}
-                          {r.credits > 0 ? ` · ${r.credits} cr` : ""}
-                          <span className="block">{ago(r.finished_at ?? r.started_at ?? r.created_at)}</span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                <div className="p-4">
+                  <Pipeline
+                    runs={list}
+                    hrefFor={(r) => `/hub/${full}/checks/${r.id}`}
+                    extraFor={(r) =>
+                      r.state === "waiting" && r.environment && canMaintain ? (
+                        <ActionButton size="sm" tone="primary" run={approveDeployment.bind(null, full, r.id)}>
+                          Approve deploy to {r.environment}
+                        </ActionButton>
+                      ) : null
+                    }
+                  />
+                  {list.some((r) => r.reused_from) ? (
+                    <p className="mt-3 text-[12.5px] text-ink-3">
+                      Heddle reused {list.filter((r) => r.reused_from).length} result
+                      {list.filter((r) => r.reused_from).length === 1 ? "" : "s"}: their inputs had not changed since a
+                      run that passed.
+                    </p>
+                  ) : null}
+                </div>
                 {waiting ? (
                   <p className="border-line border-t px-4 py-2.5 text-[12.5px] text-ink-3">
                     Contributions from outside run only after a maintainer approves them.

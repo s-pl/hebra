@@ -127,6 +127,27 @@ A pack is `HBPK1\n`, then for each object its 32-byte id, its length as a little
 | POST | `/runner/runs/{id}/log` | Sends log lines. |
 | POST | `/runner/runs/{id}/complete` | Reports the result. |
 | POST | `/runner/runs/{id}/agent` | Model calls of agent verification. |
+| POST | `/runner/runs/{id}/artifacts` | A runner uploads a file the run left (`?name=`, raw body). |
+| GET | `…/checks/{id}/artifacts` | Files a run left. |
+| GET | `…/checks/{id}/artifacts/{artifact}` | Download one. |
+| GET | `…/insights` | Heddle: durations, waits, failure and flake rates, time saved by reuse, per check. |
+| GET | `…/secrets` | Secret names of the repository, and those it inherits (admins). |
+| PUT, DELETE | `…/secrets/{secret}` | Set (`{ "value": "..." }`) or remove one. Values are sealed and never read back. |
+| GET | `/accounts/{handle}/secrets` | Secrets every repository of the account gets. |
+| PUT, DELETE | `/accounts/{handle}/secrets/{secret}` | Set or remove one. |
+| POST | `/accounts/{handle}/runner-tokens` | A token machines register with: `{ "labels", "ephemeral", "uses", "ttl_secs" }`. |
+| GET | `/accounts/{handle}/queue` | Queued runs and runners (busy or idle), for orchestrators. |
+| POST | `/runner/register` | A machine registers itself with a runner token. |
+| DELETE | `/runner/self` | A runner removes itself (ephemeral machines). |
+
+| POST | `…/checks/{id}/approve` | A person approves a deployment waiting for its environment's approvals. |
+| GET | `…/environments` | Environments, with their rules and last deployment. |
+| PUT, DELETE | `…/environments/{env}` | Set (`{ "required_approvals", "branches", "runner_labels", "url" }`) or remove one. |
+| GET | `…/environments/{env}/deployments` | Its deployment history. |
+| GET | `…/environments/{env}/secrets` | Names of its secrets. |
+| PUT, DELETE | `…/environments/{env}/secrets/{secret}` | Set or remove one; they win over repository and account secrets. |
+
+The claim answer carries the run, its secrets (only names the check asks for, never for contributions still waiting for approval) and the artifacts of the checks it needs. A failed run with `retries` left goes back to the queue.
 
 ## Billing
 

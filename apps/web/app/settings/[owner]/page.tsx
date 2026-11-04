@@ -2,19 +2,32 @@ import type { Metadata } from "next";
 import {
   addTeamMember,
   createAgent,
+  createRunnerToken,
   createTeam,
+  deleteAccountSecret,
   disableAgent,
   registerRunner,
   removeMember,
   removeRunner,
   removeTeamMember,
+  setAccountSecret,
   setMember,
 } from "@/app/hub/actions";
 import { CopyCommand } from "@/components/copy-command";
 import { ActionButton, ActionForm, Field, Input, SecretOnce, Select, SubmitButton } from "@/components/hub/forms";
 import { loadSettings, ownerTabs, SettingsFrame } from "@/components/hub/settings-frame";
 import { ActorAvatar, Card, Chip, Empty, ServerDown } from "@/components/hub/ui";
-import { type Account, ago, HubError, hub, type Membership, type Runner, type Team } from "@/lib/hub";
+import {
+  type Account,
+  ago,
+  HubError,
+  hub,
+  type Membership,
+  type QueuedRun,
+  type Runner,
+  type SecretInfo,
+  type Team,
+} from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -208,7 +221,10 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
   }
 
   if (tab === "runners") {
-    const { runners } = await hub<{ runners: Runner[] }>(`/accounts/${encodeURIComponent(owner)}/runners`);
+    const { runners } = await hub<{ runners: Runner[] }>(`/accounts/${encodeURIComponent(owner)}/queue`).catch(() =>
+      hub<{ runners: Runner[] }>(`/accounts/${encodeURIComponent(owner)}/runners`),
+    );
+    const server = ctx.caps?.public_url || "https://your-hebra-server";
     return frame(
       <>
         <Card
@@ -233,6 +249,9 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
                       {r.version ? ` · hb ${r.version}` : ""}
                     </span>
                   </span>
+                  {r.busy ? <Chip tone="info">running a check</Chip> : null}
+                  {r.ephemeral ? <Chip>one check</Chip> : null}
+                  {r.machine ? <Chip>machine {r.machine}</Chip> : null}
                   {r.labels.map((l) => (
                     <Chip key={l}>{l}</Chip>
                   ))}
@@ -244,7 +263,47 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
             </List>
           )}
         </Card>
-        <Card title="Connect a machine">
+        <Card
+          title="Connect a VPS or any machine"
+          sub="Make a token, then run one command on the machine. It registers itself, installs a service that comes back after reboots, and starts taking checks. Nobody signs in on it."
+        >
+          <ActionForm action={createRunnerToken.bind(null, owner)}>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Labels" htmlFor="tlabels" hint="Comma separated.">
+                <Input id="tlabels" name="labels" placeholder="linux, docker" />
+              </Field>
+              <Field label="Machines" htmlFor="tuses" hint="How many may use it.">
+                <Input id="tuses" name="uses" type="number" min={1} max={1000} defaultValue={1} />
+              </Field>
+              <Field label="Valid for (hours)" htmlFor="thours">
+                <Input id="thours" name="hours" type="number" min={1} max={720} defaultValue={24} />
+              </Field>
+            </div>
+            <label className="flex items-center gap-2 text-[13px] text-ink-2">
+              <input type="checkbox" name="ephemeral" className="accent-[var(--accent)]" />
+              One check per machine, then it removes itself (for machines you throw away)
+            </label>
+            <div>
+              <SubmitButton pendingLabel="Making">Make a runner token</SubmitButton>
+            </div>
+            <SecretOnce
+              field="token"
+              help={
+                <div className="grid gap-2">
+                  <p>On the VPS (Linux, macOS or Windows), with hb installed:</p>
+                  <code className="block overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-[11.5px]">
+                    hb runner register --server {server} --token TOKEN --name $(hostname) --install
+                  </code>
+                  <p>Or as a container:</p>
+                  <code className="block overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-[11.5px]">
+                    docker run -d --restart=always -e HEBRA_SERVER={server} -e HB_RUNNER_TOKEN=TOKEN hebra-runner
+                  </code>
+                </div>
+              }
+            />
+          </ActionForm>
+        </Card>
+        <Card title="From the machine, with your sign-in">
           <div className="grid gap-2 [&>*]:min-w-0">
             <CopyCommand command={`hb runner register --owner ${owner} --name $(hostname) --label linux`} />
             <CopyCommand command="hb runner start" />
@@ -276,6 +335,114 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
           </div>
         </Card>
       </>,
+    );
+  }
+
+  if (tab === "heddle") {
+    const queue = await hub<{ queued: QueuedRun[]; runners: Runner[] }>(
+      `/accounts/${encodeURIComponent(owner)}/queue`,
+    ).catch(() => ({ queued: [] as QueuedRun[], runners: [] as Runner[] }));
+    const busy = queue.runners.filter((r) => r.busy).length;
+    const idle = queue.runners.filter((r) => r.online && !r.busy).length;
+    const server = ctx.caps?.public_url || "https://your-hebra-server";
+    return frame(
+      <>
+        <Card
+          title="Heddle™"
+          sub="Build intelligence. The server already skips checks whose inputs did not change; Heddle also starts and stops runner machines for this queue, weighing what they cost against how long people wait."
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              [queue.queued.filter((q) => !q.blocked).length, "waiting for a runner"],
+              [busy, "runners busy"],
+              [idle, "runners idle"],
+            ].map(([n, what]) => (
+              <div key={String(what)} className="rounded-xl bg-wash p-4">
+                <p className="tnum font-medium text-[28px] leading-none">{n}</p>
+                <p className="mt-1.5 text-[13px] text-ink-3">{what}</p>
+              </div>
+            ))}
+          </div>
+          {queue.queued.length > 0 ? (
+            <ul className="mt-4 grid divide-y divide-[var(--border)]">
+              {queue.queued.slice(0, 20).map((q) => (
+                <li key={q.id} className="flex flex-wrap items-center gap-3 py-2 text-[13px]">
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{q.name}</span> <span className="text-ink-3">· {q.repo}</span>
+                  </span>
+                  {q.blocked ? <Chip>waits for others</Chip> : null}
+                  {q.labels.map((l) => (
+                    <Chip key={l}>{l}</Chip>
+                  ))}
+                  <span className="tnum font-mono text-[12px] text-ink-3">{Math.round(q.waiting_ms / 1000)}s</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 text-[13px] text-ink-3">Nothing is waiting.</p>
+          )}
+        </Card>
+        <Card
+          title="Let Heddle run the machines"
+          sub="Try a policy on a made-up or recorded workload first, then let it start and stop machines. Today machines are Docker containers on one computer, standing in for virtual machines with the catalog's sizes, boot times and prices."
+        >
+          <div className="grid gap-2 [&>*]:min-w-0">
+            <CopyCommand command="hb heddle simulate --workload team --goal balanced" />
+            <CopyCommand
+              command={`hb heddle up --owner ${owner} --server ${server} --goal balanced --max-machines 4`}
+            />
+            <CopyCommand command={`hb heddle down --owner ${owner}`} />
+          </div>
+          <p className="mt-3 text-[12.5px] text-ink-3">
+            Goals: cheap (smallest bill, waits up to 5 minutes), balanced, fast. Prices come from a catalog file (
+            <code className="font-mono">--catalog</code>).
+          </p>
+        </Card>
+      </>,
+    );
+  }
+
+  if (tab === "secrets") {
+    const { secrets } = await hub<{ secrets: SecretInfo[] }>(`/accounts/${encodeURIComponent(owner)}/secrets`).catch(
+      () => ({ secrets: [] as SecretInfo[] }),
+    );
+    return frame(
+      <Card
+        title="Secrets for every repository"
+        sub={`Checks in any repository of ${owner} that name them get them. A repository or environment secret with the same name wins.`}
+      >
+        {secrets.length === 0 ? (
+          <p className="text-[13px] text-ink-3">None yet.</p>
+        ) : (
+          <List>
+            {secrets.map((s) => (
+              <Row key={s.name}>
+                <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{s.name}</code>
+                <span className="text-[12px] text-ink-3">
+                  {s.updated_by ? `${s.updated_by}, ` : ""}
+                  {ago(s.updated_at)}
+                </span>
+                <ActionButton size="sm" run={deleteAccountSecret.bind(null, owner, s.name)} confirm="Remove?">
+                  Remove
+                </ActionButton>
+              </Row>
+            ))}
+          </List>
+        )}
+        <div className="mt-4 border-line border-t pt-4">
+          <ActionForm action={setAccountSecret.bind(null, owner)}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-end">
+              <Field label="Name" htmlFor="asname">
+                <Input id="asname" name="name" placeholder="NPM_TOKEN" required />
+              </Field>
+              <Field label="Value" htmlFor="asvalue">
+                <Input id="asvalue" name="value" type="password" autoComplete="off" required />
+              </Field>
+              <SubmitButton pendingLabel="Saving">Save</SubmitButton>
+            </div>
+          </ActionForm>
+        </div>
+      </Card>,
     );
   }
 

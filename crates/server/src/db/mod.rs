@@ -11,8 +11,10 @@
 mod accounts;
 mod billing;
 mod checks;
+mod environments;
 mod jobs;
 mod log;
+mod pipelines;
 mod repos;
 mod reviews;
 mod sessions;
@@ -28,8 +30,13 @@ use crate::error::{ApiError, ApiResult};
 pub use accounts::{Account, AccountKind, Member, OrgRole, Team};
 pub use billing::{Subscription, UsageLine};
 pub use checks::{CheckRun, LogChunk, NewCheckRun, Runner};
+pub use environments::{Deployment, Environment, EnvironmentRules};
 pub use jobs::{MAX_BATCH, MergeBatch};
 pub use log::LogEntry;
+pub use pipelines::{
+    Artifact, NewRunnerToken, QueuedRun, Readiness, RunStat, RunnerGrant, SecretInfo, belongs_to,
+    readiness,
+};
 pub use repos::{Move, NewRepo, Repo, RepoRole, RepoSummary, Stale};
 pub use reviews::{Approval, Comment, NewComment, NewReview, Review};
 pub use sessions::{DeviceCode, MandateRecord};
@@ -60,6 +67,18 @@ const MIGRATIONS: &[Migration] = &[
         name: "queue_and_log",
         postgres: include_str!("../../migrations/postgres/0002_queue_and_log.sql"),
         sqlite: include_str!("../../migrations/sqlite/0002_queue_and_log.sql"),
+    },
+    Migration {
+        version: 3,
+        name: "pipelines",
+        postgres: include_str!("../../migrations/postgres/0003_pipelines.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0003_pipelines.sql"),
+    },
+    Migration {
+        version: 4,
+        name: "environments",
+        postgres: include_str!("../../migrations/postgres/0004_environments.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0004_environments.sql"),
     },
 ];
 

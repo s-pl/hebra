@@ -8,7 +8,9 @@ use hebra_core::Workspace;
 use serde_json::json;
 
 use crate::account;
-use crate::cli::{AgentCommand, Command, MandateCommand, OrgCommand, RepoCommand, RunnerCommand};
+use crate::cli::{
+    AgentCommand, Command, HeddleCommand, MandateCommand, OrgCommand, RepoCommand, RunnerCommand,
+};
 use crate::client::Client;
 use crate::commands::Output;
 use crate::remote::split_url;
@@ -119,8 +121,97 @@ pub fn execute(
             name,
             labels,
             server: s,
-        }) => server(s, cwd).and_then(|s| crate::runner::register(&s, &owner, &name, &labels)),
-        Command::Runner(RunnerCommand::Start { name, once }) => crate::runner::start(&name, once),
+            token,
+            machine,
+            install,
+        }) => server(s, cwd).and_then(|s| {
+            crate::runner::register(&crate::runner::Registration {
+                server: &s,
+                owner: owner.as_deref(),
+                name: &name,
+                labels: &labels,
+                token: token.as_deref(),
+                machine: machine.as_deref(),
+                install,
+            })
+        }),
+        Command::Runner(RunnerCommand::Start {
+            name,
+            once,
+            ephemeral,
+        }) => crate::runner::start(&name, once, ephemeral),
+        Command::Runner(RunnerCommand::Install { name }) => crate::runner::install(&name),
+        Command::Heddle(HeddleCommand::Simulate {
+            trace,
+            workload,
+            days,
+            catalog,
+            goal,
+            time_value,
+            max_machines,
+            seed,
+        }) => crate::heddle::simulate_cmd(&crate::heddle::SimulateArgs {
+            trace: trace.as_deref(),
+            workload: &workload,
+            days,
+            catalog: catalog.as_deref(),
+            goal: &goal,
+            time_value,
+            max_machines,
+            seed,
+        }),
+        Command::Heddle(HeddleCommand::Up {
+            owner,
+            server: s,
+            catalog,
+            image,
+            max_machines,
+            max_spend,
+            goal,
+            time_value,
+            dry_run,
+            duration,
+        }) => server(s, cwd).and_then(|s| {
+            crate::heddle::up(&crate::heddle::UpArgs {
+                server: &s,
+                owner: &owner,
+                catalog: catalog.as_deref(),
+                image: &image,
+                max_machines,
+                max_spend,
+                goal: &goal,
+                time_value,
+                dry_run,
+                duration_secs: duration,
+            })
+        }),
+        Command::Heddle(HeddleCommand::Down { owner, server: s }) => {
+            server(s, cwd).and_then(|s| crate::heddle::down(&s, &owner))
+        }
+        Command::Runner(RunnerCommand::Token {
+            owner,
+            labels,
+            ephemeral,
+            uses,
+            ttl,
+            server: s,
+        }) => (|| {
+            let s = server(s, cwd)?;
+            let secs = crate::fmt::parse_ttl(&ttl)?;
+            let reply = signed_in(&s)?.post(
+                &format!("/accounts/{owner}/runner-tokens"),
+                &json!({ "labels": labels, "ephemeral": ephemeral, "uses": uses, "ttl_secs": secs }),
+            )?;
+            let token = reply["token"].as_str().unwrap_or_default().to_owned();
+            Ok(Output::new(
+                reply.clone(),
+                format!(
+                    "{token}\nOn the machine: hb runner register --server {s} --token <that token> --name <name> --install\n(valid until {}, {} use(s))\n",
+                    reply["expires_at"].as_str().unwrap_or("?"),
+                    reply["uses"]
+                ),
+            ))
+        })(),
         Command::Org(OrgCommand::Create {
             handle,
             name,

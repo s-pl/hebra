@@ -637,6 +637,10 @@ pub enum Command {
     /// Runners: run checks on your own machines.
     #[command(subcommand)]
     Runner(RunnerCommand),
+    /// Heddle™, build intelligence: simulate policies, and start and stop
+    /// runner machines for a server's queue.
+    #[command(subcommand)]
+    Heddle(HeddleCommand),
     /// Organizations on a server.
     #[command(subcommand)]
     Org(OrgCommand),
@@ -793,14 +797,25 @@ pub enum MandateCommand {
 pub enum RunnerCommand {
     /// Register this machine as a runner for a person or organization.
     Register {
+        /// Whose runner it is (with your sign-in; not needed with --token).
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long = "label")]
         labels: Vec<String>,
         #[arg(long)]
         server: Option<String>,
+        /// A one-time runner token (`hb runner token`), for machines nobody
+        /// signs in on: a VPS, a container an orchestrator starts.
+        #[arg(long, env = "HB_RUNNER_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        /// The provider's id of this machine (orchestrated runners).
+        #[arg(long)]
+        machine: Option<String>,
+        /// Also start it as a service that comes back with the machine.
+        #[arg(long)]
+        install: bool,
     },
     /// Take and run checks until stopped.
     Start {
@@ -808,6 +823,95 @@ pub enum RunnerCommand {
         /// Run at most one check, then exit.
         #[arg(long)]
         once: bool,
+        /// Take one check, then remove this runner (machines that go away).
+        #[arg(long)]
+        ephemeral: bool,
+    },
+    /// Run a registered runner as a service (systemd, launchd, or a
+    /// Windows scheduled task).
+    Install { name: String },
+    /// Make a one-time token a machine registers with.
+    Token {
+        #[arg(long)]
+        owner: String,
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// Runners made with it take one check and go.
+        #[arg(long)]
+        ephemeral: bool,
+        /// How many machines may use it.
+        #[arg(long, default_value_t = 1)]
+        uses: i64,
+        /// How long it stays valid (`30m`, `24h`, `7d`).
+        #[arg(long, default_value = "1h")]
+        ttl: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HeddleCommand {
+    /// Compare policies on a trace of jobs: cost, waits, machines.
+    Simulate {
+        /// A JSON trace: `[{ "at": 0, "secs": 90, "labels": ["linux"] }, …]`.
+        #[arg(long)]
+        trace: Option<String>,
+        /// A made-up workload when there is no trace: team, agents, steady.
+        #[arg(long, default_value = "team")]
+        workload: String,
+        #[arg(long, default_value_t = 5)]
+        days: u32,
+        /// Machine types and prices (TOML); an illustrative one by default.
+        #[arg(long)]
+        catalog: Option<String>,
+        /// cheap, balanced or fast.
+        #[arg(long, default_value = "balanced")]
+        goal: String,
+        /// What an hour of someone waiting is worth, in the catalog's
+        /// currency (overrides the goal's).
+        #[arg(long)]
+        time_value: Option<f64>,
+        #[arg(long, default_value_t = 20)]
+        max_machines: usize,
+        #[arg(long, default_value_t = 7)]
+        seed: u64,
+    },
+    /// Start and stop runner machines for an owner's queue (Docker
+    /// containers stand in for virtual machines).
+    Up {
+        #[arg(long)]
+        owner: String,
+        #[arg(long)]
+        server: Option<String>,
+        #[arg(long)]
+        catalog: Option<String>,
+        /// The runner image (deploy/docker/runner.Dockerfile).
+        #[arg(long, default_value = "hebra-runner")]
+        image: String,
+        #[arg(long, default_value_t = 4)]
+        max_machines: usize,
+        /// Most the running machines may cost per hour together.
+        #[arg(long, default_value_t = 5.0)]
+        max_spend: f64,
+        /// cheap, balanced or fast.
+        #[arg(long, default_value = "balanced")]
+        goal: String,
+        #[arg(long)]
+        time_value: Option<f64>,
+        /// Say what it would do, once, and do nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Stop after this many seconds (default: until interrupted).
+        #[arg(long, default_value_t = 0)]
+        duration: u64,
+    },
+    /// Stop every machine Heddle started for an owner.
+    Down {
+        #[arg(long)]
+        owner: String,
+        #[arg(long)]
+        server: Option<String>,
     },
 }
 

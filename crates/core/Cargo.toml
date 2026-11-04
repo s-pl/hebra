@@ -22,12 +22,70 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tree-sitter.workspace = true
+tree-sitter-language.workspace = true
 tree-sitter-go.workspace = true
 tree-sitter-java.workspace = true
 tree-sitter-javascript.workspace = true
 tree-sitter-python.workspace = true
 tree-sitter-rust.workspace = true
 tree-sitter-typescript.workspace = true
+tree-sitter-bash.workspace = true
+tree-sitter-c.workspace = true
+tree-sitter-c-sharp = { workspace = true, optional = true }
+tree-sitter-cpp = { workspace = true, optional = true }
+tree-sitter-css.workspace = true
+tree-sitter-dart = { workspace = true, optional = true }
+tree-sitter-elixir = { workspace = true, optional = true }
+tree-sitter-elm = { workspace = true, optional = true }
+tree-sitter-erlang = { workspace = true, optional = true }
+tree-sitter-gleam = { workspace = true, optional = true }
+tree-sitter-haskell = { workspace = true, optional = true }
+tree-sitter-hcl.workspace = true
+tree-sitter-html.workspace = true
+tree-sitter-json.workspace = true
+tree-sitter-julia = { workspace = true, optional = true }
+tree-sitter-kotlin-ng = { workspace = true, optional = true }
+tree-sitter-lua.workspace = true
+tree-sitter-nix.workspace = true
+tree-sitter-objc = { workspace = true, optional = true }
+tree-sitter-ocaml = { workspace = true, optional = true }
+tree-sitter-php.workspace = true
+tree-sitter-powershell = { workspace = true, optional = true }
+tree-sitter-proto.workspace = true
+tree-sitter-r = { workspace = true, optional = true }
+tree-sitter-ruby.workspace = true
+tree-sitter-scala = { workspace = true, optional = true }
+tree-sitter-solidity = { workspace = true, optional = true }
+tree-sitter-swift = { workspace = true, optional = true }
+tree-sitter-toml-ng.workspace = true
+tree-sitter-yaml.workspace = true
+tree-sitter-zig = { workspace = true, optional = true }
+
+[features]
+# Grammars for more languages (C++, C#, Kotlin, Swift, Scala, Haskell,
+# OCaml, Julia, Objective-C, Elixir, Dart, Zig, Solidity, R, Erlang, Gleam,
+# Elm, PowerShell). They add about 45 MB to the binary; without them those
+# files merge by their layout.
+extra-grammars = [
+    "dep:tree-sitter-cpp",
+    "dep:tree-sitter-c-sharp",
+    "dep:tree-sitter-kotlin-ng",
+    "dep:tree-sitter-swift",
+    "dep:tree-sitter-scala",
+    "dep:tree-sitter-haskell",
+    "dep:tree-sitter-ocaml",
+    "dep:tree-sitter-julia",
+    "dep:tree-sitter-objc",
+    "dep:tree-sitter-elixir",
+    "dep:tree-sitter-dart",
+    "dep:tree-sitter-zig",
+    "dep:tree-sitter-solidity",
+    "dep:tree-sitter-r",
+    "dep:tree-sitter-erlang",
+    "dep:tree-sitter-gleam",
+    "dep:tree-sitter-elm",
+    "dep:tree-sitter-powershell",
+]
 
 [dev-dependencies]
 tempfile.workspace = true

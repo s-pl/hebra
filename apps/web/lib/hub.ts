@@ -121,7 +121,23 @@ export type CheckRun = {
   commit: string;
   name: string;
   kind: "command" | "agent";
-  spec: { run?: string; contract?: string; timeout_secs?: number; max_credits?: number; base?: string };
+  spec: {
+    run?: string;
+    contract?: string;
+    timeout_secs?: number;
+    max_credits?: number;
+    base?: string;
+    steps?: { name?: string; run: string; if?: "success" | "always" | "failure" }[];
+    image?: string;
+    services?: { name: string; image: string }[];
+    matrix?: Record<string, string>;
+    artifacts?: string[];
+    cache?: { key: string; paths: string[] }[];
+    secrets?: string[];
+    retries?: number;
+    environment?: string;
+    environment_url?: string;
+  };
   labels: string[];
   cause: string;
   required: boolean;
@@ -135,6 +151,67 @@ export type CheckRun = {
   summary: string | null;
   log_bytes: number;
   credits: number;
+  /** Checks it waits for (a name covers its whole matrix). */
+  needs: string[];
+  /** Where it deploys to. */
+  environment: string | null;
+  /** The passing run it took its result from (same inputs). */
+  reused_from: string | null;
+};
+
+export type Artifact = { id: string; run_id: string; name: string; size: number; digest: string; created_at: string };
+
+export type SecretInfo = { name: string; scope: string; updated_at: string; updated_by: string | null };
+
+export type Environment = {
+  name: string;
+  required_approvals: number;
+  branches: string[];
+  runner_labels: string[];
+  url: string | null;
+  created_at?: string;
+  updated_at?: string;
+  configured?: boolean;
+  last_deployment?: Deployment | null;
+};
+
+export type Deployment = {
+  id: string;
+  environment: string;
+  run_id: string;
+  check: string;
+  commit: string;
+  bookmark: string | null;
+  state: CheckRun["state"];
+  approved_by: string[];
+  summary: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+/** Heddle's view of one check, from its run history. */
+export type CheckInsight = {
+  name: string;
+  runs: number;
+  executed: number;
+  reused: number;
+  duration_ms: { p50: number | null; p90: number | null };
+  wait_ms: { p50: number | null; p90: number | null };
+  failure_rate: number;
+  flaky_rate: number;
+};
+
+export type Insights = { checks: CheckInsight[]; saved_ms: number; runs: number };
+
+export type QueuedRun = {
+  id: string;
+  repo: string;
+  name: string;
+  labels: string[];
+  queued_at: string;
+  waiting_ms: number;
+  image: string | null;
+  blocked: boolean;
 };
 
 export type Comment = {
@@ -222,6 +299,10 @@ export type Runner = {
   last_seen_at: string | null;
   version: string | null;
   online: boolean;
+  ephemeral?: boolean;
+  machine?: string | null;
+  busy?: boolean;
+  run?: string | null;
 };
 
 export type Team = { id: string; handle: string; name: string; members: string[] };

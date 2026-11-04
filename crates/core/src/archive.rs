@@ -80,6 +80,21 @@ fn members(store: &Store, tree: &Tree, prefix: &str) -> Result<Vec<Member>> {
     Ok(out)
 }
 
+/// A `.tar.gz` of files given as `(path, content, executable)`: build
+/// artifacts, package tarballs.
+pub fn tar_gz(files: &[(String, Vec<u8>, bool)], mtime: u64) -> Result<Vec<u8>> {
+    let members: Vec<Member> = files
+        .iter()
+        .map(|(path, data, executable)| Member {
+            path: path.clone(),
+            data: data.clone(),
+            executable: *executable,
+            link: None,
+        })
+        .collect();
+    Ok(gzip(&tar(&members, mtime)?, mtime))
+}
+
 /// Writes `tree` in the given format; `mtime` is Unix seconds.
 pub fn write(
     store: &Store,

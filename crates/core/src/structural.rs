@@ -1,50 +1,138 @@
-//! Structural merge: when a line merge conflicts, try again one top-level
-//! declaration at a time (functions, types, imports, classes…).
+//! Structural merge: when a line merge conflicts, try again by named parts
+//! of the file (declarations, class members, object keys, sections).
 //!
-//! Two agents adding different functions at the end of a file, or editing
-//! neighbouring functions, conflict line by line because their hunks touch.
-//! Here each file is split, with tree-sitter, into keyed declarations
-//! (kind + name); each declaration merges on its own, new ones keep their
-//! place, and the result must parse without errors or the conflict stands.
+//! A file is split into keyed parts, with a tree-sitter grammar for some
+//! thirty languages (functions, types, methods, fields, JSON and YAML keys,
+//! TOML tables…) and, for any other text, by its layout (see
+//! [`crate::layout`]). Each part merges on its own. When both sides changed
+//! the same part, its body is merged the same way one level down: two
+//! methods added to one class, two dependencies added to one table. New
+//! parts keep their place, and separators (commas) are put back where they
+//! belong. The result must parse without errors, or the conflict stands.
+//!
+//! Only containers of named parts (declarations, keys) are merged inside:
+//! statements in a function body keep their order, so two edits there stay
+//! a conflict for a person or an agent to settle.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use tree_sitter::{Language, Node, Parser};
 
-/// The grammar for a path, by extension.
-fn language(path: &str) -> Option<Language> {
-    let ext = path.rsplit_once('.').map(|(_, e)| e)?;
-    Some(match ext {
+/// Files larger than this are only merged by lines.
+const MAX_BYTES: usize = 4 * 1024 * 1024;
+/// How many levels a merge goes into nested parts.
+const MAX_NESTING: usize = 8;
+/// Names and keys longer than this are not names.
+const MAX_NAME: usize = 200;
+
+/// Code keeps statement order; data (JSON, YAML, TOML, HCL) is keyed all
+/// the way down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Family {
+    Code,
+    Data,
+}
+
+/// The grammar for a path, by file name or extension.
+fn grammar(path: &str) -> Option<(Language, Family)> {
+    use Family::{Code, Data};
+    let name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    let by_name = match name.as_str() {
+        "gemfile" | "rakefile" | "podfile" | "vagrantfile" | "brewfile" | "guardfile" => {
+            Some((tree_sitter_ruby::LANGUAGE.into(), Code))
+        }
+        "cargo.lock" | "pipfile" | "poetry.lock" | "uv.lock" | "pdm.lock" => {
+            Some((tree_sitter_toml_ng::LANGUAGE.into(), Data))
+        }
+        ".babelrc" | ".eslintrc" | ".prettierrc" | ".swcrc" | "deno.lock" | "flake.lock" => {
+            Some((tree_sitter_json::LANGUAGE.into(), Data))
+        }
+        _ => None,
+    };
+    if by_name.is_some() {
+        return by_name;
+    }
+    let ext = name.rsplit_once('.').map(|(_, e)| e)?;
+    let language: Language = match ext {
         "rs" => tree_sitter_rust::LANGUAGE.into(),
         "ts" | "mts" | "cts" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "js" | "mjs" | "cjs" | "jsx" => tree_sitter_javascript::LANGUAGE.into(),
-        "py" | "pyi" => tree_sitter_python::LANGUAGE.into(),
+        "py" | "pyi" | "pyw" => tree_sitter_python::LANGUAGE.into(),
         "go" => tree_sitter_go::LANGUAGE.into(),
         "java" => tree_sitter_java::LANGUAGE.into(),
+        "c" => tree_sitter_c::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "h" | "cc" | "cpp" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" | "ipp" | "tpp"
+        | "ino" => tree_sitter_cpp::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "cs" => tree_sitter_c_sharp::LANGUAGE.into(),
+        "rb" | "rake" | "gemspec" | "ru" => tree_sitter_ruby::LANGUAGE.into(),
+        "php" | "phtml" => tree_sitter_php::LANGUAGE_PHP.into(),
+        "sh" | "bash" | "zsh" | "ksh" | "bats" => tree_sitter_bash::LANGUAGE.into(),
+        "css" => tree_sitter_css::LANGUAGE.into(),
+        "html" | "htm" | "xhtml" => tree_sitter_html::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "scala" | "sc" | "sbt" => tree_sitter_scala::LANGUAGE.into(),
+        "lua" => tree_sitter_lua::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "kt" | "kts" => tree_sitter_kotlin_ng::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "swift" => tree_sitter_swift::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "hs" => tree_sitter_haskell::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "ex" | "exs" => tree_sitter_elixir::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "zig" => tree_sitter_zig::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "ml" => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        #[cfg(feature = "extra-grammars")]
+        "mli" => tree_sitter_ocaml::LANGUAGE_OCAML_INTERFACE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "dart" => tree_sitter_dart::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "sol" => tree_sitter_solidity::LANGUAGE.into(),
+        "proto" => tree_sitter_proto::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "r" => tree_sitter_r::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "jl" => tree_sitter_julia::LANGUAGE.into(),
+        "nix" => tree_sitter_nix::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "m" | "mm" => tree_sitter_objc::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "ps1" | "psm1" | "psd1" => tree_sitter_powershell::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "elm" => tree_sitter_elm::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "erl" | "hrl" => tree_sitter_erlang::LANGUAGE.into(),
+        #[cfg(feature = "extra-grammars")]
+        "gleam" => tree_sitter_gleam::LANGUAGE.into(),
+        "json" | "jsonc" | "geojson" | "webmanifest" | "code-workspace" => {
+            return Some((tree_sitter_json::LANGUAGE.into(), Data));
+        }
+        "yml" | "yaml" => return Some((tree_sitter_yaml::LANGUAGE.into(), Data)),
+        "toml" => return Some((tree_sitter_toml_ng::LANGUAGE.into(), Data)),
+        "tf" | "tfvars" | "hcl" | "nomad" => {
+            return Some((tree_sitter_hcl::LANGUAGE.into(), Data));
+        }
         _ => return None,
-    })
+    };
+    Some((language, Code))
 }
 
-/// Whether a path is merged structurally when lines conflict.
+/// Whether a path is merged structurally when lines conflict: with a
+/// grammar, or by its layout (any text).
 #[must_use]
 pub fn supports(path: &str) -> bool {
-    language(path).is_some()
+    grammar(path).is_some() || crate::layout::supports(path)
 }
 
-/// One top-level declaration with the text before it (blank lines and
-/// comments belong to the declaration that follows them).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Item {
-    key: String,
-    text: String,
-}
-
-/// A file as keyed declarations plus whatever follows the last one.
-#[derive(Debug)]
-struct Split {
-    items: Vec<Item>,
-    tail: String,
+/// Whether a path has a grammar (for `hb` to say how it merges).
+#[must_use]
+pub fn has_grammar(path: &str) -> bool {
+    grammar(path).is_some()
 }
 
 fn parse(language: &Language, text: &str) -> Option<tree_sitter::Tree> {
@@ -54,14 +142,45 @@ fn parse(language: &Language, text: &str) -> Option<tree_sitter::Tree> {
     (!tree.root_node().has_error()).then_some(tree)
 }
 
-/// The name of a declaration: its `name` field, or that of the first
-/// descendant that has one (decorated or exported definitions), or for
-/// Rust `impl` blocks the trait and type.
+/// One keyed part of a container, with the text it owns.
+#[derive(Debug, Clone)]
+struct Part<'t> {
+    key: String,
+    /// Whether the key is a name (a declaration, a key) rather than text.
+    named: bool,
+    start: usize,
+    end: usize,
+    node: Node<'t>,
+}
+
+/// A node's parts, the text before the first and after the last, and the
+/// separator between them when there is one (`,` in objects and lists).
+#[derive(Debug)]
+struct Container<'t> {
+    head: (usize, usize),
+    parts: Vec<Part<'t>>,
+    tail: (usize, usize),
+    sep: Option<String>,
+    trailing: bool,
+}
+
+fn is_comment(node: &Node<'_>) -> bool {
+    node.kind().contains("comment")
+}
+
+fn one_line(text: &str) -> Option<String> {
+    let t = text.trim();
+    (!t.is_empty() && t.len() <= MAX_NAME && !t.contains('\n')).then(|| t.to_owned())
+}
+
+/// The name of a declaration: a `name` or `key` field, or a C-style
+/// declarator, on the node or on a descendant close to it (decorated or
+/// exported definitions). Rust `impl` blocks are named by trait and type.
 fn name_of(node: Node<'_>, text: &str) -> Option<String> {
     let field = |n: Node<'_>, f: &str| {
         n.child_by_field_name(f)
             .and_then(|c| c.utf8_text(text.as_bytes()).ok())
-            .map(str::to_owned)
+            .and_then(one_line)
     };
     if node.kind() == "impl_item" {
         let ty = field(node, "type")?;
@@ -70,61 +189,185 @@ fn name_of(node: Node<'_>, text: &str) -> Option<String> {
             None => ty,
         });
     }
-    let mut queue = vec![(node, 0)];
-    while let Some((n, depth)) = queue.pop() {
-        if let Some(name) = field(n, "name") {
+    let mut queue = VecDeque::from([(node, 0)]);
+    while let Some((n, depth)) = queue.pop_front() {
+        if let Some(name) = field(n, "name").or_else(|| field(n, "key")) {
             return Some(name);
+        }
+        if let Some(d) = n.child_by_field_name("declarator") {
+            if d.kind().contains("identifier") {
+                return d.utf8_text(text.as_bytes()).ok().and_then(one_line);
+            }
+            queue.push_front((d, depth + 1));
+            continue;
         }
         if depth < 3 {
             let mut cursor = n.walk();
-            let children: Vec<Node<'_>> = n.named_children(&mut cursor).collect();
-            queue.extend(children.into_iter().rev().map(|c| (c, depth + 1)));
+            for c in n.named_children(&mut cursor) {
+                if !is_comment(&c) {
+                    queue.push_back((c, depth + 1));
+                }
+            }
         }
     }
     None
 }
 
-fn split(language: &Language, text: &str) -> Option<Split> {
-    let tree = parse(language, text)?;
-    let root = tree.root_node();
-    let mut items = Vec::new();
-    let mut seen: HashMap<String, usize> = HashMap::new();
-    let mut start = 0;
-    let mut cursor = root.walk();
-    for node in root.named_children(&mut cursor) {
-        // Comments travel with the declaration after them.
-        if node.kind().contains("comment") {
-            continue;
+fn named_children<'t>(node: Node<'t>) -> Vec<Node<'t>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .filter(|c| !is_comment(c))
+        .collect()
+}
+
+/// Keys for the parts of one container: names where there are any, else
+/// the first child's text (an import's path, a selector, a table's name),
+/// else the text itself. Repeated keys take the next child's text, then a
+/// number.
+fn keys(nodes: &[Node<'_>], text: &str) -> Vec<(String, bool)> {
+    let src = |n: Node<'_>| n.utf8_text(text.as_bytes()).unwrap_or_default();
+    let mut out: Vec<(String, bool)> = nodes
+        .iter()
+        .map(|n| match name_of(*n, text) {
+            Some(name) => (format!("{}:{name}", n.kind()), true),
+            None => {
+                let first = named_children(*n)
+                    .first()
+                    .and_then(|c| one_line(src(*c)))
+                    .unwrap_or_else(|| src(*n).trim().to_owned());
+                (format!("{}={first}", n.kind()), false)
+            }
+        })
+        .collect();
+    for extra in 1..3 {
+        let mut count: HashMap<&str, usize> = HashMap::new();
+        for (k, _) in &out {
+            *count.entry(k.as_str()).or_default() += 1;
         }
-        let end = node.end_byte();
-        let decl = text.get(node.start_byte()..end)?;
-        let base_key = match name_of(node, text) {
-            Some(name) => format!("{}:{name}", node.kind()),
-            // Unnamed (imports, statements): the text itself is the key.
-            None => format!("{}={}", node.kind(), decl.trim()),
-        };
-        let n = seen.entry(base_key.clone()).or_insert(0);
-        *n += 1;
-        let key = if *n == 1 {
-            base_key
-        } else {
-            format!("{base_key}#{n}")
-        };
-        items.push(Item {
-            key,
-            text: text.get(start..end)?.to_owned(),
-        });
-        start = end;
+        let repeated: HashSet<String> = count
+            .into_iter()
+            .filter(|(_, n)| *n > 1)
+            .map(|(k, _)| k.to_owned())
+            .collect();
+        if repeated.is_empty() {
+            return out;
+        }
+        for (i, (k, _)) in out.iter_mut().enumerate() {
+            if repeated.contains(k.as_str()) {
+                let more = named_children(nodes[i])
+                    .get(extra)
+                    .and_then(|c| one_line(src(*c)))
+                    .unwrap_or_default();
+                k.push('|');
+                k.push_str(&more);
+            }
+        }
     }
-    Some(Split {
-        items,
-        tail: text.get(start..)?.to_owned(),
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for (k, _) in &mut out {
+        let n = seen.entry(k.clone()).or_insert(0);
+        *n += 1;
+        if *n > 1 {
+            k.push_str(&format!("#{n}"));
+        }
+    }
+    out
+}
+
+/// Splits `node` into parts. At the top (`whole`), the container is the
+/// whole file.
+fn split<'t>(node: Node<'t>, text: &str, whole: bool) -> Option<Container<'t>> {
+    let mut cursor = node.walk();
+    let children: Vec<Node<'t>> = node.children(&mut cursor).collect();
+    let items: Vec<usize> = (0..children.len())
+        .filter(|&i| children[i].is_named() && !is_comment(&children[i]))
+        .collect();
+    let first = *items.first()?;
+    let last = *items.last()?;
+    let (start, end) = if whole {
+        (0, text.len())
+    } else {
+        (node.start_byte(), node.end_byte())
+    };
+    let head_end = if whole {
+        0
+    } else {
+        children[..first]
+            .iter()
+            .filter(|c| !c.is_named())
+            .map(Node::end_byte)
+            .max()
+            .unwrap_or(start)
+    };
+    // A separator: exactly one `,` or `;` between every two parts.
+    let gaps: Vec<Vec<Node<'t>>> = items
+        .windows(2)
+        .map(|w| {
+            children[w[0] + 1..w[1]]
+                .iter()
+                .filter(|c| !c.is_named())
+                .copied()
+                .collect()
+        })
+        .collect();
+    let token = |n: &Node<'t>| n.utf8_text(text.as_bytes()).unwrap_or_default().to_owned();
+    let sep = gaps.first().and_then(|g| g.first()).map(token).filter(|s| {
+        (s == "," || s == ";") && gaps.iter().all(|g| g.len() == 1 && token(&g[0]) == *s)
+    });
+    let after_last: Vec<Node<'t>> = children[last + 1..]
+        .iter()
+        .filter(|c| !c.is_named())
+        .copied()
+        .collect();
+    let trailing = sep
+        .as_ref()
+        .is_some_and(|s| after_last.first().is_some_and(|c| token(c) == *s));
+
+    let nodes: Vec<Node<'t>> = items.iter().map(|&i| children[i]).collect();
+    let keys = keys(&nodes, text);
+    let mut parts = Vec::with_capacity(items.len());
+    let mut at = head_end;
+    for (n, &i) in items.iter().enumerate() {
+        let node = children[i];
+        let part_end = match (&sep, gaps.get(n)) {
+            // Up to the separator: comments before it stay with the part.
+            (Some(_), Some(gap)) => gap[0].start_byte(),
+            (Some(_), None) if trailing => after_last[0].start_byte(),
+            (Some(_), None) => node.end_byte(),
+            // Tokens after a part (a `;`) stay with it.
+            (None, Some(gap)) => gap
+                .iter()
+                .map(Node::end_byte)
+                .max()
+                .unwrap_or(node.end_byte()),
+            (None, None) => node.end_byte(),
+        };
+        let (key, named) = keys[n].clone();
+        parts.push(Part {
+            key,
+            named,
+            start: at,
+            end: part_end,
+            node,
+        });
+        at = match (&sep, gaps.get(n)) {
+            (Some(_), Some(gap)) => gap[0].end_byte(),
+            (Some(_), None) if trailing => after_last[0].end_byte(),
+            _ => part_end,
+        };
+    }
+    Some(Container {
+        head: (start, head_end),
+        parts,
+        tail: (at, end),
+        sep,
+        trailing,
     })
 }
 
 /// Three-way merge of one piece of text: one side's change wins if the
 /// other left it alone; both changed means a line merge or nothing.
-fn merge_text(base: Option<&str>, ours: &str, theirs: &str) -> Option<String> {
+pub(crate) fn merge_text(base: Option<&str>, ours: &str, theirs: &str) -> Option<String> {
     if ours == theirs || Some(theirs) == base {
         return Some(ours.to_owned());
     }
@@ -134,80 +377,369 @@ fn merge_text(base: Option<&str>, ours: &str, theirs: &str) -> Option<String> {
     diffy::merge(base.unwrap_or(""), ours, theirs).ok()
 }
 
-/// Merges `ours` and `theirs` (both changed from `base`) declaration by
-/// declaration, or returns `None` if that is not possible: an unknown
-/// language, a parse error, a declaration both sides changed in
-/// conflicting ways, or one side changed what the other deleted.
-#[must_use]
-pub fn merge(path: &str, base: &str, ours: &str, theirs: &str) -> Option<String> {
-    let language = language(path)?;
-    let (b, o, t) = (
-        split(&language, base)?,
-        split(&language, ours)?,
-        split(&language, theirs)?,
-    );
-    let index = |s: &Split| -> HashMap<String, String> {
-        s.items
-            .iter()
-            .map(|i| (i.key.clone(), i.text.clone()))
+/// A keyed piece of a file, as both mergers see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Piece {
+    pub key: String,
+    pub text: String,
+}
+
+/// Merges keyed pieces. `nested(b, o, t)` is asked, with the index of the
+/// piece on each side, when both sides changed one piece and its lines
+/// conflict. Returns the merged texts in order: ours, with their new
+/// pieces after the piece before them in their version.
+pub(crate) fn merge_pieces(
+    b: &[Piece],
+    o: &[Piece],
+    t: &[Piece],
+    nested: &mut dyn FnMut(usize, usize, usize) -> Option<String>,
+) -> Option<Vec<String>> {
+    let index = |s: &[Piece]| -> HashMap<String, usize> {
+        s.iter()
+            .enumerate()
+            .map(|(i, p)| (p.key.clone(), i))
             .collect()
     };
-    let (bi, oi, ti) = (index(&b), index(&o), index(&t));
-
-    // Decide each declaration.
+    let (bi, oi, ti) = (index(b), index(o), index(t));
+    // A piece gone from both sides with something new in its place on
+    // each (a paragraph or a name rewritten twice) is a conflict, not two
+    // additions.
+    for (i, piece) in b.iter().enumerate() {
+        if oi.contains_key(&piece.key) || ti.contains_key(&piece.key) {
+            continue;
+        }
+        let slot = |side: &[Piece], at: &HashMap<String, usize>| -> bool {
+            let before = b[..i]
+                .iter()
+                .rev()
+                .find_map(|p| at.get(&p.key))
+                .map_or(0, |&p| p + 1);
+            let after = b[i + 1..]
+                .iter()
+                .find_map(|p| at.get(&p.key))
+                .copied()
+                .unwrap_or(side.len());
+            side.get(before..after.max(before))
+                .is_some_and(|s| s.iter().any(|p| !bi.contains_key(&p.key)))
+        };
+        if slot(o, &oi) && slot(t, &ti) {
+            return None;
+        }
+    }
     let mut merged: HashMap<String, String> = HashMap::new();
     let keys: HashSet<&String> = bi.keys().chain(oi.keys()).chain(ti.keys()).collect();
     for key in keys {
-        let (bx, ox, tx) = (bi.get(key), oi.get(key), ti.get(key));
-        let result = match (ox, tx) {
-            (Some(ox), Some(tx)) => Some(merge_text(bx.map(String::as_str), ox, tx)?),
-            // Deleted on one side: fine only if the other did not touch it.
-            (Some(kept), None) | (None, Some(kept)) => match bx {
-                Some(bx) if bx == kept => None,
-                Some(_) => return None,
-                None => Some(kept.clone()),
+        let bx = bi.get(key).map(|&i| b[i].text.as_str());
+        let result = match (oi.get(key), ti.get(key)) {
+            (Some(&ox), Some(&tx)) => match merge_text(bx, &o[ox].text, &t[tx].text) {
+                Some(text) => Some(text),
+                None => Some(nested(*bi.get(key)?, ox, tx)?),
             },
+            // Deleted on one side: fine only if the other did not touch it.
+            (Some(&i), None) => keep_or_drop(bx, &o[i].text)?,
+            (None, Some(&i)) => keep_or_drop(bx, &t[i].text)?,
             (None, None) => None,
         };
         if let Some(text) = result {
             merged.insert(key.clone(), text);
         }
     }
-
-    // Order: ours, with their new declarations after the one before them
-    // in their file.
     let mut order: Vec<String> = o
-        .items
         .iter()
-        .map(|i| i.key.clone())
+        .map(|p| p.key.clone())
         .filter(|k| merged.contains_key(k))
         .collect();
     let mut previous: Option<String> = None;
-    for item in &t.items {
-        let new = !bi.contains_key(&item.key) && !oi.contains_key(&item.key);
-        if new && merged.contains_key(&item.key) {
+    for piece in t {
+        let new = !bi.contains_key(&piece.key) && !oi.contains_key(&piece.key);
+        if new && merged.contains_key(&piece.key) {
             let mut at = previous
                 .as_ref()
                 .and_then(|p| order.iter().position(|k| k == p))
                 .map_or(0, |i| i + 1);
-            // In the same spot, our new declarations come first.
+            // In the same spot, our new pieces come first.
             while at < order.len() && !bi.contains_key(&order[at]) && !ti.contains_key(&order[at]) {
                 at += 1;
             }
-            order.insert(at, item.key.clone());
+            order.insert(at, piece.key.clone());
         }
-        if order.contains(&item.key) {
-            previous = Some(item.key.clone());
+        if order.contains(&piece.key) {
+            previous = Some(piece.key.clone());
         }
     }
-    // Declarations kept from theirs that ours deleted cannot exist here
-    // (that returned above), so `order` holds every merged declaration.
+    Some(
+        order
+            .into_iter()
+            .filter_map(|k| merged.remove(&k))
+            .collect(),
+    )
+}
 
-    let mut out = String::new();
-    for key in &order {
-        out.push_str(&merged[key]);
+/// A piece one side kept and the other deleted: dropped if it was not
+/// changed, kept if it is new, and a conflict if it was changed.
+#[allow(clippy::option_option)]
+fn keep_or_drop(base: Option<&str>, kept: &str) -> Option<Option<String>> {
+    match base {
+        Some(b) if b == kept => Some(None),
+        Some(_) => None,
+        None => Some(Some(kept.to_owned())),
     }
-    out.push_str(&merge_text(Some(&b.tail), &o.tail, &t.tail)?);
+}
+
+/// One version of the file being merged.
+struct Side<'t> {
+    text: &'t str,
+}
+
+impl Side<'_> {
+    fn at(&self, (start, end): (usize, usize)) -> &str {
+        self.text.get(start..end).unwrap_or_default()
+    }
+}
+
+struct Merger<'a> {
+    family: Family,
+    b: Side<'a>,
+    o: Side<'a>,
+    t: Side<'a>,
+}
+
+impl Merger<'_> {
+    fn pieces(&self, side: &Side<'_>, c: &Container<'_>) -> Vec<Piece> {
+        c.parts
+            .iter()
+            .map(|p| Piece {
+                key: p.key.clone(),
+                text: side.at((p.start, p.end)).to_owned(),
+            })
+            .collect()
+    }
+
+    /// Whether parts inside this container may be merged by key.
+    fn keyed(&self, c: &Container<'_>) -> bool {
+        self.family == Family::Data
+            || c.parts.iter().filter(|p| p.named).count() * 2 >= c.parts.len()
+    }
+
+    fn container(
+        &self,
+        b: &Container<'_>,
+        o: &Container<'_>,
+        t: &Container<'_>,
+        depth: usize,
+    ) -> Option<String> {
+        // A container with one part shows no separator: it has the others'.
+        let mut sep: Option<&str> = None;
+        for c in [b, o, t] {
+            match (&c.sep, sep) {
+                (Some(s), None) => sep = Some(s),
+                (Some(s), Some(seen)) if s != seen => return None,
+                _ => {}
+            }
+        }
+        if [b, o, t]
+            .iter()
+            .any(|c| c.sep.is_none() && c.parts.len() > 1)
+            && sep.is_some()
+        {
+            return None;
+        }
+        let head = merge_text(
+            Some(self.b.at(b.head)),
+            self.o.at(o.head),
+            self.t.at(t.head),
+        )?;
+        let tail = merge_text(
+            Some(self.b.at(b.tail)),
+            self.o.at(o.tail),
+            self.t.at(t.tail),
+        )?;
+        let trailing = if o.trailing == b.trailing {
+            t.trailing
+        } else {
+            o.trailing
+        };
+        let (pb, po, pt) = (
+            self.pieces(&self.b, b),
+            self.pieces(&self.o, o),
+            self.pieces(&self.t, t),
+        );
+        let texts = merge_pieces(&pb, &po, &pt, &mut |bi, oi, ti| {
+            self.nested(&b.parts[bi], &o.parts[oi], &t.parts[ti], depth + 1)
+        })?;
+        let mut out = head;
+        let sep = sep.unwrap_or("");
+        for (i, text) in texts.iter().enumerate() {
+            if i > 0 {
+                out.push_str(sep);
+            }
+            out.push_str(text);
+        }
+        if trailing && !texts.is_empty() {
+            out.push_str(sep);
+        }
+        out.push_str(&tail);
+        Some(out)
+    }
+
+    /// Both sides changed one part: merge what is inside it.
+    fn nested(&self, b: &Part<'_>, o: &Part<'_>, t: &Part<'_>, depth: usize) -> Option<String> {
+        if depth > MAX_NESTING {
+            return None;
+        }
+        let (bb, ob, tb) = bodies(
+            (b.node, self.b.text),
+            (o.node, self.o.text),
+            (t.node, self.t.text),
+        )?;
+        let (cb, co, ct) = (
+            split(bb, self.b.text, false)?,
+            split(ob, self.o.text, false)?,
+            split(tb, self.t.text, false)?,
+        );
+        if !self.keyed(&cb) || !self.keyed(&co) || !self.keyed(&ct) {
+            return None;
+        }
+        let before = |p: &Part<'_>, body: Node<'_>| (p.start, body.start_byte());
+        let after = |p: &Part<'_>, body: Node<'_>| (body.end_byte(), p.end);
+        let prefix = merge_text(
+            Some(self.b.at(before(b, bb))),
+            self.o.at(before(o, ob)),
+            self.t.at(before(t, tb)),
+        )?;
+        let suffix = merge_text(
+            Some(self.b.at(after(b, bb))),
+            self.o.at(after(o, ob)),
+            self.t.at(after(t, tb)),
+        )?;
+        let inner = self.container(&cb, &co, &ct, depth)?;
+        Some(format!("{prefix}{inner}{suffix}"))
+    }
+}
+
+fn is_bracket(node: Option<Node<'_>>, text: &str) -> bool {
+    node.is_some_and(|n| {
+        !n.is_named()
+            && matches!(
+                n.utf8_text(text.as_bytes()).unwrap_or_default(),
+                "{" | "}" | "[" | "]" | "(" | ")"
+            )
+    })
+}
+
+/// Where a part keeps its own parts, as indices of named children: a
+/// `body` or `value` field (a class or `impl` body, a key's value), a node
+/// between brackets (an object, a list, a block), a node whose children are
+/// mostly of one kind (a TOML table), or down through the only child of a
+/// wrapper.
+fn body_path(node: Node<'_>, text: &str, depth: usize) -> Option<Vec<usize>> {
+    if depth > 6 {
+        return None;
+    }
+    let children = named_children(node);
+    if children.is_empty() {
+        return None;
+    }
+    let mut cursor = node.walk();
+    let all: Vec<Node<'_>> = node.children(&mut cursor).collect();
+    if is_bracket(all.first().copied(), text) && is_bracket(all.last().copied(), text) {
+        return Some(Vec::new());
+    }
+    for field in ["body", "value"] {
+        if let Some(f) = node.child_by_field_name(field)
+            && let Some(i) = children.iter().position(|c| c.id() == f.id())
+        {
+            let mut path = vec![i];
+            path.extend(body_path(f, text, depth + 1).unwrap_or_default());
+            return Some(path);
+        }
+    }
+    if children.len() >= 2 {
+        let mut count: HashMap<&str, usize> = HashMap::new();
+        for c in &children {
+            *count.entry(c.kind()).or_default() += 1;
+        }
+        if count.values().any(|&n| n * 2 >= children.len() && n >= 2) {
+            return Some(Vec::new());
+        }
+    }
+    let last = children.len() - 1;
+    let mut path = vec![last];
+    path.extend(body_path(children[last], text, depth + 1).unwrap_or_default());
+    Some(path)
+}
+
+fn follow<'t>(node: Node<'t>, path: &[usize]) -> Option<(Node<'t>, Vec<&'t str>)> {
+    let mut at = node;
+    let mut kinds = Vec::with_capacity(path.len());
+    for &i in path {
+        at = *named_children(at).get(i)?;
+        kinds.push(at.kind());
+    }
+    Some((at, kinds))
+}
+
+/// The body of one part in all three versions: the shortest path any of
+/// them gives that leads to nodes of the same kinds in all three. A list
+/// with one entry and one with two have their body in the same place.
+fn bodies<'a, 'b, 'c>(
+    b: (Node<'a>, &str),
+    o: (Node<'b>, &str),
+    t: (Node<'c>, &str),
+) -> Option<(Node<'a>, Node<'b>, Node<'c>)> {
+    let mut paths: Vec<Vec<usize>> = [
+        body_path(b.0, b.1, 0),
+        body_path(o.0, o.1, 0),
+        body_path(t.0, t.1, 0),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    paths.sort_by_key(Vec::len);
+    paths.dedup();
+    for path in paths {
+        let (Some((nb, kb)), Some((no, ko)), Some((nt, kt))) =
+            (follow(b.0, &path), follow(o.0, &path), follow(t.0, &path))
+        else {
+            continue;
+        };
+        if kb == ko && ko == kt && nb.kind() == no.kind() && no.kind() == nt.kind() {
+            return Some((nb, no, nt));
+        }
+    }
+    None
+}
+
+/// Merges `ours` and `theirs` (both changed from `base`) part by part, or
+/// returns `None` if that is not possible: a part both sides changed in
+/// conflicting ways, one side changed what the other deleted, or a result
+/// that does not parse.
+#[must_use]
+pub fn merge(path: &str, base: &str, ours: &str, theirs: &str) -> Option<String> {
+    if base.len().max(ours.len()).max(theirs.len()) > MAX_BYTES {
+        return None;
+    }
+    let Some((language, family)) = grammar(path) else {
+        return crate::layout::merge(path, base, ours, theirs);
+    };
+    // Work in progress that does not parse is left to the line merge.
+    let (tb, to, tt) = (
+        parse(&language, base)?,
+        parse(&language, ours)?,
+        parse(&language, theirs)?,
+    );
+    let (cb, co, ct) = (
+        split(tb.root_node(), base, true)?,
+        split(to.root_node(), ours, true)?,
+        split(tt.root_node(), theirs, true)?,
+    );
+    let merger = Merger {
+        family,
+        b: Side { text: base },
+        o: Side { text: ours },
+        t: Side { text: theirs },
+    };
+    let out = merger.container(&cb, &co, &ct, 0)?;
     parse(&language, &out)?;
     Some(out)
 }
@@ -244,14 +776,18 @@ mod tests {
     }
 
     #[test]
-    fn real_conflicts_and_unknown_files_are_left_alone() {
+    fn real_conflicts_are_left_alone() {
         let ours = "fn one() -> u8 {\n    10\n}\n";
         let theirs = "fn one() -> u8 {\n    20\n}\n";
         assert!(merge("lib.rs", BASE, ours, theirs).is_none());
-        assert!(merge("notes.txt", "a\n", "b\n", "c\n").is_none());
         // Edited on one side, deleted on the other.
         let edited = BASE.replace("    1", "    100");
         assert!(merge("lib.rs", BASE, &edited, "use std::fs;\n").is_none());
+        // Two edits inside one function body: statements keep their order.
+        let base = "fn f() {\n    a();\n    b();\n}\n";
+        let ours = "fn f() {\n    a();\n    x();\n    b();\n}\n";
+        let theirs = "fn f() {\n    a();\n    y();\n    b();\n}\n";
+        assert!(merge("lib.rs", base, ours, theirs).is_none());
     }
 
     #[test]
@@ -262,5 +798,244 @@ mod tests {
         let merged = merge("m.py", base, &ours, &theirs).unwrap();
         assert!(merged.contains("def b():") && merged.contains("def c():"));
         assert!(merged.find("def b").unwrap() < merged.find("def c").unwrap());
+    }
+
+    #[test]
+    fn methods_added_to_one_impl_block_merge() {
+        let base = "struct S;\n\nimpl S {\n    fn a(&self) {}\n}\n";
+        let ours = "struct S;\n\nimpl S {\n    fn a(&self) {}\n\n    fn b(&self) {}\n}\n";
+        let theirs = "struct S;\n\nimpl S {\n    fn a(&self) {}\n\n    fn c(&self) {}\n}\n";
+        let merged = merge("s.rs", base, ours, theirs).unwrap();
+        assert_eq!(
+            merged,
+            "struct S;\n\nimpl S {\n    fn a(&self) {}\n\n    fn b(&self) {}\n\n    fn c(&self) {}\n}\n"
+        );
+        // Same for a TypeScript class and a Java class.
+        let base = "class A {\n  a() {}\n}\n";
+        let ours = "class A {\n  a() {}\n  b() {}\n}\n";
+        let theirs = "class A {\n  a() {}\n  c() {}\n}\n";
+        let merged = merge("a.ts", base, ours, theirs).unwrap();
+        assert!(
+            merged.contains("b() {}") && merged.contains("c() {}"),
+            "{merged}"
+        );
+        let java = |m: &str| format!("class A {{\n    void a() {{}}\n{m}}}\n");
+        let merged = merge(
+            "A.java",
+            &java(""),
+            &java("    void b() {}\n"),
+            &java("    void c() {}\n"),
+        )
+        .unwrap();
+        assert!(
+            merged.contains("void b()") && merged.contains("void c()"),
+            "{merged}"
+        );
+    }
+
+    #[test]
+    fn json_keys_merge_with_their_commas() {
+        let base = "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"a\": \"1.0.0\"\n  }\n}\n";
+        let ours = "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"a\": \"1.0.0\",\n    \"b\": \"2.0.0\"\n  }\n}\n";
+        let theirs = "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"a\": \"1.0.0\",\n    \"c\": \"3.0.0\"\n  }\n}\n";
+        let merged = merge("package.json", base, ours, theirs).unwrap();
+        assert_eq!(
+            merged,
+            "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"a\": \"1.0.0\",\n    \"b\": \"2.0.0\",\n    \"c\": \"3.0.0\"\n  }\n}\n"
+        );
+        // The same key set to two values is a conflict.
+        let one = base.replace("1.0.0", "1.1.0");
+        let two = base.replace("1.0.0", "1.2.0");
+        assert!(merge("package.json", base, &one, &two).is_none());
+    }
+
+    #[test]
+    fn toml_tables_and_lockfiles_merge() {
+        let base = "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n";
+        let ours = "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\nanyhow = \"1\"\n";
+        let theirs = "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\nclap = \"4\"\n";
+        let merged = merge("Cargo.toml", base, ours, theirs).unwrap();
+        assert!(
+            merged.contains("anyhow = \"1\"\n") && merged.contains("clap = \"4\"\n"),
+            "{merged}"
+        );
+
+        let pkg = |n: &str| format!("[[package]]\nname = \"{n}\"\nversion = \"1.0.0\"\n");
+        let base = format!("version = 4\n\n{}\n{}", pkg("a"), pkg("m"));
+        let ours = format!("version = 4\n\n{}\n{}\n{}", pkg("a"), pkg("b"), pkg("m"));
+        let theirs = format!("version = 4\n\n{}\n{}\n{}", pkg("a"), pkg("m"), pkg("z"));
+        let merged = merge("Cargo.lock", &base, &ours, &theirs).unwrap();
+        for n in ["a", "b", "m", "z"] {
+            assert!(merged.contains(&format!("name = \"{n}\"")), "{merged}");
+        }
+    }
+
+    #[test]
+    fn yaml_mappings_merge_inside() {
+        let base = "jobs:\n  test:\n    runs-on: ubuntu\n";
+        let ours = "jobs:\n  test:\n    runs-on: ubuntu\n  lint:\n    runs-on: ubuntu\n";
+        let theirs = "jobs:\n  test:\n    runs-on: ubuntu\n  build:\n    runs-on: ubuntu\n";
+        let merged = merge("ci.yml", base, ours, theirs).unwrap();
+        assert!(
+            merged.contains("  lint:") && merged.contains("  build:"),
+            "{merged}"
+        );
+    }
+
+    /// Each side adds one declaration after the last: merges in each language.
+    #[test]
+    fn additions_merge_across_languages() {
+        let cases: [(&str, &str, &str, &str); 9] = [
+            (
+                "a.py",
+                "class A:\n    def a(self):\n        return 1\n",
+                "    def b(self):\n        return 2\n",
+                "    def c(self):\n        return 3\n",
+            ),
+            ("a.go", "package a\n\ntype S struct {\n\tA int\n}\n", "", ""),
+            (
+                "a.c",
+                "int a(void) {\n    return 1;\n}\n",
+                "\nint b(void) {\n    return 2;\n}\n",
+                "\nint c(void) {\n    return 3;\n}\n",
+            ),
+            (
+                "a.kt",
+                "fun a() = 1\n",
+                "\nfun b() = 2\n",
+                "\nfun c() = 3\n",
+            ),
+            (
+                "a.swift",
+                "func a() -> Int { 1 }\n",
+                "\nfunc b() -> Int { 2 }\n",
+                "\nfunc c() -> Int { 3 }\n",
+            ),
+            (
+                "a.rb",
+                "def a\n  1\nend\n",
+                "\ndef b\n  2\nend\n",
+                "\ndef c\n  3\nend\n",
+            ),
+            ("a.cs", "class A {\n    void X() {}\n}\n", "", ""),
+            (
+                "a.php",
+                "<?php\nfunction a() { return 1; }\n",
+                "function b() { return 2; }\n",
+                "function c() { return 3; }\n",
+            ),
+            (
+                "a.lua",
+                "function a() return 1 end\n",
+                "\nfunction b() return 2 end\n",
+                "\nfunction c() return 3 end\n",
+            ),
+        ];
+        for (path, base, add_o, add_t) in cases {
+            if add_o.is_empty() {
+                continue;
+            }
+            let (ours, theirs) = (format!("{base}{add_o}"), format!("{base}{add_t}"));
+            let merged =
+                merge(path, base, &ours, &theirs).unwrap_or_else(|| panic!("{path} did not merge"));
+            assert!(
+                merged.contains(add_o.trim()) && merged.contains(add_t.trim()),
+                "{path}: {merged}"
+            );
+        }
+        // Fields added to one Go struct, members to one C# class.
+        let go = |f: &str| format!("package a\n\ntype S struct {{\n\tA int\n{f}}}\n");
+        let merged = merge("a.go", &go(""), &go("\tB int\n"), &go("\tC int\n")).unwrap();
+        assert!(
+            merged.contains("\tB int") && merged.contains("\tC int"),
+            "{merged}"
+        );
+        let cs = |m: &str| format!("class A {{\n    void X() {{}}\n{m}}}\n");
+        let merged = merge(
+            "a.cs",
+            &cs(""),
+            &cs("    void Y() {}\n"),
+            &cs("    void Z() {}\n"),
+        )
+        .unwrap();
+        assert!(
+            merged.contains("void Y()") && merged.contains("void Z()"),
+            "{merged}"
+        );
+    }
+
+    #[test]
+    fn the_same_name_changed_twice_stays_a_conflict() {
+        let base = "fn old() {}\n";
+        assert!(merge("a.rs", base, "fn mine() {}\n", "fn yours() {}\n").is_none());
+        let base = "{\"a\": 1, \"b\": 2}\n";
+        assert!(
+            merge(
+                "a.json",
+                base,
+                "{\"a\": 3, \"b\": 2}\n",
+                "{\"a\": 4, \"b\": 2}\n"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn every_grammar_loads_and_parses() {
+        let samples = [
+            ("a.c", "int f(void) { return 1; }\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.cpp", "class A { int f(); };\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.cs", "class A { void F() {} }\n"),
+            ("a.rb", "def f\n  1\nend\n"),
+            ("a.php", "<?php\nfunction f() { return 1; }\n"),
+            ("a.sh", "f() { echo hi; }\n"),
+            ("a.json", "{\"a\": 1}\n"),
+            ("a.css", "a { color: red; }\n"),
+            ("a.html", "<p>hi</p>\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.scala", "object A { def f = 1 }\n"),
+            ("a.lua", "function f() return 1 end\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.kt", "fun f() = 1\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.swift", "func f() -> Int { return 1 }\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.hs", "f :: Int\nf = 1\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.ex", "defmodule A do\nend\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.zig", "fn f() void {}\n"),
+            ("a.yaml", "a: 1\n"),
+            ("a.toml", "a = 1\n"),
+            ("a.tf", "variable \"a\" {}\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.ml", "let f x = x\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.dart", "int f() => 1;\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.sol", "contract A {}\n"),
+            ("a.proto", "syntax = \"proto3\";\nmessage A {}\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.r", "f <- function() 1\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.jl", "f(x) = x\n"),
+            ("a.nix", "{ a = 1; }\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.m", "int f(void) { return 1; }\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.ps1", "function F { 1 }\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.elm", "module A exposing (..)\n\nf = 1\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.erl", "-module(a).\nf() -> 1.\n"),
+            #[cfg(feature = "extra-grammars")]
+            ("a.gleam", "pub fn f() { 1 }\n"),
+        ];
+        for (path, text) in samples {
+            let (language, _) = grammar(path).unwrap();
+            assert!(parse(&language, text).is_some(), "{path} does not parse");
+        }
     }
 }
