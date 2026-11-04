@@ -5,7 +5,7 @@ import { DeviceDecision } from "@/components/device-decision";
 import { currentUser, HubError, hub } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Approve sign-in · Hebra" };
+export const metadata: Metadata = { title: "Approve sign-in" };
 
 type Device = { client_name: string; status: string; account: string };
 

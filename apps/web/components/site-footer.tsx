@@ -9,6 +9,8 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
     links: [
       { href: "/#how", label: "How it works" },
       { href: "/#git", label: "Compared with Git" },
+      { href: "/#heddle", label: "Heddle" },
+      { href: "/#platform", label: "Packages and releases" },
       { href: "/hub", label: "Hub" },
       ...(CLOUD ? [{ href: "/pricing", label: "Pricing" }] : []),
     ],

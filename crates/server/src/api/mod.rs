@@ -9,10 +9,19 @@ mod billing;
 mod bookmarks;
 mod checks;
 mod environments;
+mod fleet;
 mod history;
 mod live;
+mod npm;
+mod oci;
+mod packages;
 mod pipelines;
+
+pub(crate) use pipelines::RUNNER_TOKEN_PREFIX;
+pub(crate) use releases::place as webhook_place;
 mod presence;
+mod registry;
+mod releases;
 mod repos;
 mod reviews;
 mod runner;
@@ -26,12 +35,14 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{any, delete, get, post, put};
 
 use crate::error::{ApiError, ApiResult};
 use crate::server::Server;
 use crate::{headers, metrics, ratelimit};
 
+/// Largest `npm publish` (the tarball travels inside JSON, in base64).
+const MAX_NPM_PUBLISH: usize = 512 * 1024 * 1024;
 /// Largest push accepted in one request.
 const MAX_PUSH_BYTES: usize = 1024 * 1024 * 1024;
 /// Every request except live streams and object transfer must finish in this.
@@ -141,6 +152,26 @@ pub fn router(server: Arc<Server>) -> Router {
             post(pipelines::create_runner_token),
         )
         .route("/api/v1/accounts/{handle}/queue", get(pipelines::queue))
+        .route("/api/v1/accounts/{handle}/packages", get(packages::list))
+        .route(
+            "/api/v1/accounts/{handle}/package",
+            get(packages::show)
+                .patch(packages::update)
+                .delete(packages::remove),
+        )
+        .route(
+            "/api/v1/accounts/{handle}/fleet",
+            get(fleet::show).put(fleet::put),
+        )
+        .route("/api/v1/accounts/{handle}/fleet/check", post(fleet::check))
+        .route(
+            "/api/v1/accounts/{handle}/fleet/simulate",
+            post(fleet::simulate),
+        )
+        .route(
+            "/api/v1/accounts/{handle}/fleet/machines/{id}",
+            delete(fleet::stop),
+        )
         .route(
             "/api/v1/accounts/{handle}/secrets",
             get(pipelines::account_secrets),
@@ -227,6 +258,23 @@ pub fn router(server: Arc<Server>) -> Router {
         .route(&r("/checks/{id}/cancel"), post(checks::cancel))
         .route(&r("/checks/{id}/artifacts"), get(pipelines::artifacts))
         .route(&r("/insights"), get(pipelines::repo_insights))
+        .route(&r("/releases"), get(releases::list).post(releases::create))
+        .route(
+            &r("/releases/{tag}"),
+            get(releases::show)
+                .patch(releases::edit)
+                .delete(releases::remove),
+        )
+        .route(
+            &r("/webhooks"),
+            get(releases::hooks).post(releases::create_hook),
+        )
+        .route(
+            &r("/webhooks/{id}"),
+            axum::routing::patch(releases::edit_hook).delete(releases::remove_hook),
+        )
+        .route(&r("/webhooks/{id}/deliveries"), get(releases::deliveries))
+        .route(&r("/webhooks/{id}/ping"), post(releases::ping))
         .route(&r("/checks/{id}/approve"), post(environments::approve))
         .route(&r("/environments"), get(environments::list))
         .route(
@@ -253,6 +301,24 @@ pub fn router(server: Arc<Server>) -> Router {
         .layer(timeout(REQUEST_TIMEOUT))
         .layer(tower_http::compression::CompressionLayer::new());
     let live = Router::new().route(&r("/stream"), get(live::stream));
+    // Package registries: big uploads, no deadline, no rate limit (one
+    // `docker push` is many requests).
+    let registries = Router::new()
+        .route("/v2/", get(oci::root))
+        .route("/v2", get(oci::root))
+        .route("/v2/{*path}", any(oci::handle))
+        .route(
+            &r("/releases/{tag}/assets/{asset}"),
+            get(releases::download)
+                .put(releases::upload)
+                .post(releases::upload)
+                .delete(releases::remove_asset),
+        )
+        .route(
+            "/npm/{*path}",
+            any(npm::handle).layer(DefaultBodyLimit::max(MAX_NPM_PUBLISH)),
+        )
+        .layer(DefaultBodyLimit::disable());
     // Probes (kubelet, load balancers) are not rate limited.
     let probes = Router::new()
         .route("/api/v1/health", get(system::health))
@@ -266,6 +332,7 @@ pub fn router(server: Arc<Server>) -> Router {
             ratelimit::rate_limit,
         ))
         .merge(probes)
+        .merge(registries)
         .layer(from_fn_with_state(
             Arc::clone(&server),
             headers::security_headers,

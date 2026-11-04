@@ -654,3 +654,54 @@ fn whoever_fills_an_empty_change_becomes_its_author() {
     assert_eq!(shown["author"]["name"], "codex");
     assert_eq!(shown["author"]["kind"], "agent");
 }
+
+#[test]
+fn search_finds_code_by_its_words_and_changes_by_their_reasons() {
+    let repo = Repo::init(&[
+        (
+            "src/billing.rs",
+            "/// Charges a card for an invoice.\npub fn charge_invoice(total: u64) -> bool {\n    total > 0\n}\n\npub fn refund() {}\n",
+        ),
+        (
+            "src/dates.ts",
+            "export function parseDate(text: string): Date {\n  return new Date(text);\n}\n",
+        ),
+        (
+            "README.md",
+            "# Hebra demo\n\n## Payments\nHow invoices get charged.\n",
+        ),
+    ]);
+    json(&repo.root, &["commit", "-m", "Accept payments with Stripe"]);
+
+    let found = json(&repo.root, &["search", "charge", "invoice"]);
+    let first = &found["results"][0];
+    assert_eq!(first["path"], "src/billing.rs", "{found}");
+    assert_eq!(first["name"], "charge_invoice");
+    assert_eq!(
+        (first["start"].as_i64(), first["end"].as_i64()),
+        (Some(1), Some(4))
+    );
+
+    // camelCase is split, and words are stemmed.
+    let found = json(&repo.root, &["search", "parse", "dates"]);
+    assert_eq!(found["results"][0]["name"], "parseDate", "{found}");
+    let found = json(&repo.root, &["search", "stripe"]);
+    assert!(
+        found["changes"][0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Stripe"),
+        "{found}"
+    );
+
+    // A file that changes is indexed again; the old version is gone.
+    repo.write("src/billing.rs", "pub fn settle_account() {}\n");
+    let found = json(&repo.root, &["search", "--code-only", "settle"]);
+    assert_eq!(found["results"][0]["path"], "src/billing.rs");
+    assert_eq!(found["indexed"]["files"], 1);
+    let out = run(
+        &repo.root,
+        &["search", "--code-only", "charge_invoice", "--", "src"],
+    );
+    assert_eq!(out.status.code(), Some(1), "nothing left to find");
+}

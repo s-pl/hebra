@@ -17,11 +17,20 @@ fn commit_and_push(env: &common::Env, dir: &std::path::Path, file: &str, text: &
     env.ok(dir, &["push", "--bookmark", "main", "-r", "@-"], &[]);
 }
 
+/// The runs of `main`'s commit, once the push has queued all five checks
+/// (the server queues them just after answering the push).
 fn checks(env: &common::Env, dir: &std::path::Path) -> Vec<Value> {
-    env.ok(dir, &["checks", "list", "main"], &[])["checks"]
-        .as_array()
-        .unwrap()
-        .clone()
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let runs = env.ok(dir, &["checks", "list", "main"], &[])["checks"]
+            .as_array()
+            .unwrap()
+            .clone();
+        if runs.len() >= 5 || std::time::Instant::now() > deadline {
+            return runs;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 fn by_name<'a>(runs: &'a [Value], name: &str) -> &'a Value {

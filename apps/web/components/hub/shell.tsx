@@ -184,6 +184,7 @@ export function HubShell({
         { key: "T", label: "Tasks", href: `${base}/tasks`, match: "prefix" },
         { key: "K", label: "Checks", href: `${base}/checks`, match: "prefix" },
         { key: "D", label: "Deploys", href: `${base}/deployments`, match: "prefix" },
+        { key: "E", label: "Releases", href: `${base}/releases`, match: "prefix" },
         { key: "I", label: "Insights", href: `${base}/insights`, match: "prefix" },
         ...(caps?.features.merge_queue
           ? [{ key: "Q", label: "Queue", href: `${base}/queue`, match: "prefix" as const }]

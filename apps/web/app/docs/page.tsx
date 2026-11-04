@@ -6,7 +6,8 @@ import { DOCS } from "@/lib/docs";
 
 export const metadata: Metadata = {
   title: "Documentation",
-  description: "How to use Hebra: the guide, coming from Git, every Git command, agents, self-hosting and the API.",
+  description:
+    "How to use Hebra: the guide, coming from Git, every Git command, agents, checks and runners, Heddle, packages, self-hosting and the API.",
 };
 
 export default function DocsIndex() {

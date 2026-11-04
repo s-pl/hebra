@@ -16,7 +16,7 @@ type Comparison = { commits: CommitSummary[]; files: FileDiff[]; fork: string | 
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Compare · ${owner}/${repo} · Hebra` };
+  return { title: `Compare · ${owner}/${repo}` };
 }
 
 function Branches({ name, value, options }: { name: string; value: string; options: string[] }) {

@@ -226,8 +226,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the heavier checks, and [SECURITY.md]
 
 ## Roadmap
 
-- **Now:** every Git command, Git remotes, content-addressed store with delta-compressed packs, operation log with undo that keeps later work, concurrent commands that merge instead of locking, one workspace per agent, claims and overlap warnings, conflicts as data and structural merge for Rust, TypeScript, JavaScript, Python, Go and Java, rename-aware merges, provenance on every change, partial clones and sparse workspaces, MCP server, `--json`, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, checks and runners, live events, web hub.
-- **Next:** a hosted server, `hb search` ([proposal](docs/design/semantic-search.md)), structural merge for more languages.
+- **Now:** every Git command, Git remotes (clones read Git packs directly; signed commits reach Git signed), content-addressed store with delta-compressed packs, operation log with undo that keeps later work, concurrent commands that merge instead of locking, one workspace per agent, claims and overlap warnings, conflicts as data and structural merge (18 grammars, 30 with `extra-grammars`, and a layout merge for any other text), rename-aware merges, provenance on every change, partial clones and sparse workspaces, `hb search` (BM25 over functions, types and sections), MCP server, `--json`, `hebra-server` with push/pull, mandates per agent, reviews merged by the server, tasks, pipelines and environments, GitHub Actions workflows, runners on any VPS, Heddle (reuse, and runner machines on Hetzner Cloud, DigitalOcean, Vultr or Docker), npm and container registries, releases, signed webhooks, live events, web hub.
+- **Next:** a hosted server, search by meaning ([proposal](docs/design/semantic-search.md)), more registries (Cargo, PyPI), GPU machines in Heddle.
 - **Later:** SDKs generated from the API.
 
 ## License

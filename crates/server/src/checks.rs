@@ -457,6 +457,30 @@ fn read_file(
     Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
+/// `.github/workflows/*.yml` of a commit, with their text.
+fn workflow_files(
+    store: &hebra_core::store::Store,
+    commit: ObjectId,
+) -> ApiResult<Vec<(String, String)>> {
+    let c: Commit = store.read_json(COMMIT, &commit)?;
+    let tree: Tree = store.read_tree(&c.tree)?;
+    let mut out = Vec::new();
+    for (path, entry) in &tree.files {
+        let Some(name) = path.strip_prefix(".github/workflows/") else {
+            continue;
+        };
+        if name.contains('/')
+            || !(name.ends_with(".yml") || name.ends_with(".yaml"))
+            || !entry.is_file()
+        {
+            continue;
+        }
+        let bytes = store.read(BLOB, &entry.blob)?;
+        out.push((path.clone(), String::from_utf8_lossy(&bytes).into_owned()));
+    }
+    Ok(out)
+}
+
 impl Server {
     async fn file_at(
         &self,
@@ -475,7 +499,10 @@ impl Server {
         commit: ObjectId,
     ) -> ApiResult<Vec<CheckSpec>> {
         let Some(text) = self.file_at(repo, commit, CHECKS_FILE).await? else {
-            return Ok(Vec::new());
+            // No Hebra checks: the repository's GitHub Actions workflows.
+            let store = self.store(repo);
+            let files = blocking(move || workflow_files(&store, commit)).await?;
+            return crate::gha::translate(&files);
         };
         let file: ChecksFile =
             toml::from_str(&text).map_err(|e| ApiError::bad(format!("{CHECKS_FILE}: {e}")))?;
@@ -630,7 +657,7 @@ impl Server {
                 let mut labels: Vec<String> = spec
                     .labels
                     .iter()
-                    .map(|l| substitute(l, &instance.values))
+                    .map(|l| crate::gha::normalize_label(&substitute(l, &instance.values)))
                     .collect();
                 // Environments: who may deploy, from where, on which runners.
                 let from = match trigger {

@@ -9,7 +9,7 @@ import { safeNext } from "@/lib/session";
 import { button, TONE_BADGE } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Sign in · Hebra" };
+export const metadata: Metadata = { title: "Sign in" };
 
 const ERRORS: Record<string, string> = {
   github: "GitHub sign-in did not work. Try again.",

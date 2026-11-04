@@ -42,6 +42,12 @@ pub fn wanted(ws: &Workspace, args: &SignArgs) -> Option<Signer> {
     Some(signer)
 }
 
+/// The signer the author's settings describe, for signing again what they
+/// signed before (commits sent to Git).
+pub fn configured(ws: &Workspace) -> Signer {
+    signer(ws)
+}
+
 fn signer(ws: &Workspace) -> Signer {
     Signer {
         ssh: setting(ws, "gpg.format").as_deref() == Some("ssh"),

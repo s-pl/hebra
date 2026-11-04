@@ -11,6 +11,7 @@ import { button } from "@/lib/ui";
 const LINKS = [
   { href: "/#how", label: "How it works" },
   { href: "/#git", label: "Git" },
+  { href: "/#heddle", label: "Heddle" },
   { href: "/docs", label: "Docs" },
   { href: "/hub", label: "Hub" },
   ...(CLOUD ? [{ href: "/pricing", label: "Pricing" }] : []),

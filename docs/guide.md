@@ -33,6 +33,7 @@ hb switch -c topic              # start a branch
 hb new REV [REV…]               # start a new change on top of one or more revisions
 hb blame FILE                   # who wrote each line, for which task and prompt
 hb grep PATTERN                 # search tracked files
+hb search retry webhook         # find code by its words: functions, types, sections, and the changes behind them
 ```
 
 These are the same commands as in Git, with the same flags: [git-commands.md](git-commands.md) has the full list.

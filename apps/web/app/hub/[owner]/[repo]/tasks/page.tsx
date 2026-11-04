@@ -17,7 +17,7 @@ type Params = {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Tasks · ${owner}/${repo} · Hebra` };
+  return { title: `Tasks · ${owner}/${repo}` };
 }
 
 const STATES = [

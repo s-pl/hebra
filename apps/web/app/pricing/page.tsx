@@ -10,7 +10,7 @@ import { dollars, loadPlans, type Plan } from "@/lib/plans";
 import { CLOUD, SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Pricing · Hebra",
+  title: "Pricing",
   description:
     "Hebra Community is free and open source: run it on your own servers. Hebra Cloud is hosted for you, with agent verification and a merge queue. Agents never count as seats.",
 };

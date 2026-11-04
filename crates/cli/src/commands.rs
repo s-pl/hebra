@@ -459,6 +459,12 @@ pub fn execute(command: Command, cwd: &Path) -> Result<Output> {
             ws.read(&actor, &prov, |tx| inspect::grep(tx, &args))
                 .map_err(Into::into)
         }
+        Command::Search(mut args) => {
+            args.paths = porcelain::tree_paths(&ws, cwd, &args.paths)?;
+            let index = ws.repo_dir.join("search.db");
+            ws.read(&actor, &prov, |tx| crate::search::run(tx, &index, &args))
+                .map_err(Into::into)
+        }
         Command::Shortlog {
             summary,
             email,

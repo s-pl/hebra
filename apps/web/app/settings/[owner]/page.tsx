@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import {
   addTeamMember,
   createAgent,
@@ -17,17 +18,7 @@ import { CopyCommand } from "@/components/copy-command";
 import { ActionButton, ActionForm, Field, Input, SecretOnce, Select, SubmitButton } from "@/components/hub/forms";
 import { loadSettings, ownerTabs, SettingsFrame } from "@/components/hub/settings-frame";
 import { ActorAvatar, Card, Chip, Empty, ServerDown } from "@/components/hub/ui";
-import {
-  type Account,
-  ago,
-  HubError,
-  hub,
-  type Membership,
-  type QueuedRun,
-  type Runner,
-  type SecretInfo,
-  type Team,
-} from "@/lib/hub";
+import { type Account, ago, HubError, hub, type Membership, type Runner, type SecretInfo, type Team } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +26,7 @@ type Params = { params: Promise<{ owner: string }>; searchParams: Promise<{ tab?
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner } = await params;
-  return { title: `${owner} · Settings · Hebra` };
+  return { title: `${owner} · Settings` };
 }
 
 const ROLES = ["member", "admin", "owner"] as const;
@@ -338,69 +329,7 @@ export default async function OwnerSettingsPage({ params, searchParams }: Params
     );
   }
 
-  if (tab === "heddle") {
-    const queue = await hub<{ queued: QueuedRun[]; runners: Runner[] }>(
-      `/accounts/${encodeURIComponent(owner)}/queue`,
-    ).catch(() => ({ queued: [] as QueuedRun[], runners: [] as Runner[] }));
-    const busy = queue.runners.filter((r) => r.busy).length;
-    const idle = queue.runners.filter((r) => r.online && !r.busy).length;
-    const server = ctx.caps?.public_url || "https://your-hebra-server";
-    return frame(
-      <>
-        <Card
-          title="Heddle™"
-          sub="Build intelligence. The server already skips checks whose inputs did not change; Heddle also starts and stops runner machines for this queue, weighing what they cost against how long people wait."
-        >
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              [queue.queued.filter((q) => !q.blocked).length, "waiting for a runner"],
-              [busy, "runners busy"],
-              [idle, "runners idle"],
-            ].map(([n, what]) => (
-              <div key={String(what)} className="rounded-xl bg-wash p-4">
-                <p className="tnum font-medium text-[28px] leading-none">{n}</p>
-                <p className="mt-1.5 text-[13px] text-ink-3">{what}</p>
-              </div>
-            ))}
-          </div>
-          {queue.queued.length > 0 ? (
-            <ul className="mt-4 grid divide-y divide-[var(--border)]">
-              {queue.queued.slice(0, 20).map((q) => (
-                <li key={q.id} className="flex flex-wrap items-center gap-3 py-2 text-[13px]">
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium">{q.name}</span> <span className="text-ink-3">· {q.repo}</span>
-                  </span>
-                  {q.blocked ? <Chip>waits for others</Chip> : null}
-                  {q.labels.map((l) => (
-                    <Chip key={l}>{l}</Chip>
-                  ))}
-                  <span className="tnum font-mono text-[12px] text-ink-3">{Math.round(q.waiting_ms / 1000)}s</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-[13px] text-ink-3">Nothing is waiting.</p>
-          )}
-        </Card>
-        <Card
-          title="Let Heddle run the machines"
-          sub="Try a policy on a made-up or recorded workload first, then let it start and stop machines. Today machines are Docker containers on one computer, standing in for virtual machines with the catalog's sizes, boot times and prices."
-        >
-          <div className="grid gap-2 [&>*]:min-w-0">
-            <CopyCommand command="hb heddle simulate --workload team --goal balanced" />
-            <CopyCommand
-              command={`hb heddle up --owner ${owner} --server ${server} --goal balanced --max-machines 4`}
-            />
-            <CopyCommand command={`hb heddle down --owner ${owner}`} />
-          </div>
-          <p className="mt-3 text-[12.5px] text-ink-3">
-            Goals: cheap (smallest bill, waits up to 5 minutes), balanced, fast. Prices come from a catalog file (
-            <code className="font-mono">--catalog</code>).
-          </p>
-        </Card>
-      </>,
-    );
-  }
+  if (wanted === "heddle") redirect(`/settings/${owner}/heddle`);
 
   if (tab === "secrets") {
     const { secrets } = await hub<{ secrets: SecretInfo[] }>(`/accounts/${encodeURIComponent(owner)}/secrets`).catch(

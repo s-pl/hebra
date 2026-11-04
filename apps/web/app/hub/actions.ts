@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { HubError, hub, type Me, repoPath, SESSION_COOKIE } from "@/lib/hub";
+import { HubError, hub, type Me, repoPath, SERVER_URL, SESSION_COOKIE, sessionToken } from "@/lib/hub";
 import { safeNext, setSession } from "@/lib/session";
 
 /**
@@ -582,4 +582,286 @@ export async function setSpendingLimit(
       : `Spending limit set to $${dollars.toFixed(2)} a month.`,
     `/settings/${owner}/billing`,
   );
+}
+
+// ------------------------------------------------------------------- Heddle
+
+const numberOr = (form: FormData, key: string): number | undefined => {
+  const raw = text(form, key);
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Saves the fleet: provider, its token (kept when left empty) and Heddle's limits. */
+export async function saveFleet(owner: string, _prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const provider = text(form, "provider");
+  if (!provider) return { ok: false, message: "Pick where machines run." };
+  const config: Record<string, unknown> = {
+    goal: text(form, "goal") || "balanced",
+    max_machines: numberOr(form, "max_machines"),
+    max_spend_per_hour: numberOr(form, "max_spend_per_hour"),
+    time_value_per_hour: numberOr(form, "time_value_per_hour"),
+    min_idle: numberOr(form, "min_idle"),
+    labels: list(form, "labels"),
+    region: text(form, "region") || undefined,
+    image: text(form, "image") || undefined,
+    server_url: text(form, "server_url") || undefined,
+    ssh_keys: list(form, "ssh_keys"),
+    billing: text(form, "billing") || undefined,
+    version: text(form, "version") || undefined,
+    boot_timeout_secs: numberOr(form, "boot_timeout_secs"),
+    docker: form.get("docker") === "on",
+  };
+  for (const [k, v] of Object.entries(config)) {
+    if (v === undefined || (Array.isArray(v) && v.length === 0)) delete config[k];
+  }
+  const token = text(form, "credentials");
+  return call(
+    account(owner, "/fleet"),
+    "PUT",
+    { enabled: form.get("enabled") === "on", provider, config, credentials: token || undefined },
+    form.get("enabled") === "on" ? "Saved. Heddle looks at the queue every few seconds." : "Saved. The fleet is off.",
+    `/settings/${owner}/heddle`,
+  );
+}
+
+/** Asks the provider for its machine types with the stored settings. */
+export async function checkFleet(owner: string): Promise<ActionResult> {
+  return call(account(owner, "/fleet/check"), "POST", {}, "The provider answered.");
+}
+
+/** Every policy on the owner's own recent runs. */
+export async function simulateFleet(owner: string, days: number): Promise<ActionResult> {
+  return call(account(owner, "/fleet/simulate"), "POST", { days }, "Done.");
+}
+
+export async function stopMachine(owner: string, id: string): Promise<ActionResult> {
+  return call(
+    account(owner, `/fleet/machines/${encodeURIComponent(id)}`),
+    "DELETE",
+    undefined,
+    "Stopped.",
+    `/settings/${owner}/heddle`,
+  );
+}
+
+// ----------------------------------------------------------------- packages
+
+const packagePath = (owner: string) => account(owner, "/package");
+
+export async function setPackageVisibility(
+  owner: string,
+  kind: string,
+  name: string,
+  open: boolean,
+): Promise<ActionResult> {
+  return call(
+    packagePath(owner),
+    "PATCH",
+    { kind, name, public: open },
+    open ? "Anyone can install it now." : "Only people with access can install it now.",
+    `/hub/${owner}/packages`,
+  );
+}
+
+export async function describePackage(
+  owner: string,
+  kind: string,
+  name: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  return call(
+    packagePath(owner),
+    "PATCH",
+    { kind, name, description: text(form, "description") },
+    "Saved.",
+    `/hub/${owner}/packages`,
+  );
+}
+
+export async function deletePackage(
+  owner: string,
+  kind: string,
+  name: string,
+  version?: string,
+): Promise<ActionResult> {
+  const result = await call(
+    `${packagePath(owner)}?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}${version ? `&version=${encodeURIComponent(version)}` : ""}`,
+    "DELETE",
+    undefined,
+    version ? `Removed ${version}.` : "Package removed.",
+    `/hub/${owner}/packages`,
+  );
+  if (result.ok && !version) redirect(`/hub/${owner}/packages`);
+  return result;
+}
+
+// ----------------------------------------------------------------- releases
+
+export async function createRelease(full: string, _prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const tag = text(form, "tag");
+  if (!tag) return { ok: false, message: "Pick a tag: push one with `hb tag v1.0 && hb push --tags`." };
+  const result = await call(
+    repoPath(full, "/releases"),
+    "POST",
+    {
+      tag,
+      title: text(form, "title") || undefined,
+      notes: text(form, "notes"),
+      draft: form.get("draft") === "on",
+      prerelease: form.get("prerelease") === "on",
+    },
+    "Release created.",
+    `/hub/${full}/releases`,
+  );
+  if (result.ok) redirect(`/hub/${full}/releases/${encodeURIComponent(tag)}`);
+  return result;
+}
+
+export async function editRelease(
+  full: string,
+  tag: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/releases/${encodeURIComponent(tag)}`),
+    "PATCH",
+    {
+      title: text(form, "title"),
+      notes: text(form, "notes"),
+      draft: form.get("draft") === "on",
+      prerelease: form.get("prerelease") === "on",
+    },
+    "Saved.",
+    `/hub/${full}/releases`,
+  );
+}
+
+export async function publishRelease(full: string, tag: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/releases/${encodeURIComponent(tag)}`),
+    "PATCH",
+    { draft: false },
+    "Published.",
+    `/hub/${full}/releases`,
+  );
+}
+
+export async function deleteRelease(full: string, tag: string): Promise<ActionResult> {
+  const result = await call(
+    repoPath(full, `/releases/${encodeURIComponent(tag)}`),
+    "DELETE",
+    undefined,
+    "Release removed. The tag stays.",
+    `/hub/${full}/releases`,
+  );
+  if (result.ok) redirect(`/hub/${full}/releases`);
+  return result;
+}
+
+/** Most a file sent through the web may weigh; larger ones go with the API. */
+const MAX_WEB_UPLOAD = 100 * 1024 * 1024;
+
+export async function uploadAsset(
+  full: string,
+  tag: string,
+  _prev: ActionResult | null,
+  form: FormData,
+): Promise<ActionResult> {
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Choose a file." };
+  if (file.size > MAX_WEB_UPLOAD) {
+    return { ok: false, message: "Over 100 MB: upload it with the API (PUT …/assets/{name})." };
+  }
+  const name = text(form, "name") || file.name;
+  const token = await sessionToken();
+  try {
+    const res = await fetch(
+      `${SERVER_URL}/api/v1${repoPath(full, `/releases/${encodeURIComponent(tag)}/assets/${encodeURIComponent(name)}`)}`,
+      {
+        method: "PUT",
+        cache: "no-store",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Content-Type": file.type || "application/octet-stream",
+        },
+        body: Buffer.from(await file.arrayBuffer()),
+      },
+    );
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, message: body?.error?.message ?? `HTTP ${res.status}` };
+  } catch {
+    return { ok: false, message: "The Hebra server is not answering." };
+  }
+  revalidatePath(`/hub/${full}/releases`, "layout");
+  return { ok: true, message: `Uploaded ${name}.` };
+}
+
+export async function deleteAsset(full: string, tag: string, asset: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/releases/${encodeURIComponent(tag)}/assets/${encodeURIComponent(asset)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/hub/${full}/releases`,
+  );
+}
+
+// ----------------------------------------------------------------- webhooks
+
+export async function createWebhook(full: string, _prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const url = text(form, "url");
+  if (!/^https?:\/\//.test(url)) return { ok: false, message: "The address starts with https:// (or http://)." };
+  const events = form.getAll("events").map(String);
+  const result = await call(
+    repoPath(full, "/webhooks"),
+    "POST",
+    { url, events: events.length > 0 ? events : ["*"], secret: text(form, "secret") || undefined },
+    "Webhook added. Copy its secret now: it is not shown again.",
+    `/hub/${full}/settings`,
+  );
+  if (result.ok && result.data && typeof result.data === "object" && "secret" in result.data) {
+    result.data = { ...result.data, mandate: (result.data as { secret: string }).secret };
+  }
+  return result;
+}
+
+export async function toggleWebhook(full: string, id: string, active: boolean): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/webhooks/${encodeURIComponent(id)}`),
+    "PATCH",
+    { active },
+    active ? "On." : "Paused.",
+    `/hub/${full}/settings`,
+  );
+}
+
+export async function deleteWebhook(full: string, id: string): Promise<ActionResult> {
+  return call(
+    repoPath(full, `/webhooks/${encodeURIComponent(id)}`),
+    "DELETE",
+    undefined,
+    "Removed.",
+    `/hub/${full}/settings`,
+  );
+}
+
+export async function pingWebhook(full: string, id: string): Promise<ActionResult> {
+  const result = await call(
+    repoPath(full, `/webhooks/${encodeURIComponent(id)}/ping`),
+    "POST",
+    {},
+    "Sent.",
+    `/hub/${full}/settings`,
+  );
+  const status = (result.data as { status?: number | null } | undefined)?.status;
+  if (result.ok) {
+    return status && status >= 200 && status < 300
+      ? { ok: true, message: `It answered ${status}.` }
+      : { ok: false, message: status ? `It answered ${status}.` : "It did not answer." };
+  }
+  return result;
 }

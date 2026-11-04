@@ -1,21 +1,72 @@
 import type { Metadata } from "next";
 import {
   type ActionResult,
+  createWebhook,
   deleteEnvironment,
   deleteEnvironmentSecret,
   deleteRepoSecret,
   deleteRepository,
+  deleteWebhook,
   grantAccess,
+  pingWebhook,
   revokeAccess,
   saveEnvironment,
   setEnvironmentSecret,
   setRepoSecret,
+  toggleWebhook,
   updateRepository,
 } from "@/app/hub/actions";
-import { ActionButton, ActionForm, Field, Input, Select, SubmitButton, TextArea } from "@/components/hub/forms";
+import {
+  ActionButton,
+  ActionForm,
+  Field,
+  Input,
+  SecretOnce,
+  Select,
+  SubmitButton,
+  TextArea,
+} from "@/components/hub/forms";
 import { loadRepo, RepoFrame } from "@/components/hub/repo-frame";
 import { ActorAvatar, Card, Chip, Empty, PageTitle } from "@/components/hub/ui";
-import { ago, atLeast, type Environment, hub, type RepoRole, repoPath, type SecretInfo } from "@/lib/hub";
+import {
+  ago,
+  atLeast,
+  type Delivery,
+  type Environment,
+  hub,
+  type RepoRole,
+  repoPath,
+  type SecretInfo,
+  type Webhook,
+} from "@/lib/hub";
+
+const HOOK_EVENTS: { id: string; what: string }[] = [
+  { id: "push", what: "a bookmark moved" },
+  { id: "review", what: "reviews opened, approved, merged" },
+  { id: "task", what: "tasks claimed and done" },
+  { id: "check", what: "checks started and finished" },
+  { id: "release", what: "releases published" },
+];
+
+const answered = (status: number | null | undefined) => status != null && status >= 200 && status < 300;
+
+function DeliveryLine({ d }: { d: Delivery }) {
+  const ok = answered(d.status);
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 text-[12px]">
+      <span
+        className={`tnum inline-flex h-5 items-center rounded-full px-2 font-medium font-mono ${ok ? "bg-[color-mix(in_oklch,var(--ok)_12%,transparent)] text-ok" : "bg-[color-mix(in_oklch,var(--err)_12%,transparent)] text-err"}`}
+      >
+        {d.status ?? "no answer"}
+      </span>
+      <span className="font-medium">{d.event}</span>
+      <span className="text-ink-3">
+        try {d.attempt} · {d.duration_ms} ms · {ago(d.at)}
+      </span>
+      {d.error ? <span className="min-w-0 flex-1 truncate text-err">{d.error}</span> : null}
+    </li>
+  );
+}
 
 function SecretRows({
   secrets,
@@ -67,7 +118,7 @@ type Grant = { principal: { account: string; kind: string } | { team: string }; 
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Settings · ${owner}/${repo} · Hebra` };
+  return { title: `Settings · ${owner}/${repo}` };
 }
 
 const ROLES: { role: RepoRole; what: string }[] = [
@@ -104,6 +155,16 @@ export default async function RepoSettingsPage({ params }: Params) {
       hub<{ secrets: SecretInfo[] }>(repoPath(full, `/environments/${encodeURIComponent(e.name)}/secrets`))
         .then((r) => r.secrets)
         .catch(() => [] as SecretInfo[]),
+    ),
+  );
+  const { webhooks } = await hub<{ webhooks: Webhook[] }>(repoPath(full, "/webhooks")).catch(() => ({
+    webhooks: [] as Webhook[],
+  }));
+  const deliveries = await Promise.all(
+    webhooks.map((h) =>
+      hub<{ deliveries: Delivery[] }>(repoPath(full, `/webhooks/${encodeURIComponent(h.id)}/deliveries`))
+        .then((r) => r.deliveries.slice(0, 8))
+        .catch(() => [] as Delivery[]),
     ),
   );
   const label = (g: Grant) => ("team" in g.principal ? `team:${g.principal.team}` : g.principal.account);
@@ -352,6 +413,106 @@ export default async function RepoSettingsPage({ params }: Params) {
                   </Field>
                   <SubmitButton pendingLabel="Adding">Add</SubmitButton>
                 </div>
+              </ActionForm>
+            </div>
+          </Card>
+        </div>
+
+        <div id="webhooks" className="scroll-mt-20">
+          <Card
+            title="Webhooks"
+            sub={
+              <>
+                A POST with JSON for each event, signed with HMAC-SHA256 of the body in{" "}
+                <code className="font-mono">X-Hebra-Signature-256</code>. Failed deliveries are tried three times.
+              </>
+            }
+          >
+            {webhooks.length === 0 ? (
+              <p className="text-[13px] text-ink-3">None yet.</p>
+            ) : (
+              <ul className="grid divide-y divide-[var(--border)]">
+                {webhooks.map((h, i) => (
+                  <li key={h.id} className="grid gap-2 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="size-2 shrink-0 rounded-full"
+                        style={{
+                          background: !h.active
+                            ? "var(--ink-3)"
+                            : !h.last_delivery
+                              ? "var(--ink-3)"
+                              : answered(h.last_delivery.status)
+                                ? "var(--ok)"
+                                : "var(--err)",
+                        }}
+                      />
+                      <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{h.url}</code>
+                      {h.active ? null : <Chip>paused</Chip>}
+                      <ActionButton size="sm" run={pingWebhook.bind(null, full, h.id)}>
+                        Ping
+                      </ActionButton>
+                      <ActionButton size="sm" run={toggleWebhook.bind(null, full, h.id, !h.active)}>
+                        {h.active ? "Pause" : "Resume"}
+                      </ActionButton>
+                      <ActionButton size="sm" run={deleteWebhook.bind(null, full, h.id)} confirm="Remove?">
+                        Remove
+                      </ActionButton>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 pl-4">
+                      {h.events.map((e) => (
+                        <Chip key={e}>{e === "*" ? "every event" : e}</Chip>
+                      ))}
+                      <span className="text-[12px] text-ink-3">
+                        added by {h.created_by} {ago(h.created_at)}
+                      </span>
+                    </div>
+                    {(deliveries[i] ?? []).length > 0 ? (
+                      <details className="pl-4">
+                        <summary className="cursor-pointer text-[12.5px] text-ink-2 hover:text-ink">
+                          Last deliveries
+                        </summary>
+                        <ul className="mt-1 grid divide-y divide-[var(--border)]">
+                          {(deliveries[i] ?? []).map((d) => (
+                            <DeliveryLine key={d.id} d={d} />
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-4 border-line border-t pt-4">
+              <ActionForm action={createWebhook.bind(null, full)}>
+                <Field label="Address" htmlFor="hook-url">
+                  <Input id="hook-url" name="url" type="url" placeholder="https://example.com/hebra" required />
+                </Field>
+                <fieldset>
+                  <legend className="mb-2 font-medium text-[12.5px] text-ink-2">Events</legend>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {HOOK_EVENTS.map((e) => (
+                      <label key={e.id} className="flex items-center gap-2 text-[13px] text-ink-2">
+                        <input
+                          type="checkbox"
+                          name="events"
+                          value={e.id}
+                          defaultChecked={e.id === "push"}
+                          className="accent-[var(--accent)]"
+                        />
+                        <span className="font-medium text-ink">{e.id}</span> {e.what}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <Field label="Secret" htmlFor="hook-secret" hint="Made up for you when empty, and shown once.">
+                  <Input id="hook-secret" name="secret" type="password" autoComplete="off" />
+                </Field>
+                <div>
+                  <SubmitButton pendingLabel="Adding">Add webhook</SubmitButton>
+                </div>
+                <SecretOnce help="Check each delivery: HMAC-SHA256 of the raw body with this secret, as sha256=<hex>." />
               </ActionForm>
             </div>
           </Card>

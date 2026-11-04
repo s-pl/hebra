@@ -13,7 +13,7 @@ type Params = { params: Promise<{ owner: string; repo: string }>; searchParams: 
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Reviews · ${owner}/${repo} · Hebra` };
+  return { title: `Reviews · ${owner}/${repo}` };
 }
 
 const STATES = ["open", "queued", "merged", "closed"] as const;

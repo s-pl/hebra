@@ -8,7 +8,7 @@
 //! the existing Git commits, so a push adds to history instead of rewriting
 //! it, with the same commit ids everyone else has.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
@@ -156,6 +156,75 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Runs git with `input` on its standard input and returns its output.
+fn git_with_input(dir: &Path, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
+    let mut child = git_command(dir)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("running git (is it installed?)")?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("git has no stdin"))?
+        .write_all(input)?;
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        bail!(
+            "git {}: {}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(out.stdout)
+}
+
+/// Signs again, for Git, the exported commits that are signed in Hebra. A
+/// Hebra signature covers Hebra's bytes and Git checks its own commit
+/// object, so the signature is made again over that object. Commits come
+/// parents first; one whose parent got a new id is written again too.
+/// Returns the new id of every rewritten commit.
+fn sign_for_git(
+    mirror: &Path,
+    signer: &Signer,
+    commits: &[(String, bool)],
+) -> Result<HashMap<String, String>> {
+    let mut rewrites: HashMap<String, String> = HashMap::new();
+    for (sha, signed) in commits {
+        let text = git(mirror, &["cat-file", "commit", sha])?;
+        let (header, body) = text.split_once("\n\n").unwrap_or((text.as_str(), ""));
+        let mut moved = false;
+        let mut lines: Vec<String> = Vec::new();
+        for line in header.lines() {
+            match line.strip_prefix("parent ").and_then(|p| rewrites.get(p)) {
+                Some(new) => {
+                    lines.push(format!("parent {new}"));
+                    moved = true;
+                }
+                None => lines.push(line.to_owned()),
+            }
+        }
+        if !signed && !moved {
+            continue;
+        }
+        if *signed {
+            let payload = format!("{}\n\n{body}", lines.join("\n"));
+            let signature = signer.sign(payload.as_bytes())?;
+            lines.push(format!("gpgsig {}", signature.replace('\n', "\n ")));
+        }
+        let object = format!("{}\n\n{body}", lines.join("\n"));
+        let new = git_with_input(
+            mirror,
+            &["hash-object", "-t", "commit", "-w", "--stdin"],
+            object.as_bytes(),
+        )?;
+        rewrites.insert(sha.clone(), String::from_utf8_lossy(&new).trim().to_owned());
+    }
+    Ok(rewrites)
 }
 
 fn mirror_path(ws: &Workspace, name: &str) -> PathBuf {
@@ -486,6 +555,8 @@ fn push_git_once(
     let marks = tempfile::NamedTempFile::new()?;
     let marks_path = marks.path().to_path_buf();
     let wanted = bookmarks.to_vec();
+    let signer = crate::sign::configured(ws);
+    let mut unsigned: Option<String> = None;
     let (refs, stats) = ws.run(actor, prov, "push", |tx| {
         let io = |source: std::io::Error| hebra_core::Error::Io {
             path: "git fast-import".into(),
@@ -535,11 +606,40 @@ fn push_git_once(
                 Some((mark.trim_start_matches(':').parse().ok()?, sha.to_owned()))
             })
             .collect();
-        let pairs: Vec<(ObjectId, String)> = exported
-            .marks
+        let mut ordered = exported.marks.clone();
+        ordered.sort_unstable_by_key(|(mark, _)| *mark);
+        let mut pairs: Vec<(ObjectId, String)> = ordered
             .iter()
             .filter_map(|(mark, id)| shas.get(mark).map(|sha| (*id, sha.clone())))
             .collect();
+
+        // Commits signed here are signed again over Git's bytes.
+        let mut commits = Vec::with_capacity(pairs.len());
+        for (id, sha) in &pairs {
+            commits.push((sha.clone(), tx.commit(id)?.signature.is_some()));
+        }
+        if commits.iter().any(|(_, signed)| *signed) {
+            match sign_for_git(&mirror, &signer, &commits) {
+                Ok(rewrites) => {
+                    for (_, sha) in &mut pairs {
+                        if let Some(new) = rewrites.get(sha) {
+                            sha.clone_from(new);
+                        }
+                    }
+                    for (reference, _) in &refs {
+                        let Ok(at) = git(&mirror, &["rev-parse", reference]) else {
+                            continue;
+                        };
+                        if let Some(new) = rewrites.get(at.trim()) {
+                            git(&mirror, &["update-ref", reference, new]).map_err(|e| {
+                                hebra_core::Error::InvalidArgument(format!("{e:#}"))
+                            })?;
+                        }
+                    }
+                }
+                Err(e) => unsigned = Some(format!("{e:#}")),
+            }
+        }
         tx.git_map_insert(&pairs)?;
         Ok((refs, exported.stats))
     })?;
@@ -575,8 +675,14 @@ fn push_git_once(
     for (reference, id) in &refs {
         let _ = writeln!(text, "  {reference} -> {}", id.short());
     }
+    if let Some(reason) = &unsigned {
+        let _ = writeln!(
+            text,
+            "warning: signed commits reached Git unsigned: {reason}"
+        );
+    }
     Ok(Output::new(
-        json!({ "remote": name, "commits": stats.commits, "pushed": refs.iter().map(|(r, id)| json!({ "ref": r, "commit": id.hex() })).collect::<Vec<_>>() }),
+        json!({ "remote": name, "commits": stats.commits, "unsigned": unsigned, "pushed": refs.iter().map(|(r, id)| json!({ "ref": r, "commit": id.hex() })).collect::<Vec<_>>() }),
         text,
     ))
 }

@@ -20,7 +20,7 @@ type Params = { params: Promise<{ owner: string; repo: string; id: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Check · ${owner}/${repo} · Hebra` };
+  return { title: `Check · ${owner}/${repo}` };
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

@@ -12,7 +12,7 @@ type Params = { params: Promise<{ owner: string; repo: string; id: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo, id } = await params;
-  return { title: `${id.slice(0, 8)} · ${owner}/${repo} · Hebra` };
+  return { title: `${id.slice(0, 8)} · ${owner}/${repo}` };
 }
 
 const STATUS_LETTER = { added: "A", modified: "M", deleted: "D", renamed: "R" } as const;

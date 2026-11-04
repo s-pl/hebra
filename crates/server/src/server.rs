@@ -59,6 +59,8 @@ pub struct Server {
     pub(crate) files: crate::files::Files,
     /// Seals secrets kept in the database.
     pub(crate) sealer: crate::sealing::Sealer,
+    /// What the fleet orchestrator remembers between rounds.
+    pub(crate) fleet_memory: std::sync::Mutex<crate::fleet::FleetMemory>,
     pub(crate) bus: Bus,
     pub(crate) authority: Authority,
     pub(crate) http: reqwest::Client,
@@ -134,6 +136,7 @@ impl Server {
             objects,
             files,
             sealer,
+            fleet_memory: std::sync::Mutex::default(),
             bus,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(120))
@@ -323,6 +326,7 @@ impl Server {
     /// reporting, storage metering) go to whichever replica holds their
     /// lease.
     pub fn spawn_maintenance(self: &Arc<Self>) {
+        self.spawn_webhooks();
         let server = Arc::clone(self);
         tokio::spawn(async move {
             let replica = db::new_id("replica");
@@ -356,6 +360,10 @@ impl Server {
                 .await?
         {
             self.run_merge_queue().await?;
+        }
+        // One replica: the runner fleets, every 5 s.
+        if self.db.acquire_lease("fleets", replica, 120_000).await? {
+            self.run_fleets().await?;
         }
         // One replica: usage to Stripe, every minute.
         if round.is_multiple_of(12)

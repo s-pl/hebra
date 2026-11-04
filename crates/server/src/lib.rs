@@ -27,7 +27,9 @@ pub mod config;
 pub mod db;
 mod error;
 pub mod files;
+mod fleet;
 mod gateway;
+mod gha;
 pub mod headers;
 pub mod identity;
 mod merging;
@@ -39,6 +41,7 @@ pub mod ratelimit;
 mod sealing;
 pub mod serve;
 mod server;
+mod webhooks;
 
 /// Header types, for callers outside the server (benchmarks).
 pub use axum::http;

@@ -137,6 +137,10 @@ A pack is `HBPK1\n`, then for each object its 32-byte id, its length as a little
 | PUT, DELETE | `/accounts/{handle}/secrets/{secret}` | Set or remove one. |
 | POST | `/accounts/{handle}/runner-tokens` | A token machines register with: `{ "labels", "ephemeral", "uses", "ttl_secs" }`. |
 | GET | `/accounts/{handle}/queue` | Queued runs and runners (busy or idle), for orchestrators. |
+| GET, PUT | `/accounts/{handle}/fleet` | Heddle's fleet: provider, settings, machines, decisions, cost. PUT sets `{ "enabled", "provider", "config", "credentials" }`. |
+| POST | `/accounts/{handle}/fleet/check` | Tries the provider's credentials and lists its machine types and prices. |
+| POST | `/accounts/{handle}/fleet/simulate` | Each policy on the owner's own recent runs, with the fleet's prices. |
+| DELETE | `/accounts/{handle}/fleet/machines/{id}` | Stops one machine now. |
 | POST | `/runner/register` | A machine registers itself with a runner token. |
 | DELETE | `/runner/self` | A runner removes itself (ephemeral machines). |
 
@@ -148,6 +152,32 @@ A pack is `HBPK1\n`, then for each object its 32-byte id, its length as a little
 | PUT, DELETE | `…/environments/{env}/secrets/{secret}` | Set or remove one; they win over repository and account secrets. |
 
 The claim answer carries the run, its secrets (only names the check asks for, never for contributions still waiting for approval) and the artifacts of the checks it needs. A failed run with `retries` left goes back to the queue.
+
+## Releases and webhooks
+
+| Method | Path | |
+|---|---|---|
+| GET, POST | `…/releases` | Releases; create one on a pushed tag: `{ "tag", "title", "notes", "draft", "prerelease" }`. |
+| GET, PATCH, DELETE | `…/releases/{tag}` | One release, with its files. |
+| GET, PUT, POST, DELETE | `…/releases/{tag}/assets/{asset}` | Download, upload (raw body) or remove a file. |
+| GET, POST | `…/webhooks` | Webhooks; add one: `{ "url", "secret", "events" }` (push, review, task, check, release, or `*`). |
+| PATCH, DELETE | `…/webhooks/{id}` | Switch on or off, change events, remove. |
+| GET | `…/webhooks/{id}/deliveries` | The last deliveries: status, time, payload. |
+| POST | `…/webhooks/{id}/ping` | Sends a `ping` now. |
+
+Deliveries are `POST`s of `{ "event", "repo", "data", "at" }` with `X-Hebra-Event`, `X-Hebra-Delivery` and `X-Hebra-Signature-256: sha256=<HMAC-SHA256 of the body with the secret>`. A failed delivery is tried three times.
+
+## Packages
+
+| Method | Path | |
+|---|---|---|
+| GET | `/accounts/{handle}/packages` | An owner's npm packages and container images (`?kind=npm` or `container`). |
+| GET, PATCH, DELETE | `/accounts/{handle}/package` | One package (`?kind=&name=`): versions and tags; `{ "public", "description" }`; delete it or `?version=`. |
+
+The registries themselves speak their own protocols, outside `/api/v1`:
+
+- **npm** at `/npm/`: `npm publish`, `npm install`, `npm dist-tag`, `npm unpublish`, for packages scoped by an account (`@acme/ui`). Put a mandate in `.npmrc` as `_authToken`.
+- **Containers** at `/v2/` (the OCI distribution API): `docker login <server>` with any user name and a mandate as the password, then `docker push <server>/acme/app:1.0`. Chunked and monolithic uploads, cross-image mounts, image indexes (multi-platform), tags and `_catalog`.
 
 ## Billing
 

@@ -13,7 +13,7 @@ type Params = { params: Promise<{ owner: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner } = await params;
-  return { title: `${owner} · Hebra` };
+  return { title: `${owner}` };
 }
 
 export default async function OwnerPage({ params }: Params) {
@@ -108,6 +108,20 @@ export default async function OwnerPage({ params }: Params) {
                 className="pressable inline-flex h-9 items-center rounded-lg bg-ink px-3.5 font-medium text-[13.5px] text-bg"
               >
                 New repository
+              </Link>
+            ) : null}
+            <Link
+              href={`/hub/${owner}/packages`}
+              className="pressable inline-flex h-9 items-center rounded-lg border border-line px-3.5 text-[13.5px] hover:border-line-strong"
+            >
+              Packages
+            </Link>
+            {manages ? (
+              <Link
+                href={`/settings/${owner}/heddle`}
+                className="pressable inline-flex h-9 items-center rounded-lg border border-line px-3.5 text-[13.5px] hover:border-line-strong"
+              >
+                Heddle
               </Link>
             ) : null}
             {manages ? (

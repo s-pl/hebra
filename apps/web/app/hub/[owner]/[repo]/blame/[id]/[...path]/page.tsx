@@ -16,7 +16,7 @@ type Blame = {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo, path } = await params;
-  return { title: `Blame ${path.map(decodeURIComponent).join("/")} · ${owner}/${repo} · Hebra` };
+  return { title: `Blame ${path.map(decodeURIComponent).join("/")} · ${owner}/${repo}` };
 }
 
 export default async function BlamePage({ params }: Params) {

@@ -7,7 +7,7 @@ import { headings, Markdown } from "@/lib/markdown";
 import { CLOUD } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Billing policy · Hebra",
+  title: "Billing policy",
   description: "How Hebra Cloud plans, agent credits, spending limits, invoices, cancellations and refunds work.",
 };
 

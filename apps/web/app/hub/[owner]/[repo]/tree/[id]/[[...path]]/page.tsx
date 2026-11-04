@@ -26,7 +26,7 @@ type Node =
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo, path } = await params;
-  return { title: `${path?.map(decodeURIComponent).join("/") || "code"} · ${owner}/${repo} · Hebra` };
+  return { title: `${path?.map(decodeURIComponent).join("/") || "code"} · ${owner}/${repo}` };
 }
 
 /** Where a symlink points, as a path in the tree (null if it leaves it). */

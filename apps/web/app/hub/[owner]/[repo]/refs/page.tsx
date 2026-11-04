@@ -16,7 +16,7 @@ const DETAILED = 40;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Branches and tags · ${owner}/${repo} · Hebra` };
+  return { title: `Branches and tags · ${owner}/${repo}` };
 }
 
 export default async function RefsPage({ params }: Params) {

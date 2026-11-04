@@ -8,7 +8,7 @@ import { CopyCommand } from "@/components/copy-command";
 import { HebraGlyph, threadColor } from "@/components/hub/glyph";
 import { Cast } from "@/components/landing/cast";
 import { ConflictBlock } from "@/components/landing/conflict-block";
-import { HeddleScene } from "@/components/landing/heddle-scene";
+import { HeddleLoom } from "@/components/landing/heddle-loom";
 import type { TermLine } from "@/components/landing/term";
 import { TypedTerm } from "@/components/landing/typed-term";
 import { SiteFooter } from "@/components/site-footer";
@@ -109,29 +109,78 @@ const NUMBERS: [string, string, string][] = [
 const GAPS = [
   "Structural merge has grammars for 18 languages (30 with the extra-grammars build). Everything else merges by its layout: indentation, brackets, headings",
   "A clone from Git keeps the Git commits at its bookmarks and tags, to push on top of them. Repositories with hundreds of tags keep more",
-  "Heddle starts machines as Docker containers on one computer. Cloud providers come next",
-  "Commits signed in Hebra reach Git remotes unsigned",
-  "Search is by text. Search by meaning is a proposal",
+  "Heddle runs machines at Hetzner Cloud, DigitalOcean, Vultr or in Docker. GPU clouds and spot prices are not there yet",
+  "The registries speak npm and the OCI API (Docker, Podman). Cargo, PyPI and Maven are not there yet",
+  "GitHub workflows run their run steps. Marketplace actions other than checkout, cache and upload-artifact are skipped",
+  "hb search ranks code by the words in it. Search by meaning is a proposal",
   "Nobody hosts a public Hebra server yet, so you run your own",
 ];
 
-const HEDDLE_RULES: [string, string][] = [
-  [
-    "Same inputs, same result",
-    "Hebra's trees are Merkle trees, so the files a check reads are one hash. When that hash and the check match a run that passed, the result is reused and nothing runs.",
-  ],
-  [
-    "Wait or boot",
-    "A machine that frees up in 8 seconds beats one that boots in 30. Heddle starts a machine only when the wait would be longer than a boot, and longer than you said is fine.",
-  ],
-  [
-    "The right size",
-    "A 20-minute build gets a bigger machine when the time saved is worth more than the price. On the cheap goal, everything takes the smallest that fits.",
-  ],
-  [
-    "Keep or stop",
-    "An hourly machine finishes the hour already paid for. It stays warm into the next one only if the last hour of pushes says work is coming.",
-  ],
+/** A line of a static terminal snippet. */
+type Snip = { cmd?: string; out?: string; tone?: "ok" | "dim" };
+
+const PLATFORM: { title: string; body: string; lines: Snip[] }[] = [
+  {
+    title: "An npm registry",
+    body: "Packages scoped by an account (@acme/ui). npm publish, install, dist-tag and unpublish, with a mandate in .npmrc.",
+    lines: [
+      { cmd: "npm publish" },
+      { out: "+ @acme/ui@1.4.0", tone: "ok" },
+      { cmd: "npm dist-tag add @acme/ui@1.4.0 stable" },
+      { out: "+stable: @acme/ui@1.4.0", tone: "dim" },
+    ],
+  },
+  {
+    title: "A container registry",
+    body: "The OCI distribution API: docker login with a mandate, then push and pull. Multi-platform images and shared layers are kept once.",
+    lines: [
+      { cmd: "docker push hebra.example.com/acme/app:1.0" },
+      { out: "1.0: digest: sha256:4f1c9e… size: 1573", tone: "dim" },
+      { cmd: "docker pull hebra.example.com/acme/app:1.0" },
+      { out: "Status: Downloaded newer image", tone: "ok" },
+    ],
+  },
+  {
+    title: "Releases with files",
+    body: "A pushed tag with notes and the files a build made. Checks upload them with one curl; downloads are counted.",
+    lines: [
+      { out: "v1.4.0  Faster clones", tone: "ok" },
+      { out: "  hb-x86_64-linux.tar.gz    6.1 MB" },
+      { out: "  hb-aarch64-macos.tar.gz   5.8 MB" },
+      { out: "  SHA256SUMS                220 B", tone: "dim" },
+    ],
+  },
+  {
+    title: "Signed webhooks",
+    body: "Pushes, reviews, tasks, checks and releases POSTed as JSON, signed with HMAC-SHA256. Failed ones are tried three times, and every try is kept.",
+    lines: [
+      { out: "POST https://ci.example.com/hebra" },
+      { out: "X-Hebra-Event: release", tone: "dim" },
+      { out: "X-Hebra-Signature-256: sha256=9b1e…", tone: "dim" },
+      { out: "200 in 84 ms", tone: "ok" },
+    ],
+  },
+  {
+    title: "Your GitHub workflows run",
+    body: "A repository without .hb/checks.toml runs .github/workflows as they are: jobs, needs, matrix, containers, services, secrets.",
+    lines: [
+      { out: "runs-on: ubuntu-latest      → linux", tone: "dim" },
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub's expression syntax, shown as text
+      { out: "${{ secrets.TOKEN }}         → $TOKEN" },
+      { out: "actions/cache@v4            → cache" },
+      { out: "actions/upload-artifact@v4  → artifacts", tone: "ok" },
+    ],
+  },
+  {
+    title: "Find code by what it says",
+    body: "hb search ranks functions, types and sections by the words of the question, and the changes whose reason matches. Nothing to download.",
+    lines: [
+      { cmd: "hb search retry webhook delivery" },
+      { out: "crates/server/src/webhooks.rs:41-80  deliver", tone: "ok" },
+      { out: "    pub(crate) async fn deliver(s: &Server, …", tone: "dim" },
+      { out: "Changes  9b17d21c9ee6  feat: releases and signed webhooks", tone: "dim" },
+    ],
+  },
 ];
 
 /* hb heddle simulate --days 5, 4 November 2026, the example catalog. */
@@ -455,63 +504,101 @@ export default function Home() {
             id="heddle-title"
             title={
               <>
-                Heddle<sup className="align-super text-[0.45em]">™</sup> decides what runs, where, and on how many
-                machines.
+                Heddle<sup className="align-super text-[0.45em]">™</sup> runs your checks on as few machines as it
+                takes.
               </>
             }
-            intro="In a loom, the heddles choose which threads lift on each pass. Heddle does that for your checks: it skips the ones whose inputs did not change, and starts and stops runner machines for the rest, weighing what they cost against how long people wait."
+            intro="It skips checks whose inputs did not change, and starts and stops machines at your cloud provider for the rest. Watch one push."
           />
-          <div className="rounded-2xl bg-surface p-5 sm:p-7">
-            <HeddleScene />
+          <div className="rounded-2xl bg-surface p-4 sm:p-7">
+            <HeddleLoom />
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {HEDDLE_RULES.map(([title, body], i) => (
-              <div key={title} className="rounded-2xl bg-surface p-6">
-                <p className="flex items-center gap-2.5 text-[14px] text-ink-3">
-                  <span className="cap">{i + 1}</span>
-                </p>
-                <h3 className="mt-3 font-medium text-[16px]">{title}</h3>
-                <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">{body}</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)]">
+            {HEDDLE_NUMBERS.map(([value, what, detail]) => (
+              <div key={what} className="rounded-2xl bg-surface p-5">
+                <p className="tnum font-medium text-[30px] leading-none tracking-[-0.03em]">{value}</p>
+                <p className="mt-2 font-medium text-[13.5px]">{what}</p>
+                <p className="mt-1 text-[12.5px] text-ink-3 leading-snug">{detail}</p>
               </div>
             ))}
+            <div className="grid content-between gap-4 rounded-2xl bg-surface p-5">
+              <div className="flex flex-wrap gap-1.5">
+                {["Hetzner Cloud", "DigitalOcean", "Vultr", "Docker"].map((p) => (
+                  <span key={p} className="rounded-full bg-wash px-3 py-1 font-medium text-[12.5px]">
+                    {p}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[12.5px] text-ink-3 leading-snug">
+                Your API token, your goal, your limit. Every start and stop is logged with its reason.
+              </p>
+            </div>
           </div>
-          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <p className="mt-3 px-1 text-[12.5px] text-ink-3">
+            Numbers from <code className="font-mono">hb heddle simulate</code> on made-up workloads and an example price
+            list, 4 November 2026. Run it with your own prices.
+          </p>
+        </section>
+
+        {/* The rest of the platform */}
+        <section id="platform" aria-labelledby="platform-title" className={`${PAGE} scroll-mt-14`}>
+          <Heading
+            id="platform-title"
+            title="Packages, images and releases on the same server."
+            intro="npm and Docker talk to it with their own commands. Releases carry the files a build makes, and webhooks tell other systems what happened."
+          />
+          <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
             <div className="rounded-2xl bg-surface p-6">
               <h3 className="font-medium text-[16px]">Pipelines and deployments, in one file</h3>
               <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">
                 Steps, a matrix, checks that wait for others, containers with services, secrets masked in logs,
-                artifacts, caches and retries. An environment adds approvals, the bookmarks that may deploy, its own
-                runners and secrets.
+                artifacts, caches and retries. An environment adds approvals and its own runners and secrets.
               </p>
               <pre className="mt-4 overflow-x-auto rounded-xl bg-term px-4 py-3 font-mono text-[12.5px] text-term-text leading-relaxed">
                 {PIPELINE_TOML}
               </pre>
             </div>
-            <div className="grid gap-3">
-              <div className="rounded-2xl bg-surface p-6">
-                <h3 className="font-medium text-[16px]">A VPS becomes a runner with one command</h3>
-                <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">
-                  Make a token in the hub, run this on the machine. It registers itself and installs a service, so it
-                  comes back after reboots. Nobody signs in on it.
-                </p>
-                <div className="mt-4 grid [&>*]:min-w-0">
-                  <CopyCommand command="hb runner register --server https://hebra.example.com --token hbr_… --name vps-1 --install" />
-                </div>
-              </div>
-              <dl className="grid gap-3 sm:grid-cols-3">
-                {HEDDLE_NUMBERS.map(([value, what, detail]) => (
-                  <div key={what} className="rounded-2xl bg-surface p-5">
-                    <dd className="tnum font-medium text-[30px] leading-none tracking-[-0.03em]">{value}</dd>
-                    <dt className="mt-2 font-medium text-[13.5px]">{what}</dt>
-                    <dd className="mt-1 text-[12.5px] text-ink-3 leading-snug">{detail}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="px-1 text-[12.5px] text-ink-3">
-                From <code className="font-mono">hb heddle simulate</code> on made-up workloads and an example price
-                list, 4 November 2026. Run it with your own prices.
+            <div className="rounded-2xl bg-surface p-6">
+              <h3 className="font-medium text-[16px]">A VPS becomes a runner with one command</h3>
+              <p className="mt-1.5 text-[14px] text-ink-3 leading-relaxed">
+                Make a token in the hub and run this on the machine. It registers itself and installs a service, so it
+                comes back after reboots. Nobody signs in on it.
               </p>
+              <div className="mt-4 grid [&>*]:min-w-0">
+                <CopyCommand command="hb runner register --server https://hebra.example.com --token hbr_… --name vps-1 --install" />
+              </div>
             </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {PLATFORM.map((card) => (
+              <article key={card.title} className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-surface">
+                <div className="p-4 sm:p-5">
+                  <div className="overflow-x-auto rounded-xl bg-term px-4 py-3.5 font-mono text-[12.5px] leading-[1.7]">
+                    {card.lines.map((l) => (
+                      <p
+                        key={`${l.cmd ?? ""}${l.out ?? ""}`}
+                        className={`whitespace-pre ${
+                          l.tone === "ok" ? "text-term-ok" : l.tone === "dim" ? "text-term-dim" : "text-term-text"
+                        }`}
+                      >
+                        {l.cmd ? (
+                          <>
+                            <span className="text-term-dim">$ </span>
+                            {l.cmd}
+                          </>
+                        ) : (
+                          l.out
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <div className="px-6 pb-6">
+                  <h3 className="font-medium text-[16px] tracking-[-0.01em]">{card.title}</h3>
+                  <p className="mt-1 text-[14px] text-ink-3 leading-relaxed">{card.body}</p>
+                </div>
+              </article>
+            ))}
           </div>
         </section>
 

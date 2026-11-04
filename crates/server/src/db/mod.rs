@@ -12,9 +12,12 @@ mod accounts;
 mod billing;
 mod checks;
 mod environments;
+mod fleets;
 mod jobs;
 mod log;
+mod packages;
 mod pipelines;
+mod releases;
 mod repos;
 mod reviews;
 mod sessions;
@@ -31,12 +34,15 @@ pub use accounts::{Account, AccountKind, Member, OrgRole, Team};
 pub use billing::{Subscription, UsageLine};
 pub use checks::{CheckRun, LogChunk, NewCheckRun, Runner};
 pub use environments::{Deployment, Environment, EnvironmentRules};
+pub use fleets::{FleetEvent, FleetRow, FleetRun, MachineRow, NewMachine};
 pub use jobs::{MAX_BATCH, MergeBatch};
 pub use log::LogEntry;
+pub use packages::{Package, PackageVersion};
 pub use pipelines::{
     Artifact, NewRunnerToken, QueuedRun, Readiness, RunStat, RunnerGrant, SecretInfo, belongs_to,
     readiness,
 };
+pub use releases::{Delivery, NewRelease, Release, ReleaseAsset, Webhook};
 pub use repos::{Move, NewRepo, Repo, RepoRole, RepoSummary, Stale};
 pub use reviews::{Approval, Comment, NewComment, NewReview, Review};
 pub use sessions::{DeviceCode, MandateRecord};
@@ -79,6 +85,24 @@ const MIGRATIONS: &[Migration] = &[
         name: "environments",
         postgres: include_str!("../../migrations/postgres/0004_environments.sql"),
         sqlite: include_str!("../../migrations/sqlite/0004_environments.sql"),
+    },
+    Migration {
+        version: 5,
+        name: "fleets",
+        postgres: include_str!("../../migrations/postgres/0005_fleets.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0005_fleets.sql"),
+    },
+    Migration {
+        version: 6,
+        name: "packages",
+        postgres: include_str!("../../migrations/postgres/0006_packages.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0006_packages.sql"),
+    },
+    Migration {
+        version: 7,
+        name: "releases_webhooks",
+        postgres: include_str!("../../migrations/postgres/0007_releases_webhooks.sql"),
+        sqlite: include_str!("../../migrations/sqlite/0007_releases_webhooks.sql"),
     },
 ];
 

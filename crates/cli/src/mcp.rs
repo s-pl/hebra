@@ -526,6 +526,32 @@ fn tools() -> Vec<Tool> {
             },
         },
         Tool {
+            name: "hb_search",
+            description: "Find code by what it does: functions, types and sections ranked by the words of the question (BM25, identifiers split, words stemmed), plus the changes whose description or prompt matches. Ask in the language of the code. Cheaper than reading whole directories.",
+            properties: json!({
+                "cwd": cwd,
+                "query": { "type": "string", "description": "Words to look for, like `retry failed webhook delivery`." },
+                "revision": rev,
+                "limit": { "type": "integer", "description": "How many results (10 by default)." },
+            }),
+            required: &["query"],
+            args: |v| {
+                let mut a = vec!["search".into()];
+                opt(&mut a, "--revision", s(v, "revision"));
+                if let Some(n) = v.get("limit").and_then(Value::as_u64) {
+                    a.push("-n".into());
+                    a.push(n.to_string());
+                }
+                a.extend(
+                    s(v, "query")
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .map(str::to_owned),
+                );
+                a
+            },
+        },
+        Tool {
             name: "hb",
             description: "Run any other hb command, with the same arguments as on the command line. Hebra has every Git command (`clone`, `fetch`, `rebase`, `cherry-pick`, `revert`, `stash`, `tag`, `bisect`, `reset`, `restore`...); `hb --help` lists them. Nothing here is interactive.",
             properties: json!({

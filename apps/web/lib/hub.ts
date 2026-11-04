@@ -307,6 +307,183 @@ export type Runner = {
 
 export type Team = { id: string; handle: string; name: string; members: string[] };
 
+// ------------------------------------------------------------------ Heddle
+
+export type Goal = "cheap" | "balanced" | "fast";
+
+export type FleetConfig = {
+  goal?: Goal;
+  max_machines?: number;
+  max_spend_per_hour?: number;
+  time_value_per_hour?: number;
+  min_idle?: number;
+  labels?: string[];
+  region?: string;
+  image?: string;
+  server_url?: string;
+  ssh_keys?: string[];
+  billing?: "hour" | "second";
+  version?: string;
+  boot_timeout_secs?: number;
+  docker?: boolean;
+};
+
+export type FleetSettings = {
+  enabled: boolean;
+  provider: string;
+  config: FleetConfig;
+  has_credentials: boolean;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+export type MachineState = "provisioning" | "booting" | "ready" | "deleting" | "gone" | "failed";
+
+export type FleetMachine = {
+  id: string;
+  provider: string;
+  provider_id: string | null;
+  name: string;
+  kind: string;
+  state: MachineState;
+  price_micros: number;
+  billing: "hour" | "second";
+  cost_micros: number;
+  address: string | null;
+  reason: string | null;
+  created_at: string;
+  ready_at: string | null;
+  ended_at: string | null;
+};
+
+export type FleetEvent = { at: string; kind: string; machine: string | null; detail: string };
+
+export type Fleet = {
+  fleet: FleetSettings | null;
+  providers: string[];
+  machines: FleetMachine[];
+  events: FleetEvent[];
+  spend_per_hour_micros: number;
+  cost_this_month_micros: number;
+  queue: QueuedRun[];
+  /** Checks on the fleet's runners in the last hour. */
+  runs?: FleetRun[];
+};
+
+export type FleetRun = {
+  machine: string;
+  name: string;
+  repo: string;
+  state: string;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type MachineType = {
+  name: string;
+  cpus: number;
+  memory_gb: number;
+  price_per_hour: number;
+  billing: "hour" | "second";
+  min_billed_secs: number;
+  boot_secs: number;
+  labels: string[];
+  max: number | null;
+};
+
+export type SimReport = {
+  policy: string;
+  jobs: number;
+  cost: number;
+  wait_p50_secs: number;
+  wait_p95_secs: number;
+  wait_max_secs: number;
+  turnaround_p50_secs: number;
+  machines_started: number;
+  machine_hours: number;
+  utilization: number;
+  by_type: Record<string, { started: number; hours: number; busy_hours: number }>;
+  total_cost: number;
+};
+
+export type Simulation = { jobs: number; days?: number; reports: SimReport[]; catalog: MachineType[] };
+
+export { billedSoFar, bytes, currencyOf, money } from "@/lib/format";
+
+// ---------------------------------------------------------------- packages
+
+export type PackageKind = "npm" | "container";
+
+export type Package = {
+  id: string;
+  kind: PackageKind;
+  name: string;
+  public: boolean;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  versions?: number;
+  tags?: number;
+  latest?: string | null;
+  bytes?: number;
+};
+
+export type PackageVersion = {
+  version: string;
+  digest: string;
+  size: number;
+  meta: Record<string, unknown>;
+  published_by: string | null;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------- releases
+
+export type ReleaseAsset = {
+  id: string;
+  name: string;
+  size: number;
+  digest: string;
+  content_type: string;
+  downloads: number;
+  created_at: string;
+};
+
+export type Release = {
+  id: string;
+  tag: string;
+  commit: string;
+  title: string;
+  notes: string;
+  draft: boolean;
+  prerelease: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  assets: ReleaseAsset[];
+};
+
+export type Delivery = {
+  id: string;
+  event: string;
+  status: number | null;
+  error: string | null;
+  duration_ms: number;
+  attempt: number;
+  payload: unknown;
+  at: string;
+};
+
+export type Webhook = {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  created_by: string;
+  created_at: string;
+  last_delivery?: Delivery | null;
+};
+
 export type Mandate = {
   id: string;
   account_id: string;

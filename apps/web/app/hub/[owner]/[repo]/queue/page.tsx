@@ -12,7 +12,7 @@ type Params = { params: Promise<{ owner: string; repo: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Merge queue · ${owner}/${repo} · Hebra` };
+  return { title: `Merge queue · ${owner}/${repo}` };
 }
 
 export default async function QueuePage({ params }: Params) {

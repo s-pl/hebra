@@ -16,7 +16,7 @@ type Params = { params: Promise<{ owner: string; repo: string; id: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo, id } = await params;
-  return { title: `Review #${id} · ${owner}/${repo} · Hebra` };
+  return { title: `Review #${id} · ${owner}/${repo}` };
 }
 
 const OK = "var(--ok)";

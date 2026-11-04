@@ -744,6 +744,250 @@ pub fn merge(path: &str, base: &str, ours: &str, theirs: &str) -> Option<String>
     Some(out)
 }
 
+// ------------------------------------------------------------------ search
+
+/// A piece of a file worth finding on its own: a function, a type, a
+/// method, a section. Lines are 1-based and inclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chunk {
+    /// The declaration's name, with its owner (`Type::method`).
+    pub name: Option<String>,
+    pub kind: String,
+    pub start: usize,
+    pub end: usize,
+    pub text: String,
+}
+
+/// Lines a class or `impl` may have before its members become chunks.
+const CHUNK_LINES: usize = 60;
+/// Lines of a block of plain text.
+const BLOCK_LINES: usize = 40;
+
+/// Splits a file into chunks for search. Where a grammar knows the
+/// language: each declaration with the comments right above it, and the
+/// members of large classes, traits and modules on their own. Markdown goes
+/// by heading, and any other text in blocks of about forty lines.
+#[must_use]
+pub fn chunks(path: &str, text: &str) -> Vec<Chunk> {
+    if text.len() <= MAX_BYTES
+        && let Some((language, Family::Code)) = grammar(path)
+    {
+        let mut parser = Parser::new();
+        if parser.set_language(&language).is_ok()
+            && let Some(tree) = parser.parse(text, None)
+        {
+            let mut out = Vec::new();
+            declarations(tree.root_node(), text, None, 0, &mut out);
+            if !out.is_empty() {
+                return out;
+            }
+        }
+    }
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".md") || lower.ends_with(".mdx") || lower.ends_with(".markdown") {
+        return sections(text);
+    }
+    blocks(text, None, "text")
+}
+
+/// Whether a declaration holds members worth finding one by one.
+fn holds_members(kind: &str) -> bool {
+    [
+        "impl",
+        "class",
+        "trait",
+        "interface",
+        "module",
+        "mod_item",
+        "namespace",
+        "object",
+        "extension",
+        "protocol",
+        "contract",
+    ]
+    .iter()
+    .any(|k| kind.contains(k))
+}
+
+/// Imports and the like: noise in search results.
+fn is_preamble(kind: &str) -> bool {
+    [
+        "import",
+        "use_declaration",
+        "include",
+        "using",
+        "package_clause",
+        "extern_crate",
+    ]
+    .iter()
+    .any(|k| kind.contains(k))
+}
+
+fn declarations(
+    node: Node<'_>,
+    text: &str,
+    owner: Option<&str>,
+    depth: usize,
+    out: &mut Vec<Chunk>,
+) {
+    let mut cursor = node.walk();
+    let children: Vec<Node<'_>> = node.named_children(&mut cursor).collect();
+    // The run of comments right above the next declaration.
+    let mut notes: Option<(usize, usize)> = None;
+    for child in children {
+        if is_comment(&child) {
+            let row = child.start_position().row;
+            notes = match notes {
+                Some((start, end)) if row <= end + 1 => Some((start, child.end_position().row)),
+                _ => Some((child.start_byte(), child.end_position().row)),
+            };
+            continue;
+        }
+        let above = notes
+            .take()
+            .filter(|(_, end)| child.start_position().row <= end + 1)
+            .map(|(start, _)| start);
+        let kind = child.kind();
+        if is_preamble(kind) {
+            continue;
+        }
+        let name = name_of(child, text);
+        let qualified = match (owner, &name) {
+            (Some(o), Some(n)) => Some(format!("{o}::{n}")),
+            (None, n) => n.clone(),
+            (Some(_), None) => None,
+        };
+        let first = child.start_position().row;
+        let last = child.end_position().row;
+        if name.is_none() && last - first < 2 {
+            continue;
+        }
+        let start = above.unwrap_or_else(|| child.start_byte());
+        let start_line = text[..start].matches('\n').count() + 1;
+        if depth < 2
+            && last - first + 1 > CHUNK_LINES
+            && holds_members(kind)
+            && let Some(path) = body_path(child, text, 0)
+            && let Some((body, _)) = follow(child, &path)
+        {
+            let before = out.len();
+            declarations(body, text, qualified.as_deref(), depth + 1, out);
+            if out.len() > before {
+                // The declaration itself: its comments and its first line.
+                let head_end = body.start_byte().max(start);
+                out.insert(
+                    before,
+                    Chunk {
+                        name: qualified,
+                        kind: kind.to_owned(),
+                        start: start_line,
+                        end: body.start_position().row + 1,
+                        text: text[start..head_end].to_owned(),
+                    },
+                );
+                continue;
+            }
+        }
+        out.push(Chunk {
+            name: qualified,
+            kind: kind.to_owned(),
+            start: start_line,
+            end: last + 1,
+            text: text[start..child.end_byte()].to_owned(),
+        });
+    }
+}
+
+/// Markdown by heading, outside code fences.
+fn sections(text: &str) -> Vec<Chunk> {
+    let mut out = Vec::new();
+    let mut fence = false;
+    let mut current: Option<(String, usize, String)> = None;
+    let mut lead = String::new();
+    for (i, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            fence = !fence;
+        }
+        if !fence && line.starts_with('#') {
+            if let Some((name, start, body)) = current.take() {
+                out.push(Chunk {
+                    name: Some(name),
+                    kind: "section".to_owned(),
+                    start,
+                    end: i,
+                    text: body,
+                });
+            } else if !lead.trim().is_empty() {
+                out.extend(blocks(&lead, None, "text"));
+            }
+            let name = line.trim_start_matches('#').trim().to_owned();
+            current = Some((name, i + 1, format!("{line}\n")));
+            continue;
+        }
+        match &mut current {
+            Some((_, _, body)) => {
+                body.push_str(line);
+                body.push('\n');
+            }
+            None => {
+                lead.push_str(line);
+                lead.push('\n');
+            }
+        }
+    }
+    let total = text.lines().count();
+    match current {
+        Some((name, start, body)) => {
+            out.push(Chunk {
+                name: Some(name),
+                kind: "section".to_owned(),
+                start,
+                end: total,
+                text: body,
+            });
+        }
+        None => out.extend(blocks(&lead, None, "text")),
+    }
+    out
+}
+
+/// Plain text in blocks that end at a blank line once they are long enough.
+fn blocks(text: &str, name: Option<&str>, kind: &str) -> Vec<Chunk> {
+    let mut out = Vec::new();
+    let mut start = 1;
+    let mut body = String::new();
+    let mut lines = 0;
+    for (i, line) in text.lines().enumerate() {
+        body.push_str(line);
+        body.push('\n');
+        lines += 1;
+        if (lines >= BLOCK_LINES && line.trim().is_empty()) || lines >= BLOCK_LINES * 2 {
+            if !body.trim().is_empty() {
+                out.push(Chunk {
+                    name: name.map(str::to_owned),
+                    kind: kind.to_owned(),
+                    start,
+                    end: i + 1,
+                    text: std::mem::take(&mut body),
+                });
+            }
+            body.clear();
+            start = i + 2;
+            lines = 0;
+        }
+    }
+    if !body.trim().is_empty() {
+        out.push(Chunk {
+            name: name.map(str::to_owned),
+            kind: kind.to_owned(),
+            start,
+            end: start + lines - 1,
+            text: body,
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1037,5 +1281,36 @@ mod tests {
             let (language, _) = grammar(path).unwrap();
             assert!(parse(&language, text).is_some(), "{path} does not parse");
         }
+    }
+
+    #[test]
+    fn chunks_follow_declarations_and_their_comments() {
+        let mut text = String::from(
+            "use std::fmt;\n\n/// Adds.\nfn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n\nstruct Point { x: i32 }\n\n",
+        );
+        text.push_str("/// A big one.\nimpl Point {\n");
+        for i in 0..40 {
+            text.push_str(&format!(
+                "    fn m{i}(&self) {{\n        let _ = {i};\n    }}\n"
+            ));
+        }
+        text.push_str("}\n");
+        let got = chunks("a.rs", &text);
+        let names: Vec<Option<&str>> = got.iter().map(|c| c.name.as_deref()).collect();
+        assert_eq!(names[0], Some("add"));
+        assert!(got[0].text.starts_with("/// Adds."), "{:?}", got[0]);
+        assert_eq!((got[0].start, got[0].end), (3, 6));
+        assert_eq!(names[1], Some("Point"));
+        assert_eq!(names[2], Some("Point"), "the impl's own line");
+        assert!(names.contains(&Some("Point::m7")), "{names:?}");
+        assert!(!got.iter().any(|c| c.text.contains("use std")));
+
+        let md = chunks(
+            "README.md",
+            "Intro.\n\n# Install\nRun it.\n\n## Use\n```\n# not a heading\n```\n",
+        );
+        let titles: Vec<Option<&str>> = md.iter().map(|c| c.name.as_deref()).collect();
+        assert_eq!(titles, [None, Some("Install"), Some("Use")]);
+        assert_eq!(chunks("notes.txt", "a\nb\n").len(), 1);
     }
 }

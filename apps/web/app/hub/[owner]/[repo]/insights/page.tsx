@@ -9,7 +9,7 @@ type Params = { params: Promise<{ owner: string; repo: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Insights · ${owner}/${repo} · Hebra` };
+  return { title: `Insights · ${owner}/${repo}` };
 }
 
 function secs(ms: number | null): string {

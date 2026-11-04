@@ -4,7 +4,7 @@ import { AuthFrame } from "@/components/auth-frame";
 import { ActionForm, SubmitButton } from "@/components/hub/forms";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Accept invitation · Hebra", referrer: "no-referrer" };
+export const metadata: Metadata = { title: "Accept invitation", referrer: "no-referrer" };
 
 /**
  * An invitation link. Redeeming it takes a button press, so chat apps that

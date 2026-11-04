@@ -16,6 +16,7 @@ mod mcp;
 mod porcelain;
 mod remote;
 mod runner;
+mod search;
 mod settings;
 mod sign;
 mod transfer;

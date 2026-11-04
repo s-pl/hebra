@@ -96,6 +96,14 @@ hb runner register --owner acme --name build-1 --label linux
 hb runner start build-1
 ```
 
+A VPS registers with a token and installs a service; [Heddle](heddle.md) can
+start and stop runner machines at a cloud provider for you. See
+[Checks and runners](ci.md).
+
+The npm and container registries are served by the same process at `/npm/`
+and `/v2/`; see [Packages and releases](packages.md). Docker needs the
+server behind HTTPS to push.
+
 ## The web hub
 
 The web app (`apps/web`) shows repositories, branches and tags, history with provenance, blame, comparisons, code search, reviews, tasks, checks, the merge queue and who is working right now. Set `HEBRA_SERVER_URL` to the server's internal URL.

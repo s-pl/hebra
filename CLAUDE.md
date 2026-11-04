@@ -19,7 +19,7 @@ crates/server   hebra-server: API HTTP (axum), push/pull, presencia, tokens por 
 apps/web        landing, docs /docs + hub /hub (Next.js 16, Tailwind 4, Biome)
 ```
 
-## Estado (2026-11-02)
+## Estado (2026-11-04)
 - Open source primero; Hebra Cloud (de pago) queda para después. Compatible con Git, pero con servidor y web propios: el puente es una vía de entrada, no el producto.
 - Paridad con Git: `docs/git-commands.md` cubre todo `git help -a` y un test lo comprueba contra el `git` instalado. Clone/fetch/push contra remotos Git (espejo bare en `<repo>/git/<remoto>.git` y tabla `git_map`: los commits de Git conservan su SHA y nunca se reexportan).
 - Concurrencia al estilo jj: los comandos leen sin bloqueo, hacen su trabajo y publican en una transacción corta; si otro publicó, `oplog::merge_views` fusiona a tres bandas. Bloqueo solo por workspace (`.hebra/lock`, lo libera el SO). Los archivos siguen a la vista: si un comando muere, el siguiente termina (`WcCache::synced`). Lectura sin bloqueos (`Workspace::read`, `look`).
@@ -27,7 +27,8 @@ apps/web        landing, docs /docs + hub /hub (Next.js 16, Tailwind 4, Biome)
 - Servidor: tags como bookmarks `tags/<nombre>` (los anotados llevan un commit con `tag`), blame, compare, search, `/objects/get` y `filter=blob:none` para clones parciales. Hub: páginas refs, compare, search y blame.
 - Web publicada en GitHub Pages: https://s-pl.github.io/hebra/ — `.github/workflows/site.yml` la publica en cada push a `main` que toque la web o los docs, con `scripts/static-site.sh` y los datos de demo.sh. `scripts/cloudflare-site.sh` sigue publicando a mano en Cloudflare Workers. El servidor aún no está alojado (el autor decidirá VPS o free tier; idea: Cloudflare Tunnel delante).
 - Web rediseñada sobre el kit Bencho (skill `diseno`; bloques MIT en `apps/web/components/bencho`, sin dependencias nuevas). Hebra Cloud solo aparece con `NEXT_PUBLIC_HEBRA_CLOUD=1`; en un servidor autoalojado `/` abre el dashboard salvo con `HEBRA_PUBLIC_SITE=1`.
-- Limitaciones conocidas: el merge estructural solo cubre 6 lenguajes; sin servidor alojado; `hb search` es una propuesta (`docs/design/semantic-search.md`); precios provisionales.
+- 2026-11-04: Heddle real en el servidor (`crates/server/src/fleet`): Hetzner Cloud, DigitalOcean, Vultr y Docker, con token sellado, cloud-init y token de runner de un uso, reconciliación, límites, coste y registro de decisiones; panel en `/settings/<owner>/heddle` (en vivo, ajustes, repetir checks). Registros npm (`/npm/`) y OCI (`/v2/`), releases con archivos, webhooks firmados (HMAC-SHA256), workflows de GitHub Actions traducidos (`gha.rs`), commits firmados que llegan firmados a Git (`bridge.rs`, `sign_for_git`), `hb search` (BM25 en FTS5 sobre trozos de tree-sitter, `search.rs`).
+- Limitaciones conocidas: merge estructural con gramática para 18 lenguajes (30 con `extra-grammars`) y por disposición para el resto; sin servidor alojado; búsqueda por significado es propuesta; sin GPU ni spot en Heddle; registros solo npm y OCI; precios provisionales.
 
 ## Comandos útiles
 - Rust: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`

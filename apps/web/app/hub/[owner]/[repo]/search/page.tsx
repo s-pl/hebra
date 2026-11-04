@@ -17,7 +17,7 @@ type Results = { files: number; matches: Hit[]; truncated: boolean };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Search · ${owner}/${repo} · Hebra` };
+  return { title: `Search · ${owner}/${repo}` };
 }
 
 /** The text of a line with the match marked. */

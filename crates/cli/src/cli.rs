@@ -285,6 +285,9 @@ pub enum Command {
     },
     /// Search tracked files, in the working copy or a revision.
     Grep(GrepArgs),
+    /// Find code by what it says: functions, types and sections ranked by
+    /// the words of the question, and the changes whose description matches.
+    Search(SearchArgs),
     /// Summarize history by author.
     Shortlog {
         #[arg(short, long)]
@@ -1490,6 +1493,25 @@ pub struct GrepArgs {
     /// Lines that do not match.
     #[arg(short = 'v', long)]
     pub invert_match: bool,
+    /// Limit to these paths.
+    #[arg(last = true)]
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// Words to look for: `hb search parse date`.
+    #[arg(required = true, num_args = 1..)]
+    pub query: Vec<String>,
+    /// Revision to search; the working copy by default.
+    #[arg(short, long)]
+    pub revision: Option<String>,
+    /// How many results.
+    #[arg(short = 'n', long, default_value_t = 10)]
+    pub limit: usize,
+    /// Only code, not change descriptions.
+    #[arg(long)]
+    pub code_only: bool,
     /// Limit to these paths.
     #[arg(last = true)]
     pub paths: Vec<String>,

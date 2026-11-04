@@ -25,7 +25,10 @@ const config: NextConfig = {
   // Plain asset URLs (stickers) need the prefix too; Next adds it to links only.
   env: { NEXT_PUBLIC_BASE_PATH: process.env.HEBRA_BASE_PATH ?? "", NEXT_PUBLIC_VERSION: pkg.version },
   // `next dev` opened from another device (a phone on the LAN): HEBRA_DEV_ORIGINS=192.168.1.16
-  allowedDevOrigins: (process.env.HEBRA_DEV_ORIGINS ?? "").split(",").filter(Boolean),
+  // 127.0.0.1 is the same machine as localhost; without it the page never hydrates there.
+  allowedDevOrigins: ["127.0.0.1", ...(process.env.HEBRA_DEV_ORIGINS ?? "").split(",").filter(Boolean)],
+  // Release files uploaded from the hub go through a server action.
+  experimental: { serverActions: { bodySizeLimit: "100mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

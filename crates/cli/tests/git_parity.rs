@@ -1821,6 +1821,64 @@ fn changes_and_tags_can_be_signed_with_an_ssh_key() {
 }
 
 #[test]
+fn signed_commits_reach_git_signed() {
+    let lab = Lab::new();
+    let bare = lab.github();
+    let url = bare.to_string_lossy().into_owned();
+    hb(&lab.root, &["clone", "--git", &url, "copy"]);
+    let copy = lab.root.join("copy");
+    hb(
+        &copy,
+        &["config", "set", "user.email", "tester@example.com"],
+    );
+    let key = signing_key(&lab, &copy);
+
+    // A signed commit, an unsigned one on top, and a signed one again.
+    write(&copy, "one.txt", "1\n");
+    hb(&copy, &["commit", "-S", "-m", "signed one"]);
+    write(&copy, "two.txt", "2\n");
+    hb(&copy, &["commit", "-m", "plain two"]);
+    write(&copy, "three.txt", "3\n");
+    hb(&copy, &["commit", "-S", "-m", "signed three"]);
+    let pushed = hb(&copy, &["push", "origin", "main"]);
+    assert!(pushed["unsigned"].is_null(), "{pushed}");
+
+    let public = fs::read_to_string(key.with_extension("pub")).unwrap();
+    let allowed = lab.root.join("allowed_signers");
+    fs::write(
+        &allowed,
+        format!("tester@example.com namespaces=\"git\" {}", public.trim()),
+    )
+    .unwrap();
+    let verify = |rev: &str| {
+        Command::new("git")
+            .current_dir(&bare)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                &format!("gpg.ssh.allowedSignersFile={}", allowed.display()),
+            ])
+            .args(["verify-commit", rev])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    };
+    assert!(verify("main"), "the tip is signed for Git");
+    assert!(!verify("main~1"), "an unsigned commit stays unsigned");
+    assert!(verify("main~2"));
+    assert_eq!(git(&bare, &["show", "main:two.txt"]), "2");
+    git(&bare, &["fsck", "--strict"]);
+
+    // The next push builds on the signed commits instead of sending them again.
+    write(&copy, "four.txt", "4\n");
+    hb(&copy, &["commit", "-m", "four"]);
+    hb(&copy, &["push", "origin", "main"]);
+    assert!(verify("main~1"));
+    assert_eq!(git(&bare, &["rev-list", "--count", "main"]), "6");
+}
+
+#[test]
 fn every_command_that_makes_commits_can_sign_them() {
     let lab = Lab::new();
     let dir = series(&lab);

@@ -8,7 +8,7 @@ import { ActorAvatar, Card, Chip, Empty } from "@/components/hub/ui";
 import { ago, hub, type Mandate, until } from "@/lib/hub";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Settings · Hebra" };
+export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const loaded = await loadSettings("/settings");

@@ -6,7 +6,7 @@ import { HubShell } from "@/components/hub/shell";
 import { Card, PageTitle } from "@/components/hub/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "New repository · Hebra" };
+export const metadata: Metadata = { title: "New repository" };
 
 export default async function NewRepoPage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
   const { owner: wanted } = await searchParams;

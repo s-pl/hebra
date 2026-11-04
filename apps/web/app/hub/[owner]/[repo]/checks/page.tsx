@@ -16,7 +16,7 @@ type Params = { params: Promise<{ owner: string; repo: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Checks · ${owner}/${repo} · Hebra` };
+  return { title: `Checks · ${owner}/${repo}` };
 }
 
 /* One pixel per run in the commit's strip, coloured by how it went. */

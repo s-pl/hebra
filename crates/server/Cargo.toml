@@ -29,6 +29,7 @@ clap.workspace = true
 futures-util.workspace = true
 hebra-core.workspace = true
 hebra-mandate.workspace = true
+hebra-heddle.workspace = true
 hex.workspace = true
 jiff.workspace = true
 object_store = { workspace = true, optional = true }
@@ -37,6 +38,7 @@ reqwest.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde-saphyr.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 toml.workspace = true

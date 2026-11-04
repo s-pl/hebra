@@ -11,6 +11,9 @@ export const DOCS = [
   },
   { slug: "git-commands", title: "Git commands", blurb: "Every Git command and what it is in hb." },
   { slug: "agents", title: "Agents", blurb: "MCP, JSON output, identity and mandates." },
+  { slug: "ci", title: "Checks and runners", blurb: "Pipelines, environments, GitHub workflows, a VPS as a runner." },
+  { slug: "heddle", title: "Heddle", blurb: "Reuse, and machines that start and stop with the queue." },
+  { slug: "packages", title: "Packages and releases", blurb: "npm, container images, release files, webhooks." },
   {
     slug: "self-hosting",
     title: "Self-hosting",

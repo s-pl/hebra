@@ -20,7 +20,7 @@ type Transparency = {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner, repo } = await params;
-  return { title: `Transparency log · ${owner}/${repo} · Hebra` };
+  return { title: `Transparency log · ${owner}/${repo}` };
 }
 
 const GENESIS = "0".repeat(64);

@@ -270,6 +270,26 @@ body {
   }
 }
 
+/* A machine booting: a bar that sweeps until its runner connects. */
+.boot-bar {
+  animation: boot 1.4s var(--ease-in-out) infinite;
+}
+@keyframes boot {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 /* --------------------------------------------------------------- landing */
 
 /*

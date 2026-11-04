@@ -34,7 +34,7 @@ type Overview = {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { owner } = await params;
-  return { title: `Plan and usage · ${owner} · Hebra` };
+  return { title: `Plan and usage · ${owner}` };
 }
 
 function Meter({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {

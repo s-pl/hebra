@@ -196,7 +196,16 @@ pub fn install(name: &str) -> Result<Output> {
     let config = config_dir()?;
     #[cfg(target_os = "linux")]
     {
-        let root = std::env::var("USER").is_ok_and(|u| u == "root");
+        // Root (cloud-init runs first-boot scripts as root, often without
+        // USER): a system service. Anyone else: a user service.
+        let root = std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("Uid:"))
+                    .and_then(|u| u.split_whitespace().next().map(|u| u == "0"))
+            })
+            .unwrap_or_else(|| std::env::var("USER").is_ok_and(|u| u == "root"));
         let unit_name = format!("hb-runner-{name}.service");
         let dir = if root {
             PathBuf::from("/etc/systemd/system")

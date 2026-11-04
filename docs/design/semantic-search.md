@@ -1,6 +1,7 @@
 # Finding code by what it does
 
-Status: **proposal, not built.** Measured on 2026-11-02.
+Status: **step 1 built** (`hb search`, 2026-11-04); step 2 is a proposal.
+Measured on 2026-11-02.
 
 The idea: `hb search "payment function"` finds the code that handles payments,
 even if no line says "payment". The goal is a search that works for people and

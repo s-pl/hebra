@@ -5,7 +5,7 @@ import { loadSettings, SettingsFrame } from "@/components/hub/settings-frame";
 import { Card } from "@/components/hub/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "New organization · Hebra" };
+export const metadata: Metadata = { title: "New organization" };
 
 export default async function NewOrgPage() {
   const loaded = await loadSettings("/settings/new-org");

@@ -21,7 +21,7 @@ import {
 import { button } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Hub · Hebra" };
+export const metadata: Metadata = { title: "Hub" };
 
 const INSTALL = "curl -fsSL https://raw.githubusercontent.com/s-pl/hebra/main/scripts/install.sh | sh";
 
