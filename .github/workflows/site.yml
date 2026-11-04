@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       # rustup installs the exact toolchain pinned in rust-toolchain.toml.
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # Installs the pnpm version from packageManager in the root package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
